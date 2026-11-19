@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from apps.common.permissions import IsOwnerOrReadOnly
 
 from .models import Flyer
-from .selectors import get_flyer_by_id, list_flyers_by_creator, list_public_flyers
+from .selectors import get_flyer_by_id, list_flyers_by_creator, list_map_flyers, list_public_flyers
 from .serializers import FlyerCreateSerializer, FlyerSerializer, FlyerUpdateSerializer
 from .services import FlyerError, FlyerService
 
@@ -94,6 +94,15 @@ class FlyerDetailMutateView(APIView):
         self.check_object_permissions(request, flyer)
         FlyerService.delete_flyer(flyer)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class FlyerMapView(APIView):
+    """Public pet-map pins — active lost/found flyers with coordinates. Guest allowed."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request: Request) -> Response:
+        return Response(FlyerSerializer(list_map_flyers(), many=True).data)
 
 
 class MyFlyersView(generics.ListAPIView):

@@ -43,9 +43,23 @@ class Command(BaseCommand):
         emergency = Flyer.objects.create(
             pet=bruno, creator=owner, mode=Flyer.Mode.EMERGENCY,
             last_seen_location="Brgy. Poblacion, Makati", last_seen_date=timezone.now(),
+            location_lat=14.5547, location_lng=121.0244,
             distinctive_markings="White patch on chest, torn left ear",
             contact_phone=owner.phone, contact_email=owner.email,
             reward_enabled=True, reward_amount_cents=500000, reward_currency="PHP",
+            status=Flyer.Status.ACTIVE,
+        )
+        miso = Pet.objects.create(
+            owner=shelter, name="Miso", species=Pet.Species.CAT, breed="Domestic shorthair",
+            color="Gray", age=2, temperament_tags=["shy", "gentle"],
+            health_tags=["vaccinated"], status=Pet.Status.FOUND,
+        )
+        found = Flyer.objects.create(
+            pet=miso, creator=shelter, mode=Flyer.Mode.FOUND,
+            last_seen_location="Brgy. Bel-Air, Makati", last_seen_date=timezone.now(),
+            location_lat=14.5647, location_lng=120.9989,
+            distinctive_markings="Gray shorthair, one torn ear, very friendly",
+            contact_phone=shelter.phone, contact_email=shelter.email,
             status=Flyer.Status.ACTIVE,
         )
         outreach = Flyer.objects.create(
@@ -58,7 +72,7 @@ class Command(BaseCommand):
 
         from apps.flyers.qr import QrService
 
-        for flyer in (emergency, outreach):
+        for flyer in (emergency, found, outreach):
             flyer.qr_target_value = QrService.target_url(str(flyer.pk), settings.FRONTEND_BASE_URL)
             flyer.save(update_fields=["qr_target_value"])
         self.stdout.write(self.style.SUCCESS("Seeded demo data (login: mia@example.com / demo1234)"))

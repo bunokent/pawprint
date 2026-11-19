@@ -478,6 +478,18 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/flyers/map:
+    get:
+      operationId: flyers_map_retrieve
+      description: Public pet-map pins — active lost/found flyers with coordinates.
+        Guest allowed.
+      tags:
+      - flyers
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
   /api/flyers/mine:
     get:
       operationId: flyers_mine_list
@@ -509,6 +521,18 @@ paths:
       operationId: flyers_new_create
       tags:
       - flyers
+      responses:
+        '200':
+          description: No response body
+  /api/flyersmap:
+    get:
+      operationId: flyersmap_retrieve
+      description: Public pet-map pins — active lost/found flyers with coordinates.
+        Guest allowed.
+      tags:
+      - flyersmap
+      security:
+      - {}
       responses:
         '200':
           description: No response body
@@ -785,6 +809,14 @@ components:
           type: string
           format: date-time
           nullable: true
+        location_lat:
+          type: number
+          format: double
+          nullable: true
+        location_lng:
+          type: number
+          format: double
+          nullable: true
         distinctive_markings:
           type: string
         contact_phone:
@@ -889,10 +921,12 @@ components:
     ModeEnum:
       enum:
       - emergency
+      - found
       - outreach
       type: string
       description: |-
         * `emergency` - Emergency (lost pet)
+        * `found` - Found pet
         * `outreach` - Outreach (adoption)
     PaginatedFlyerList:
       type: object
@@ -954,7 +988,7 @@ components:
           type: string
           readOnly: true
         status:
-          $ref: '#/components/schemas/StatusE57Enum'
+          $ref: '#/components/schemas/StatusF90Enum'
         created_at:
           type: string
           format: date-time
@@ -1000,7 +1034,7 @@ components:
           maxLength: 512
         status:
           allOf:
-          - $ref: '#/components/schemas/StatusE57Enum'
+          - $ref: '#/components/schemas/StatusF90Enum'
           default: adoptable
       required:
       - name
@@ -1026,7 +1060,21 @@ components:
         max_confidence:
           type: number
           format: double
+        breed:
+          type: string
+        breed_confidence:
+          type: number
+          format: double
+        color:
+          type: string
+        color_confidence:
+          type: number
+          format: double
       required:
+      - breed
+      - breed_confidence
+      - color
+      - color_confidence
       - detected_classes
       - key
       - max_confidence
@@ -1167,15 +1215,17 @@ components:
         * `bird` - Bird
         * `horse` - Horse
         * `other` - Other
-    StatusE57Enum:
+    StatusF90Enum:
       enum:
       - lost
+      - found
       - adoptable
       - reunited
       - adopted
       type: string
       description: |-
         * `lost` - Lost
+        * `found` - Found
         * `adoptable` - Adoptable
         * `reunited` - Reunited
         * `adopted` - Adopted

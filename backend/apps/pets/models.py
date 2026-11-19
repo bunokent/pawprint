@@ -18,6 +18,7 @@ class Pet(models.Model):
 
     class Status(models.TextChoices):
         LOST = "lost", "Lost"
+        FOUND = "found", "Found"
         ADOPTABLE = "adoptable", "Adoptable"
         REUNITED = "reunited", "Reunited"
         ADOPTED = "adopted", "Adopted"

@@ -16,6 +16,7 @@ def select_flyer_queryset() -> QuerySet[Flyer]:
         Flyer.objects.select_related("pet", "pet__owner", "creator")
         .only(
             "id", "mode", "status", "last_seen_location", "last_seen_date",
+            "location_lat", "location_lng",
             "distinctive_markings", "contact_phone", "contact_email",
             "reward_enabled", "reward_amount_cents", "reward_currency",
             "qr_target_type", "qr_target_value", "export_png_path", "export_pdf_path",
@@ -53,3 +54,17 @@ def get_flyer_by_id(flyer_id: uuid.UUID) -> Flyer | None:
 
 def list_flyers_by_creator(creator_id: uuid.UUID) -> QuerySet[Flyer]:
     return select_flyer_queryset().filter(creator_id=creator_id).order_by("-created_at")
+
+
+def list_map_flyers() -> QuerySet[Flyer]:
+    """Interactive pet map: active lost/found flyers that carry a pin (lat/lng)."""
+    return (
+        select_flyer_queryset()
+        .filter(
+            status=Flyer.Status.ACTIVE,
+            mode__in=[Flyer.Mode.EMERGENCY, Flyer.Mode.FOUND],
+        )
+        .exclude(location_lat__isnull=True)
+        .exclude(location_lng__isnull=True)
+        .order_by("-created_at")
+    )

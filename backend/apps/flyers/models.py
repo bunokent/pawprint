@@ -9,6 +9,7 @@ from django.db.models import CheckConstraint, Index, Q, UniqueConstraint
 class Flyer(models.Model):
     class Mode(models.TextChoices):
         EMERGENCY = "emergency", "Emergency (lost pet)"
+        FOUND = "found", "Found pet"
         OUTREACH = "outreach", "Outreach (adoption)"
 
     class Status(models.TextChoices):
@@ -23,6 +24,10 @@ class Flyer(models.Model):
     mode = models.CharField(max_length=16, choices=Mode.choices, default=Mode.EMERGENCY)
     last_seen_location = models.CharField(max_length=255, blank=True)
     last_seen_date = models.DateTimeField(null=True, blank=True)
+    # Exact pin for the interactive pet map (reverse-geocoded address stays in
+    # last_seen_location; for found flyers the fields mean location/date found).
+    location_lat = models.FloatField(null=True, blank=True)
+    location_lng = models.FloatField(null=True, blank=True)
     distinctive_markings = models.TextField(blank=True)
     contact_phone = models.CharField(max_length=32, blank=True)
     contact_email = models.EmailField(blank=True)
@@ -56,6 +61,8 @@ class Flyer(models.Model):
             # "My flyers" dashboard.
             Index(fields=["creator", "mode"], name="flyer_creator_mode_idx"),
             Index(fields=["status", "created_at"], name="flyer_status_created_idx"),
+            # Interactive pet map: located active lost/found flyers.
+            Index(fields=["status", "location_lat", "location_lng"], name="flyer_status_location_idx"),
         ]
 
     def __str__(self) -> str:

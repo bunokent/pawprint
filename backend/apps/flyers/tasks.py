@@ -26,7 +26,7 @@ A4_300DPI_PX = (2480, 3508)  # 210mm x 297mm at 300dpi
 
 
 def render_flyer_html(flyer) -> str:  # noqa: ANN001
-    template = "flyers/emergency.html" if flyer.mode == "emergency" else "flyers/outreach.html"
+    template = "flyers/outreach.html" if flyer.mode == "outreach" else "flyers/emergency.html"
     target = flyer.qr_target_value or QrService.target_url(str(flyer.pk), settings.FRONTEND_BASE_URL)
     qr_svg = QrService.svg_for_url(target)
     # Deterministic design variant per flyer ID so every printed flyer looks unique.

@@ -30,8 +30,9 @@ class FlyerService:
     @staticmethod
     @transaction.atomic
     def create_flyer(creator, *, pet_id: uuid.UUID, mode: str, last_seen_location: str = "",
-                     last_seen_date=None, distinctive_markings: str = "", contact_phone: str = "",
-                     contact_email: str = "", reward_enabled: bool = False,
+                     last_seen_date=None, location_lat: float | None = None,
+                     location_lng: float | None = None, distinctive_markings: str = "",
+                     contact_phone: str = "", contact_email: str = "", reward_enabled: bool = False,
                      reward_amount_cents: int = 0, reward_currency: str = "PHP") -> Flyer:
         pet = get_pet_by_id(pet_id)
         if pet is None:
@@ -44,6 +45,8 @@ class FlyerService:
             mode=mode,
             last_seen_location=last_seen_location,
             last_seen_date=last_seen_date,
+            location_lat=location_lat,
+            location_lng=location_lng,
             distinctive_markings=distinctive_markings,
             contact_phone=contact_phone,
             contact_email=contact_email or creator.email,

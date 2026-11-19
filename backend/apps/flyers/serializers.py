@@ -21,7 +21,8 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
         model = Flyer
         fields = [
             "id", "mode", "status", "pet", "creator", "creator_display_name",
-            "last_seen_location", "last_seen_date", "distinctive_markings",
+            "last_seen_location", "last_seen_date", "location_lat", "location_lng",
+            "distinctive_markings",
             "contact_phone", "contact_email", "reward_enabled", "reward_amount_cents",
             "reward_currency", "qr_target_type", "qr_target_value",
             "photo_url", "export_png_url", "export_pdf_url", "created_at", "updated_at",
@@ -46,6 +47,8 @@ class FlyerCreateSerializer(serializers.Serializer):
     mode = serializers.ChoiceField(choices=Flyer.Mode.choices)
     last_seen_location = serializers.CharField(max_length=255, required=False, allow_blank=True)
     last_seen_date = serializers.DateTimeField(required=False, allow_null=True)
+    location_lat = serializers.FloatField(min_value=-90, max_value=90, required=False, allow_null=True)
+    location_lng = serializers.FloatField(min_value=-180, max_value=180, required=False, allow_null=True)
     distinctive_markings = serializers.CharField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
@@ -63,6 +66,8 @@ class FlyerUpdateSerializer(serializers.Serializer):
     mode = serializers.ChoiceField(choices=Flyer.Mode.choices, required=False)
     last_seen_location = serializers.CharField(max_length=255, required=False, allow_blank=True)
     last_seen_date = serializers.DateTimeField(required=False, allow_null=True)
+    location_lat = serializers.FloatField(min_value=-90, max_value=90, required=False, allow_null=True)
+    location_lng = serializers.FloatField(min_value=-180, max_value=180, required=False, allow_null=True)
     distinctive_markings = serializers.CharField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)

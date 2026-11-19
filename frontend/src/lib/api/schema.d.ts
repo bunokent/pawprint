@@ -368,6 +368,23 @@ export interface paths {
         patch: operations["flyers_edit_partial_update"];
         trace?: never;
     };
+    "/api/flyers/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Public pet-map pins — active lost/found flyers with coordinates. Guest allowed. */
+        get: operations["flyers_map_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/flyers/mine": {
         parameters: {
             query?: never;
@@ -395,6 +412,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["flyers_new_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/flyersmap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Public pet-map pins — active lost/found flyers with coordinates. Guest allowed. */
+        get: operations["flyersmap_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -631,6 +665,10 @@ export interface components {
             last_seen_location?: string;
             /** Format: date-time */
             last_seen_date?: string | null;
+            /** Format: double */
+            location_lat?: number | null;
+            /** Format: double */
+            location_lng?: number | null;
             distinctive_markings?: string;
             contact_phone?: string;
             contact_email?: string;
@@ -669,10 +707,11 @@ export interface components {
         };
         /**
          * @description * `emergency` - Emergency (lost pet)
+         *     * `found` - Found pet
          *     * `outreach` - Outreach (adoption)
          * @enum {string}
          */
-        ModeEnum: "emergency" | "outreach";
+        ModeEnum: "emergency" | "found" | "outreach";
         PaginatedFlyerList: {
             /**
              * Format: uri
@@ -702,7 +741,7 @@ export interface components {
             health_tags?: unknown;
             photo_path?: string;
             readonly photo_url: string;
-            status?: components["schemas"]["StatusE57Enum"];
+            status?: components["schemas"]["StatusF90Enum"];
             /** Format: date-time */
             readonly created_at: string;
         };
@@ -717,7 +756,7 @@ export interface components {
             health_tags?: string[];
             photo_path?: string;
             /** @default adoptable */
-            status: components["schemas"]["StatusE57Enum"];
+            status: components["schemas"]["StatusF90Enum"];
         };
         PhotoUploadResponse: {
             key: string;
@@ -728,6 +767,12 @@ export interface components {
             detected_classes: string[];
             /** Format: double */
             max_confidence: number;
+            breed: string;
+            /** Format: double */
+            breed_confidence: number;
+            color: string;
+            /** Format: double */
+            color_confidence: number;
         };
         Register: {
             /** Format: email */
@@ -794,12 +839,13 @@ export interface components {
         SpeciesEnum: "dog" | "cat" | "bird" | "horse" | "other";
         /**
          * @description * `lost` - Lost
+         *     * `found` - Found
          *     * `adoptable` - Adoptable
          *     * `reunited` - Reunited
          *     * `adopted` - Adopted
          * @enum {string}
          */
-        StatusE57Enum: "lost" | "adoptable" | "reunited" | "adopted";
+        StatusF90Enum: "lost" | "found" | "adoptable" | "reunited" | "adopted";
         User: {
             /** Format: uuid */
             readonly id: string;
@@ -1354,6 +1400,24 @@ export interface operations {
             };
         };
     };
+    flyers_map_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     flyers_mine_list: {
         parameters: {
             query?: {
@@ -1379,6 +1443,24 @@ export interface operations {
         };
     };
     flyers_new_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    flyersmap_retrieve: {
         parameters: {
             query?: never;
             header?: never;

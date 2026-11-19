@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>LOST PET — {{ flyer.pet.name }}</title>
+<title>{% if flyer.mode == "found" %}FOUND PET{% else %}LOST PET{% endif %} — {{ flyer.pet.name }}</title>
 <style>
   /* A4 @300dpi print fidelity: 210mm x 297mm, guaranteed single page */
   @page { size: A4; margin: 0; }
@@ -70,8 +70,8 @@
   <div class="band">
     <div class="corner-accent v{{ design_variant }}"></div>
     <div>
-      <h1>LOST PET</h1>
-      <div class="sub">Help {{ flyer.pet.name }} come home</div>
+      <h1>{% if flyer.mode == "found" %}FOUND PET{% else %}LOST PET{% endif %}</h1>
+      <div class="sub">{% if flyer.mode == "found" %}Help {{ flyer.pet.name }} get back home{% else %}Help {{ flyer.pet.name }} come home{% endif %}</div>
     </div>
     {% if flyer.reward_enabled and flyer.reward_amount_cents %}
     <div class="reward">REWARD<br>{{ flyer.reward_amount_cents | floatformat:0 }} {{ flyer.reward_currency }}</div>
@@ -84,11 +84,11 @@
   <div class="meta">{{ flyer.pet.get_species_display }} · {{ flyer.pet.breed }} · {{ flyer.pet.color }}{% if flyer.pet.age %} · {{ flyer.pet.age }} yrs{% endif %}</div>
   <div class="grid">
     <div class="card">
-      <h2>Last seen</h2>
+      <h2>{% if flyer.mode == "found" %}Found at{% else %}Last seen{% endif %}</h2>
       <p>{{ flyer.last_seen_location|default:"—" }}<br>{{ flyer.last_seen_date|date:"M d, Y"|default:"" }}</p>
     </div>
     <div class="card">
-      <h2>Distinctive markings</h2>
+      <h2>{% if flyer.mode == "found" %}Description{% else %}Distinctive markings{% endif %}</h2>
       <p>{{ flyer.distinctive_markings|default:"—" }}</p>
     </div>
   </div>
@@ -96,7 +96,7 @@
     <div class="qr">{{ qr_svg|safe }}</div>
     <div class="seal">{{ design_variant }}</div>
     <div class="contact">
-      <h2>SEEN {{ flyer.pet.name|upper }}? CALL</h2>
+      <h2>{% if flyer.mode == "found" %}FOUND {{ flyer.pet.name|upper }}? CALL{% else %}SEEN {{ flyer.pet.name|upper }}? CALL{% endif %}</h2>
       <p>{{ flyer.contact_phone }}<br>{{ flyer.contact_email }}</p>
     </div>
   </div>
