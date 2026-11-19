@@ -25,6 +25,7 @@ export function AppShell() {
           </Link>
           <nav className="nav-links" aria-label="Main">
             <NavLink className="nav-link" to="/flyers">Flyers</NavLink>
+            <NavLink className="nav-link" to="/map">Pet map</NavLink>
             {user && <NavLink className="nav-link" to="/my-flyers">My flyers</NavLink>}
             {user ? (
               <>

@@ -1,7 +1,7 @@
 # PawPrint — Documentation
 
 PawPrint is a lost-pet alert, found-pet posting and adoption flyer platform. Guests can browse
-alerts and scan QR codes; one unified registered account (email
+alerts, open the interactive pet map and scan QR codes; one unified registered account (email
 or Google/Gmail OAuth) can post lost-pet emergencies, publish found pets and adoptable pets,
 generate print-ready A4 flyers, and fund rewards via Stripe (test mode) or GCash/QR Ph via
 PayMongo.
@@ -24,8 +24,10 @@ Every uploaded pet photo passes a YOLO-World open-vocabulary animal-detection ga
 it ever reaches storage; a CLIP second stage names the actual species and classifies
 breed/color (prefilled in the builder only when confidence ≥ 0.80). Non-animal photos are
 rejected with a friendly 422 — no strikes, no bans.
-The web app (`frontend/`, React 19 + TS + Vite) implements the full product in the browser, and
-Playwright E2E covers the 8 critical journeys end-to-end.
+The web app (`frontend/`, React 19 + TS + Vite) implements the full product in the browser —
+including a public interactive pet map at `/map` (Google Maps photo pins when
+`VITE_GOOGLE_MAPS_API_KEY` is set, pin list otherwise) — and Playwright E2E covers the 9
+critical journeys end-to-end.
 
 ## 2. Architecture & Stack
 
@@ -47,7 +49,7 @@ Playwright E2E covers the 8 critical journeys end-to-end.
   lists; other species → empty) and color, with raw confidences returned on the upload response.
   Labels are grouped into domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird,
   and fish categories. Maps: Google Maps JS API (script-tag loaded, key from
-  `VITE_GOOGLE_MAPS_API_KEY`, no npm dependency) for the builder's location picker.
+  `VITE_GOOGLE_MAPS_API_KEY`, no npm dependency) for the location picker and `/map`.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
   browser-side exports.
 - **Infra**: `docker-compose.yml` provides `postgres:16`, `redis:7`, `mailpit` (storage is
@@ -60,7 +62,7 @@ Playwright E2E covers the 8 critical journeys end-to-end.
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
   `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
   `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
-  `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 8
+  `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 9
   journeys against a `postgres:16` service on :5433, with migrate + `seed_demo` and cached
   YOLO-World weights). Coverage HTML/XML and Playwright reports upload as artifacts.
 
@@ -70,6 +72,7 @@ Playwright E2E covers the 8 critical journeys end-to-end.
 |---|---|---|
 | Browse lost/found/adoptable flyers | ✅ | ✅ |
 | Full-text search / filter flyers | ✅ | ✅ |
+| Browse the interactive pet map (`/map`) | ✅ | ✅ |
 | View flyer detail (incl. QR scan landing) | ✅ | ✅ |
 | Download / print A4 flyer exports | ✅ (active flyers) | ✅ |
 | Create / edit / delete own flyers (lost, found, adoptable) | ❌ | ✅ |
@@ -176,8 +179,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   reward; the A4 emergency template is mode-aware (FOUND PET header, "Found at", description).
   Flyers can carry a map pin (`location_lat`/`location_lng`, indexed via
   `flyer_status_location_idx`); `GET /api/flyers/map` (public) returns active lost/found
-  flyers that have one — the pins behind the public pet map. `seed_demo` seeds Bruno (lost,
-  pinned) and Miso (found, pinned).
+  flyers that have one — the pins behind `/map`. `seed_demo` seeds Bruno (lost, pinned) and
+  Miso (found, pinned).
 
 ## 8. AI Pet Detection (YOLO-World gate + CLIP species naming)
 
@@ -271,17 +274,21 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   handling). All calls via `src/features/{domain}/api.ts`; DTOs come only from the generated
   `src/lib/api/schema.d.ts` (`npm run typegen` over `backend/schema.yml`).
 - Pages: `/` Home (emergency + outreach rails), `/flyers` Gallery (mode filter — Lost /
-  **Found** / Adoptable — + FTS search + cursor pagination), `/flyers/:id` Public Flyer + QR +
-  print/export + owner resolve/delete + reward checkout (found flyers read "Found pet: X" /
-  "Found at" / "Description" in terracotta), `/builder` 3-step wizard with **three modes** —
-  Lost — urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form →
-  details; going back to the photo step with an uploaded photo shows a **Next** button to
-  continue without re-uploading), `/my-flyers`, `/rewards/success`, `/rewards/cancel`,
-  `/auth/login` (also handles the Google `?code=` callback), `/auth/register`, `/settings`
-  (profile settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
-  name/phone, read-only email). The header nav links Flyers, the avatar + display name to
-  `/settings` (`components/Avatar.tsx` renders the round picture with an initial-letter
-  fallback).
+  **Found** / Adoptable — + FTS search + cursor pagination), `/map` **Pet map** (public:
+  Google Map with one canvas-drawn circular photo pin per active lost/found flyer — crimson
+  ring = lost, terracotta = found — popup card with name, species·breed·color, date, status and
+  a "Show Full Details" link to `/flyers/:id`; without a Maps key it renders the same pins as a
+  list), `/flyers/:id` Public Flyer + QR + print/export + owner resolve/delete + reward
+  checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
+  "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
+  urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
+  going back to the photo step with an uploaded photo shows a **Next** button to continue
+  without re-uploading), `/my-flyers`, `/rewards/success`, `/rewards/cancel`, `/auth/login`
+  (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
+  settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
+  name/phone, read-only email). The header nav links Flyers, **Pet map**, the avatar + display
+  name to `/settings` (`components/Avatar.tsx` renders the round picture with an
+  initial-letter fallback).
 - Builder step 3 uses `LocationPicker` (`components/maps/LocationPicker.tsx`): with
   `VITE_GOOGLE_MAPS_API_KEY` set, an embedded Google Map with a **draggable pin** plus Places
   Autocomplete on the address input; dropping the pin reverse-geocodes the address and the
@@ -333,7 +340,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
   `factory-boy` factories.
-- Frontend: `npm run test:run` → **90 Vitest tests, 8 files** (RTL + MSW, jsdom), including
+- Frontend: `npm run test:run` → **97 Vitest tests, 9 files** (RTL + MSW, jsdom), including
   drag-and-drop, real Axios upload-progress callbacks, all four live processing labels, the animated
   indeterminate bar, read-only detected-species text (rabbit over raw `cat`, ambiguous cat+dog,
   re-detect on re-upload), breed/color prefill at ≥0.80 with High/Low-confidence badges and the
@@ -341,16 +348,17 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   reward toggle, location/date/description, `location_lat/lng: null` from the fallback input),
   the gallery Found filter, found rendering on detail/cards, per-mode resolve labels,
   `LocationPicker` map mode (fake `window.google`: pin drop + drag reverse-geocode) and its
-  no-key fallback;
-  `npm run test:coverage` enforces the thresholds (70/60/70/70 global,
-  **`src/features/rewards/**` at 100%**) — all green.
+  no-key fallback, and the `/map` page (pin-list fallback with Show Full Details links, fake-map
+  pin rendering + popup, empty/error states);
+  `npm run test:coverage` → **84.84% stmts / 79.91% branches / 83.71% funcs / 85.63% lines**
+  (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
   `npx tsc -b --noEmit` clean; `npm run build` green.
-- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **8 journeys /
-  9 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
+- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **9 journeys /
+  10 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
   :9100), the Django backend on :8010 with `PAWPRINT_TESTING=1` (eager Celery, locmem, local
   PG :5433; filesystem `/media/` is served explicitly under TESTING so signed URLs load),
-  and the Vite dev server on :5173 proxying to :8010 (no `VITE_GOOGLE_MAPS_API_KEY`).
-  Journeys: ① guest browse →
+  and the Vite dev server on :5173 proxying to :8010 (no `VITE_GOOGLE_MAPS_API_KEY`, so the
+  map renders its list fallback). Journeys: ① guest browse →
   filter → search → detail+QR, ② register → logout → login (demo account), ③ create an
   emergency flyer through the 3-step wizard (YOLO-World-gated upload, read-only detected
   species) → public detail page, ④ landscape photo → 422 `no_pet_detected` retry UX → dog
@@ -358,8 +366,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   status to `succeeded` (and a forged signature is 400), ⑥ open the flyer's
   `qr_target_value` like a scanner → public detail page with SVG QR, ⑦ profile settings →
   avatar upload + display name/phone save → header avatar, profile restored afterwards,
-  ⑧ found-pet flow (`/builder?mode=found` → publish → "Found pet" detail, mode `found`, no
-  reward; guests get the register prompt).
+  ⑧ guest pet map (`/api/flyers/map` pins incl. seeded Bruno lost + Miso found with coords)
+  → open Bruno's flyer from a pin → "View on map" link back, ⑨ found-pet flow
+  (`/builder?mode=found` → publish → "Found pet" detail, mode `found`, no reward; guests get
+  the register prompt).
 - Static analysis: `mypy apps`, `ruff check .`, `npm run lint` (tsc), `npm run build`
   (0 TS errors). All of the above run in GitHub Actions (`.github/workflows/ci.yml`):
   `backend-lint` (ruff + mypy, no DB), `backend-test` (pytest + coverage against a
@@ -660,8 +670,17 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   working. Found labels across detail page ("Found pet: X", "Found at", "Description", "View
   on map"), `FlyerCard`, gallery Found filter, per-mode resolve labels ("Mark returned home").
   MSW: `*/api/flyers/map` handler (registered before `*/api/flyers/:id`) + `mockFoundFlyer`.
-  E2E journey ⑧ (found-pet publish) + ③ updated for read-only species.
+  E2E journey ⑨ (found-pet publish) + ③ updated for read-only species.
+- **Phase 26** — Interactive pet map page `/map` (`src/pages/PetMapPage.tsx`, nav link in
+  AppShell): `flyerMapQuery` → canvas-drawn circular photo pins (crimson ring lost /
+  terracotta found), tap a pin → popup card with badges, name, species·breed·color,
+  lost/found date + place and a "Show Full Details" link to `/flyers/:id`; list fallback when
+  no Maps key; legend, skeleton/empty/error states. E2E journey ⑧ (guest map → seeded
+  Bruno/Miso pins → open flyer from a pin → "View on map" back). Verified: **97 Vitest @
+  84.84/79.91/83.71/85.63** (rewards 100%), **10/10 Playwright** (9 journeys),
+  `tsc -b` + `vite build` green.
+
 **Final status:** backend **150 passed @ 95.41%** (100% services/drivers/vision/storage);
-frontend **90 vitest tests** green, 8 files (rewards 100% per-glob threshold) + **9 Playwright
-tests green** (8 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
+frontend **97 vitest tests** @ 84.84/79.91/83.71/85.63 (rewards 100%) + **10 Playwright tests
+green** (9 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); `npm run docs:pdf` regenerated.
