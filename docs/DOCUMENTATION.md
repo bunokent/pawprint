@@ -28,6 +28,10 @@ Playwright E2E covers the 6 critical journeys end-to-end.
 - **Backend**: Django 5.2+ (Python 3.12+), DRF, drf-spectacular (OpenAPI), PostgreSQL 16,
   Redis 7, Celery, Django Channels (WebSockets), django-allauth (email + Google OAuth 2.0).
   **No Django Admin** — `django.contrib.admin` is completely removed.
+  Packaging: `pyproject.toml` declares an explicit setuptools build backend with
+  `packages.find include = ["apps*", "config*"]` so `uv pip install .[dev]` succeeds on a
+  full checkout (flat-layout auto-discovery otherwise aborts on `apps/`+`config/`+`templates/`;
+  the Dockerfile never hit this because it installs deps before `COPY . .`).
 - **Frontend**: React 19 + TypeScript + Vite, React Router v7, TanStack Query v5, Axios,
   Zustand, React Hook Form + Zod, Shadcn/UI, Tailwind v4. React Compiler enabled.
 - **Storage**: Cloudinary (private delivery type, HMAC-signed URLs only) via the `cloudinary`
@@ -564,6 +568,16 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   with `PAWPRINT_TESTING=1` → `npm run test:e2e` (Playwright self-starts the Django
   backend on :8010, PayMongo stub on :9100, and Vite on :5173) → report artifacts.
   Docs §2/§11 updated.
+
+- **Phase 21** — CI fix: `uv pip install '.[dev]'` in GitHub Actions failed with
+  "Multiple top-level packages discovered in a flat-layout: ['apps', 'config', 'templates']"
+  because a full checkout has source dirs present (the Dockerfile avoided this by installing
+  deps before `COPY . .`). Fixed by adding an explicit `[build-system]` (setuptools ≥68) and
+  `[tool.setuptools.packages.find] include = ["apps*", "config*"]` to
+  `backend/pyproject.toml`. Verified locally: fresh venv + `uv pip install --no-deps .`
+  builds the wheel cleanly, the installed `apps`/`config` don't shadow the source tree
+  (cwd/`pythonpath=["."]` wins), and `pytest tests/integration/test_health.py` → 3 passed.
+  CI workflow commands unchanged.
 
 **Final status:** backend **136 passed @ 95.03%** (100% services/drivers/vision/storage);
 frontend **80 vitest tests** @ 88.41/80.83/84.76/89.38 (rewards 100%) + **8 Playwright tests

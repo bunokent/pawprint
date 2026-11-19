@@ -8,6 +8,8 @@ venv/
 .ruff_cache/
 htmlcov/
 .coverage*
+build/
+*.egg-info/
 
 # Node
 node_modules/
