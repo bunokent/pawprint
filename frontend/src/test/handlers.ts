@@ -62,6 +62,22 @@ export const mockFlyer = (overrides: Partial<Flyer> = {}): Flyer => ({
   ...overrides,
 });
 
+/** Seeded-style found-pet flyer (mirrors backend seed_demo "Miso"). */
+export const mockFoundFlyer = (overrides: Partial<Flyer> = {}): Flyer =>
+  mockFlyer({
+    id: "66666666-6666-6666-6666-666666666666",
+    mode: "found",
+    status: "active",
+    pet: mockPet({ name: "Miso", species: "cat", breed: "Domestic shorthair", color: "orange", status: "found" }),
+    last_seen_location: "Near the market, Manila",
+    last_seen_date: "2026-11-17T07:00:00Z",
+    location_lat: 14.5647,
+    location_lng: 120.9989,
+    reward_enabled: false,
+    reward_amount_cents: 0,
+    ...overrides,
+  });
+
 export const mockRewardInit = (overrides: Partial<RewardInit> = {}): RewardInit => ({
   transaction_id: "44444444-4444-4444-4444-444444444444",
   provider: "gcash",
@@ -147,14 +163,21 @@ export const handlers = [
     const url = new URL(request.url);
     const mode = url.searchParams.get("mode");
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
-    let results = [mockFlyer(), mockFlyer({ id: "55555555-5555-5555-5555-555555555555", mode: "outreach", pet: mockPet({ name: "Mochi", species: "cat", status: "adoptable" }), status: "active", reward_enabled: false, reward_amount_cents: 0 })];
+    let results = [
+      mockFlyer(),
+      mockFlyer({ id: "55555555-5555-5555-5555-555555555555", mode: "outreach", pet: mockPet({ name: "Mochi", species: "cat", status: "adoptable" }), status: "active", reward_enabled: false, reward_amount_cents: 0 }),
+      mockFoundFlyer(),
+    ];
     if (mode) results = results.filter((f) => f.mode === mode);
     if (q) results = results.filter((f) => `${f.pet.name} ${f.pet.breed} ${f.pet.color}`.toLowerCase().includes(q));
     return HttpResponse.json({ results, next: null, previous: null });
   }),
 
+  // NOTE: registered before "*/api/flyers/:id" — that pattern would also match "/map".
+  http.get("*/api/flyers/map", () => HttpResponse.json([mockFlyer(), mockFoundFlyer()])),
+
   http.get("*/api/flyers/mine", () =>
-    HttpResponse.json({ results: [mockFlyer()], next: null, previous: null }),
+    HttpResponse.json({ results: [mockFlyer(), mockFoundFlyer()], next: null, previous: null }),
   ),
 
   http.post("*/api/flyers/new", async ({ request }) => {

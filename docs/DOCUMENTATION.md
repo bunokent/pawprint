@@ -1,9 +1,10 @@
 # PawPrint — Documentation
 
-PawPrint is a dual-mode lost-pet alert + adoption flyer generator. Guests can browse alerts
-and scan QR codes; one unified registered account (email or Google/Gmail OAuth) can post
-lost-pet emergencies, publish adoptable pets, generate print-ready A4 flyers, and fund
-rewards via Stripe (test mode) or GCash/QR Ph via PayMongo.
+PawPrint is a lost-pet alert, found-pet posting and adoption flyer platform. Guests can browse
+alerts and scan QR codes; one unified registered account (email
+or Google/Gmail OAuth) can post lost-pet emergencies, publish found pets and adoptable pets,
+generate print-ready A4 flyers, and fund rewards via Stripe (test mode) or GCash/QR Ph via
+PayMongo.
 
 ---
 
@@ -14,14 +15,17 @@ product:
 
 - **Emergency Lost-Pet Mode** — urgent, high-contrast alerts with last-seen details,
   distinctive markings, an optional reward, and a scannable QR code on a print-ready A4 flyer.
+- **Found-Pet Mode** — a terracotta-accented posting for a pet someone found: photo, species,
+  location found (map pin), date, description and contact details — no reward.
 - **Adoption Outreach Mode** — warm, welcoming adoption flyers with personality tags and
   shelter/foster framing.
 
 Every uploaded pet photo passes a YOLO-World open-vocabulary animal-detection gatekeeper before
-it ever reaches storage, and a CLIP second stage names the actual species. Non-animal photos are
+it ever reaches storage; a CLIP second stage names the actual species and classifies
+breed/color (prefilled in the builder only when confidence ≥ 0.80). Non-animal photos are
 rejected with a friendly 422 — no strikes, no bans.
 The web app (`frontend/`, React 19 + TS + Vite) implements the full product in the browser, and
-Playwright E2E covers the 6 critical journeys end-to-end.
+Playwright E2E covers the 8 critical journeys end-to-end.
 
 ## 2. Architecture & Stack
 
@@ -38,8 +42,12 @@ Playwright E2E covers the 6 critical journeys end-to-end.
   SDK, wrapped in a Django `Storage` backend (`apps/common/cloudinary_storage.py`).
 - **Payments**: Stripe Python SDK (test mode) + PayMongo REST via httpx (GCash Checkout, QR Ph).
 - **AI Vision**: Ultralytics YOLO-World (`yolov8s-worldv2.pt`) with 66 configured animal labels as
-  the gate/boxer, plus CLIP ViT-B/32 zero-shot species naming; labels are grouped into domestic,
-  zoo/exotic, reptile, amphibian, small-mammal, farm, bird, and fish categories.
+  the gate/boxer, plus CLIP ViT-B/32 zero-shot second stages: one names the actual species
+  (`pet_classes`), a separate `PetAttributeService` classifies breed (curated dog/cat breed
+  lists; other species → empty) and color, with raw confidences returned on the upload response.
+  Labels are grouped into domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird,
+  and fish categories. Maps: Google Maps JS API (script-tag loaded, key from
+  `VITE_GOOGLE_MAPS_API_KEY`, no npm dependency) for the builder's location picker.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
   browser-side exports.
 - **Infra**: `docker-compose.yml` provides `postgres:16`, `redis:7`, `mailpit` (storage is
@@ -52,7 +60,7 @@ Playwright E2E covers the 6 critical journeys end-to-end.
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
   `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
   `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
-  `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 7
+  `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 8
   journeys against a `postgres:16` service on :5433, with migrate + `seed_demo` and cached
   YOLO-World weights). Coverage HTML/XML and Playwright reports upload as artifacts.
 
@@ -60,17 +68,17 @@ Playwright E2E covers the 6 critical journeys end-to-end.
 
 | Capability | Guest | Registered |
 |---|---|---|
-| Browse lost-pet alerts & adoptable pets | ✅ | ✅ |
+| Browse lost/found/adoptable flyers | ✅ | ✅ |
 | Full-text search / filter flyers | ✅ | ✅ |
 | View flyer detail (incl. QR scan landing) | ✅ | ✅ |
 | Download / print A4 flyer exports | ✅ (active flyers) | ✅ |
-| Create / edit / delete own flyers | ❌ | ✅ |
+| Create / edit / delete own flyers (lost, found, adoptable) | ❌ | ✅ |
 | Upload pet photos (YOLO-World-gated) | ❌ | ✅ |
 | Fund rewards (Stripe / GCash) | ❌ | ✅ |
 
 There is **no admin role, no staff flag, no strike/ban system**. Object-level mutations are
 restricted to the creator via `IsOwnerOrReadOnly`. The frontend enforces the same split in
-the UI: guests see browse/scan actions, registered users additionally see New flyer, My
+the UI: guests see browse/scan/map actions, registered users additionally see New flyer, My
 flyers, photo upload and Fund reward.
 
 ## 4. Backend — Models & ORM
@@ -80,11 +88,13 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `rewards`, `webhooks`, `v
 - `users.User` — AbstractUser, UUID PK, email login, `display_name`, `phone`, `avatar_path`,
   `google_id` (nullable unique), `email_verified`, `stripe_customer_id`.
 - `pets.Pet` — UUID PK, `owner` FK, species/breed/color/age, `temperament_tags` & `health_tags`
-  JSON (GIN indexes), `photo_path`, `status` (`lost|adoptable|reunited|adopted`),
+  JSON (GIN indexes), `photo_path`, `status` (`lost|found|adoptable|reunited|adopted`),
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
-- `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|outreach`), last-seen
-  fields, contact fields, reward fields, QR target, export paths, `status`
-  (`draft|generating|active|resolved`); indexes `(mode, status, created_at)`, `(creator, mode)`.
+- `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
+  fields, `location_lat`/`location_lng` floats (the map pin), contact fields, reward fields, QR
+  target, export paths, `status` (`draft|generating|active|resolved`); indexes
+  `(mode, status, created_at)`, `(creator, mode)`, and `flyer_status_location_idx`
+  `(status, location_lat, location_lng)` for the pet map.
 - `rewards.RewardTransaction` — UUID PK, `flyer`/`user` FKs, `provider` (`stripe|gcash`),
   unique `provider_reference`, `amount_cents`, `currency`, `status`, `metadata` JSON.
 - `webhooks.WebhookEvent` — `UniqueConstraint(provider, event_id)` for idempotency.
@@ -110,12 +120,13 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `PATCH /api/auth/profile` | Auth | Update `display_name` / `phone` |
 | `POST /api/auth/avatar` | Auth | Profile picture upload (10/min, no pet gate) |
 | `GET /api/auth/google/url` + `POST /api/auth/google/callback` | Guest | Google/Gmail OAuth 2.0 |
-| `GET /api/flyers` | Guest | Cursor-paginated gallery, FTS `?q=`, mode filter `?mode=` |
+| `GET /api/flyers` | Guest | Cursor-paginated gallery, FTS `?q=`, mode filter `?mode=` (`emergency|found|outreach`) |
+| `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` |
 | `GET /api/flyers/{id}` | Guest | Public flyer detail (QR scan landing) |
-| `POST /api/flyers/new` | Auth | Create flyer (dispatches A4 asset generation) |
+| `POST /api/flyers/new` | Auth | Create flyer — `mode` incl. `found`, optional `location_lat`/`location_lng` pin (dispatches A4 asset generation) |
 | `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / delete own flyer |
 | `GET /api/flyers/mine` | Auth | Creator's own flyers |
-| `POST /api/pets/photos` | Auth | YOLO-World-gated photo upload (10/min) |
+| `POST /api/pets/photos` | Auth | YOLO-World-gated photo upload (10/min); response also carries CLIP `breed`/`breed_confidence`/`color`/`color_confidence` |
 | `POST /api/pets` | Auth | Create pet record (links an uploaded photo) |
 | `POST /api/rewards` | Auth | Create reward payment (Stripe/GCash) → checkout URL / QR payload |
 | `GET /api/rewards/{id}/status` | Auth (payer/creator) | Poll payment status |
@@ -161,6 +172,12 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
   outreach mode uses sage/teal/terracotta warmth. The detail page's Print button uses the
   same sheet.
+- **Found mode**: `Flyer.Mode.FOUND` + `Pet.Status.FOUND` mirror the lost flow without a
+  reward; the A4 emergency template is mode-aware (FOUND PET header, "Found at", description).
+  Flyers can carry a map pin (`location_lat`/`location_lng`, indexed via
+  `flyer_status_location_idx`); `GET /api/flyers/map` (public) returns active lost/found
+  flyers that have one — the pins behind the public pet map. `seed_demo` seeds Bruno (lost,
+  pinned) and Miso (found, pinned).
 
 ## 8. AI Pet Detection (YOLO-World gate + CLIP species naming)
 
@@ -190,6 +207,14 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   animal-vs-non-animal gate is confident (e.g. a crocodile close-up), the photo still passes and
   is named by CLIP; plain landscapes still 422. When CLIP is unsure it falls back to the raw
   accepted YOLO labels.
+- **Breed & color classification**: a separate CLIP zero-shot `PetAttributeService`
+  (`apps/vision/services.py`) runs on the gated photo — breed over curated lists (dog breeds
+  and cat breeds only; any other species yields an empty breed, never a guess) and color over
+  a fixed color list for every species. Raw confidences ship on the upload response as
+  `breed`/`breed_confidence`/`color`/`color_confidence` (`PhotoUploadResponseSerializer`);
+  the **0.80 prefill threshold is applied in the frontend** (`HIGH_CONFIDENCE` in
+  `features/pets/api.ts`), so low-confidence results stay blank with a "Not detected"
+  placeholder instead of guessing.
 - The YOLO loader falls back to `yolov8s-worldv2.pt` if a stale non-World `YOLO_MODEL_PATH` is
   configured, and raises a clear `RuntimeError` if the checkpoint does not contain a World head.
   Generated weights (`backend/yolov8s-worldv2.pt`, `/weights/`) are git-ignored; Ultralytics
@@ -209,11 +234,15 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   motion disables the scan/spinner/progress animations without hiding status information.
 - The 422 renders a friendly `no-pet-error` box ("No strikes, no bans — just pick another photo")
   and the picker stays open for an immediate retry; a passing photo shows a
-  "Detected: `<animal>` ✓" badge using the refined `pet_classes`. In the builder the refined
-  `pet_classes` drive species selection (falling back to raw `detected_classes`); one recognized
-  standard species auto-selects and disables the species field, ambiguous multi-species results
-  (e.g. `cat` + `dog`) stay editable, non-standard animals map to `other`, and the UI states the
-  exact detected animal name (e.g. "Detected animal: Rabbit") instead of only "other".
+  "Detected: `<animal>` ✓" badge using the refined `pet_classes`. In the builder the detected
+  species is shown as **plain read-only text** — label "Species" with the hint "Auto detected:
+  change photo to redetect", value e.g. "Dog" or "Cat, Dog" (refined `pet_classes`, falling
+  back to raw `detected_classes`; ambiguous multi-species falls back to the first standard
+  match for the stored value, non-standard animals map to `other`). Re-uploading a photo
+  re-runs detection and updates the text automatically. Breed and color are prefilled only at
+  confidence ≥ 0.80 (with a "High confidence" badge); below that they stay blank with a
+  "Not detected" placeholder and a "Low confidence" badge, plus the helper tip "Auto-detected —
+  change if not correct. Detection is not 100% accurate." — both fields always stay editable.
 - E2E journey ④ drives both photos through the real models: `e2e/fixtures/dog.jpg`
   passes as refined `dog` (raw `cat` @ 0.717 + `dog` @ 0.655 stay in `detected_classes`),
   while `landscape.jpg` → 422.
@@ -241,15 +270,27 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   headers, `ApiError` normalization incl. `no_pet_detected` labels, 401/`session_expired`
   handling). All calls via `src/features/{domain}/api.ts`; DTOs come only from the generated
   `src/lib/api/schema.d.ts` (`npm run typegen` over `backend/schema.yml`).
-- Pages: `/` Home (emergency + outreach rails), `/flyers` Gallery (mode filter + FTS search +
-  cursor pagination), `/flyers/:id` Public Flyer + QR + print/export + owner resolve/delete +
-  reward checkout, `/builder` 3-step wizard (photo gate → pet form → details/reward; going
-  back to the photo step with an uploaded photo shows a **Next** button to continue without
-  re-uploading), `/my-flyers`, `/rewards/success`, `/rewards/cancel`, `/auth/login` (also
-  handles the Google `?code=` callback), `/auth/register`, `/settings` (profile settings:
-  avatar upload with local preview + `PATCH /api/auth/profile` for display name/phone,
-  read-only email). The header nav links the avatar + display name to `/settings`
-  (`components/Avatar.tsx` renders the round picture with an initial-letter fallback).
+- Pages: `/` Home (emergency + outreach rails), `/flyers` Gallery (mode filter — Lost /
+  **Found** / Adoptable — + FTS search + cursor pagination), `/flyers/:id` Public Flyer + QR +
+  print/export + owner resolve/delete + reward checkout (found flyers read "Found pet: X" /
+  "Found at" / "Description" in terracotta), `/builder` 3-step wizard with **three modes** —
+  Lost — urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form →
+  details; going back to the photo step with an uploaded photo shows a **Next** button to
+  continue without re-uploading), `/my-flyers`, `/rewards/success`, `/rewards/cancel`,
+  `/auth/login` (also handles the Google `?code=` callback), `/auth/register`, `/settings`
+  (profile settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
+  name/phone, read-only email). The header nav links Flyers, the avatar + display name to
+  `/settings` (`components/Avatar.tsx` renders the round picture with an initial-letter
+  fallback).
+- Builder step 3 uses `LocationPicker` (`components/maps/LocationPicker.tsx`): with
+  `VITE_GOOGLE_MAPS_API_KEY` set, an embedded Google Map with a **draggable pin** plus Places
+  Autocomplete on the address input; dropping the pin reverse-geocodes the address and the
+  form stores `last_seen_location` + `location_lat`/`location_lng`. Without a key (dev/test/
+  e2e) it degrades to a plain address input under the same id (`flyer-loc` /
+  `flyer-loc-found`) with null coordinates. Maps plumbing lives in `src/lib/maps.ts` (script-tag
+  loader, `libraries=places`, once per page) with hand-written ambient types in
+  `src/lib/google-maps.d.ts` — no npm dependency. Found mode shows Location found / Date &
+  time found / Description and hides the reward toggle entirely.
   Auth forms use icon inputs
   (`IconInput` in `components/ui/field.tsx`): a Mail icon on email fields, a Lock icon
   plus an Eye/EyeOff **show/hide password toggle** (a real button with an accessible name
@@ -275,7 +316,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 11. Testing & Coverage
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  → **136 passed, 95.03% total** (100% on all `services.py`, `drivers.py`,
+  → **150 passed, 95.41% total** (100% on all `services.py`, `drivers.py`,
   `apps/vision/services.py`, and the Cloudinary storage driver);
   `django_assert_max_num_queries` ceilings on list/detail endpoints; 429 tests for the
   `auth_write` (20/min) and `upload` (10/min) throttles; webhook idempotency tests (duplicate
@@ -284,32 +325,41 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `conf=0.20` asserted on the predictor call, EXIF-orientation/RGB normalization, stale-path
   fallback, non-World checkpoint rejection, rabbit/fox/frog/crocodile renaming from wrong raw
   labels, CLIP animal-gate fallback for YOLO misses, CLIP singleton/loader paths, ambiguous
-  multi-species editability); Cloudinary driver unit tests (SDK mocked, 100% on the driver);
+  multi-species handling); CLIP breed/color classifier tests (`PetAttributeService`: dog/cat
+  breed lists, other-species empty breed, color always classified, raw confidences on the
+  upload response); found-mode + `location_lat`/`location_lng` + `GET /api/flyers/map`
+  integration tests; Cloudinary driver unit tests (SDK mocked, 100% on the driver);
   profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
   `factory-boy` factories.
-- Frontend: `npm run test:run` → **80 Vitest tests, 7 files** (RTL + MSW, jsdom), including
+- Frontend: `npm run test:run` → **90 Vitest tests, 8 files** (RTL + MSW, jsdom), including
   drag-and-drop, real Axios upload-progress callbacks, all four live processing labels, the animated
-  indeterminate bar, refined-`pet_classes` species selection (rabbit over raw `cat`), ambiguous-species
-  editability, builder Next-after-back navigation, auth field icons + password visibility toggle,
-  Google brand icon colours, and the settings page (guest redirect, profile save, avatar upload
-  success/failure, initial fallback);
-  `npm run test:coverage` → **88.41% stmts / 80.83% branches / 84.76% funcs / 89.38% lines**
-  (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
+  indeterminate bar, read-only detected-species text (rabbit over raw `cat`, ambiguous cat+dog,
+  re-detect on re-upload), breed/color prefill at ≥0.80 with High/Low-confidence badges and the
+  "Not detected" placeholder below threshold, the found-pet wizard flow (`?mode=found`, no
+  reward toggle, location/date/description, `location_lat/lng: null` from the fallback input),
+  the gallery Found filter, found rendering on detail/cards, per-mode resolve labels,
+  `LocationPicker` map mode (fake `window.google`: pin drop + drag reverse-geocode) and its
+  no-key fallback;
+  `npm run test:coverage` enforces the thresholds (70/60/70/70 global,
+  **`src/features/rewards/**` at 100%**) — all green.
   `npx tsc -b --noEmit` clean; `npm run build` green.
-- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **7 journeys /
-  8 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
+- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **8 journeys /
+  9 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
   :9100), the Django backend on :8010 with `PAWPRINT_TESTING=1` (eager Celery, locmem, local
   PG :5433; filesystem `/media/` is served explicitly under TESTING so signed URLs load),
-  and the Vite dev server on :5173 proxying to :8010. Journeys: ① guest browse →
+  and the Vite dev server on :5173 proxying to :8010 (no `VITE_GOOGLE_MAPS_API_KEY`).
+  Journeys: ① guest browse →
   filter → search → detail+QR, ② register → logout → login (demo account), ③ create an
-  emergency flyer through the 3-step wizard (YOLO-World-gated upload) → public detail page,
-  ④ landscape photo → 422 `no_pet_detected` retry UX → dog photo passes, ⑤ GCash reward
-  checkout → QR modal → HMAC-signed PayMongo webhook flips status to `succeeded` (and a
-  forged signature is 400), ⑥ open the flyer's `qr_target_value` like a scanner → public
-  detail page with SVG QR, ⑦ profile settings → avatar upload + display name/phone save →
-  header avatar, profile restored afterwards.
+  emergency flyer through the 3-step wizard (YOLO-World-gated upload, read-only detected
+  species) → public detail page, ④ landscape photo → 422 `no_pet_detected` retry UX → dog
+  photo passes, ⑤ GCash reward checkout → QR modal → HMAC-signed PayMongo webhook flips
+  status to `succeeded` (and a forged signature is 400), ⑥ open the flyer's
+  `qr_target_value` like a scanner → public detail page with SVG QR, ⑦ profile settings →
+  avatar upload + display name/phone save → header avatar, profile restored afterwards,
+  ⑧ found-pet flow (`/builder?mode=found` → publish → "Found pet" detail, mode `found`, no
+  reward; guests get the register prompt).
 - Static analysis: `mypy apps`, `ruff check .`, `npm run lint` (tsc), `npm run build`
   (0 TS errors). All of the above run in GitHub Actions (`.github/workflows/ci.yml`):
   `backend-lint` (ruff + mypy, no DB), `backend-test` (pytest + coverage against a
@@ -579,7 +629,39 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   (cwd/`pythonpath=["."]` wins), and `pytest tests/integration/test_health.py` → 3 passed.
   CI workflow commands unchanged.
 
-**Final status:** backend **136 passed @ 95.03%** (100% services/drivers/vision/storage);
-frontend **80 vitest tests** @ 88.41/80.83/84.76/89.38 (rewards 100%) + **8 Playwright tests
-green** (7 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
+- **Phase 22** — CLIP breed/color classifier: new `PetAttributeService` in
+  `apps/vision/services.py` (zero-shot over curated dog/cat breed lists — other species get an
+  empty breed — and a fixed color list for every species), wired into
+  `PetPhotoService.upload`; `AttributeDetection` DTO; `PhotoUploadResponseSerializer` +
+  `UploadedPhoto` now carry `breed`/`breed_confidence`/`color`/`color_confidence` (raw
+  confidences — the 0.80 prefill threshold lives in the frontend). Unit tests in
+  `backend/tests/unit/test_attributes.py`. Verified: **150 pytest passed @ 95.41%**
+  (`apps/vision/services.py` 100%).
+- **Phase 23** — Found mode + geo pins (backend): `Flyer.Mode.FOUND`, `Pet.Status.FOUND`
+  (migrations `pets/0003`, `flyers/0003`), `location_lat`/`location_lng` FloatFields +
+  `flyer_status_location_idx`, public unpaginated `GET /api/flyers/map`
+  (`list_map_flyers`: active emergency/found with coords), mode-aware A4 template (FOUND PET /
+  Found at / Description), `seed_demo` pins Bruno and adds found pet "Miso", schema.yml
+  regenerated + `npm run typegen`. Integration tests `test_flyer_map.py`. Suite green @
+  95.41%.
+- **Phase 24** — Builder detection UX: species is now **plain read-only text**
+  (`#pet-species` paragraph, hint "Auto detected: change photo to redetect"; ambiguous
+  multi-species → first standard match, non-standard → `other`); breed/color prefill only at
+  confidence ≥ 0.80 (`HIGH_CONFIDENCE`) with High/Low-confidence badges, "Not detected"
+  placeholder below threshold, autofill helper tip; re-upload re-detects and re-prefills.
+  83 Vitest tests green, `tsc -b` clean.
+- **Phase 25** — Found-pet flow + Google Maps location picker (frontend): third mode button
+  "Found pet" (`?mode=found`; step 3 = Location found / Date & time found / Description, no
+  reward, pet status `found`, `location_lat/lng` sent on create), `LocationPicker`
+  (`src/components/maps/LocationPicker.tsx`) with draggable pin + Places Autocomplete +
+  reverse-geocoded address via `src/lib/maps.ts` script loader (key from
+  `VITE_GOOGLE_MAPS_API_KEY`, ambient types in `src/lib/google-maps.d.ts`, no npm dep);
+  without a key it falls back to a plain input under the same id (`flyer-loc`) so e2e keeps
+  working. Found labels across detail page ("Found pet: X", "Found at", "Description", "View
+  on map"), `FlyerCard`, gallery Found filter, per-mode resolve labels ("Mark returned home").
+  MSW: `*/api/flyers/map` handler (registered before `*/api/flyers/:id`) + `mockFoundFlyer`.
+  E2E journey ⑧ (found-pet publish) + ③ updated for read-only species.
+**Final status:** backend **150 passed @ 95.41%** (100% services/drivers/vision/storage);
+frontend **90 vitest tests** green, 8 files (rewards 100% per-glob threshold) + **9 Playwright
+tests green** (8 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); `npm run docs:pdf` regenerated.

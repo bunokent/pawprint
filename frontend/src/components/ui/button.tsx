@@ -8,6 +8,7 @@ const buttonVariants = cva("btn", {
     variant: {
       primary: "btn--primary",
       emergency: "btn--emergency",
+      found: "btn--found",
       sage: "btn--sage",
       secondary: "btn--secondary",
     },

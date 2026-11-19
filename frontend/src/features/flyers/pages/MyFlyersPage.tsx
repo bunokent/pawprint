@@ -116,7 +116,7 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
             disabled={updateFlyer.isPending}
             onClick={() => void updateFlyer.mutateAsync({ status: "resolved" })}
           >
-            Mark {flyer.mode === "emergency" ? "reunited" : "adopted"}
+            Mark {flyer.mode === "emergency" ? "reunited" : flyer.mode === "found" ? "returned home" : "adopted"}
           </Button>
         )}
         <Button

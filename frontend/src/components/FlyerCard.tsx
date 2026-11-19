@@ -5,6 +5,8 @@ import { formatDate } from "@/lib/utils";
 
 export function FlyerCard({ flyer }: { flyer: Flyer }) {
   const emergency = flyer.mode === "emergency";
+  const found = flyer.mode === "found";
+  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-terracotta-deep)" : "var(--color-sage-deep)";
   return (
     <Link
       to={`/flyers/${flyer.id}`}
@@ -28,15 +30,16 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
           )}
           <StatusBadge status={flyer.status} />
         </div>
-        <h3 className="t-h3" style={{ color: emergency ? "var(--color-emergency-deep)" : "var(--color-sage-deep)" }}>
+        <h3 className="t-h3" style={{ color: accent }}>
           {flyer.pet.name}
         </h3>
         <p className="t-small" style={{ color: "var(--color-muted)" }}>
           {flyer.pet.species} · {flyer.pet.breed || "mixed"} · {flyer.pet.color || "—"}
           {flyer.last_seen_location && emergency ? ` · last seen ${flyer.last_seen_location}` : ""}
+          {flyer.last_seen_location && found ? ` · found at ${flyer.last_seen_location}` : ""}
         </p>
-        {flyer.last_seen_date && emergency && (
-          <p className="t-label">Last seen {formatDate(flyer.last_seen_date)}</p>
+        {flyer.last_seen_date && (emergency || found) && (
+          <p className="t-label">{emergency ? "Last seen" : "Found"} {formatDate(flyer.last_seen_date)}</p>
         )}
       </div>
     </Link>

@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode, RefAttributes, TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 interface FieldProps {
@@ -18,8 +18,9 @@ export function FieldShell({ label, error, hint, children, htmlFor }: FieldProps
   );
 }
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn("input")} {...props} />;
+/** Ref-as-prop (React 19): pass `ref` straight through to the underlying input. */
+export function Input({ ref, ...props }: InputHTMLAttributes<HTMLInputElement> & RefAttributes<HTMLInputElement>) {
+  return <input ref={ref} className={cn("input")} {...props} />;
 }
 
 interface IconInputProps extends InputHTMLAttributes<HTMLInputElement> {

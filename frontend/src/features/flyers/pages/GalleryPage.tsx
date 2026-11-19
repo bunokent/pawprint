@@ -35,7 +35,7 @@ export function GalleryPage() {
     <section style={{ padding: "64px 0" }}>
       <div className="wrap">
         <h1 className="t-h1" data-enter style={{ marginBottom: 8 }}>
-          {mode === "emergency" ? "Lost pet alerts" : mode === "outreach" ? "Adoptable pets" : "All flyers"}
+          {mode === "emergency" ? "Lost pet alerts" : mode === "found" ? "Found pets" : mode === "outreach" ? "Adoptable pets" : "All flyers"}
         </h1>
         <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
           Public gallery — anyone can browse and scan. Found a pet? Open the flyer and call the number.
@@ -45,6 +45,7 @@ export function GalleryPage() {
           <div className="btn-row" role="group" aria-label="Filter by mode">
             <Button variant={mode === undefined ? "primary" : "secondary"} style={{ height: 40 }} onClick={() => setMode(undefined)}>All</Button>
             <Button variant={mode === "emergency" ? "emergency" : "secondary"} style={{ height: 40 }} onClick={() => setMode("emergency")}>Lost — urgent</Button>
+            <Button variant={mode === "found" ? "found" : "secondary"} style={{ height: 40 }} onClick={() => setMode("found")}>Found</Button>
             <Button variant={mode === "outreach" ? "sage" : "secondary"} style={{ height: 40 }} onClick={() => setMode("outreach")}>Adoptable</Button>
           </div>
           <form onSubmit={submitSearch} style={{ display: "flex", gap: 8, flex: 1, minWidth: 240 }}>

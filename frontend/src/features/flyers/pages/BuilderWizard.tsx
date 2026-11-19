@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { FieldShell, Input, Textarea } from "@/components/ui/field";
 import { ErrorBox } from "@/components/ui/feedback";
 import { PhotoUpload } from "@/features/pets/components/PhotoUpload";
+import { LocationPicker } from "@/components/maps/LocationPicker";
 import { useCreatePet, HIGH_CONFIDENCE, type Pet, type PhotoUploadResult } from "@/features/pets/api";
 import { useCreateFlyer, type Flyer, type Mode } from "@/features/flyers/api";
 import { FlyerCard } from "@/components/FlyerCard";
@@ -86,7 +87,13 @@ function parseTags(raw: string): string[] {
     .slice(0, 12);
 }
 
-function draftFlyer(pet: Pet, photo: PhotoUploadResult, mode: Mode, values: FlyerValues): Flyer {
+function draftFlyer(
+  pet: Pet,
+  photo: PhotoUploadResult,
+  mode: Mode,
+  values: FlyerValues,
+  coords: { lat: number; lng: number } | null,
+): Flyer {
   const now = new Date().toISOString();
   return {
     id: "pending",
@@ -97,6 +104,8 @@ function draftFlyer(pet: Pet, photo: PhotoUploadResult, mode: Mode, values: Flye
     creator_display_name: "",
     last_seen_location: values.last_seen_location,
     last_seen_date: values.last_seen_date ? new Date(values.last_seen_date).toISOString() : null,
+    location_lat: coords?.lat ?? null,
+    location_lng: coords?.lng ?? null,
     distinctive_markings: values.distinctive_markings,
     contact_phone: values.contact_phone,
     contact_email: values.contact_email,
@@ -117,7 +126,10 @@ export function BuilderWizard() {
   const [params] = useSearchParams();
   const { user, checked } = useAuth();
   const [step, setStep] = useState(0);
-  const [mode, setMode] = useState<Mode>(params.get("mode") === "outreach" ? "outreach" : "emergency");
+  const [mode, setMode] = useState<Mode>(() => {
+    const m = params.get("mode");
+    return m === "outreach" || m === "found" ? m : "emergency";
+  });
   const [photo, setPhoto] = useState<PhotoUploadResult | null>(null);
   const [pet, setPet] = useState<Pet | null>(null);
 
@@ -156,9 +168,9 @@ export function BuilderWizard() {
           ))}
         </div>
         <h1 className="t-h1" data-enter="2" style={{ fontSize: "clamp(28px, 4vw, 42px)", marginBottom: 32 }}>
-          {step === 0 && (mode === "emergency" ? "Report a lost pet" : "Post an adoptable pet")}
+          {step === 0 && (mode === "emergency" ? "Report a lost pet" : mode === "found" ? "Report a found pet" : "Post an adoptable pet")}
           {step === 1 && "Tell us about the pet"}
-          {step === 2 && "Flyer details & reward"}
+          {step === 2 && (mode === "emergency" ? "Flyer details & reward" : mode === "found" ? "Found-pet details" : "Flyer details")}
         </h1>
 
         {step === 0 && (
@@ -206,6 +218,14 @@ function StepPhotoMode({
         </Button>
         <Button
           type="button"
+          variant={mode === "found" ? "found" : "secondary"}
+          aria-pressed={mode === "found"}
+          onClick={() => setMode("found")}
+        >
+          Found pet
+        </Button>
+        <Button
+          type="button"
           variant={mode === "outreach" ? "sage" : "secondary"}
           aria-pressed={mode === "outreach"}
           onClick={() => setMode("outreach")}
@@ -216,7 +236,9 @@ function StepPhotoMode({
       <p className="t-body" style={{ color: "var(--color-muted)" }}>
         {mode === "emergency"
           ? "We'll build a scannable, print-ready alert with last-seen details and an optional reward."
-          : "We'll build a warm adoption flyer with personality tags and contact details."}
+          : mode === "found"
+            ? "We'll post a found-pet flyer with the location, photo and your contact details so the owner can find them."
+            : "We'll build a warm adoption flyer with personality tags and contact details."}
       </p>
       <FieldShell
         label="Pet photo"
@@ -364,7 +386,10 @@ function StepFlyer({
 }) {
   const navigate = useNavigate();
   const createFlyer = useCreateFlyer();
+  const found = mode === "found";
   const [rewardOn, setRewardOn] = useState(mode === "emergency");
+  // Pin coordinates from the LocationPicker map (null when only text was typed).
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const form = useForm<FlyerValues>({
     resolver: zodResolver(flyerSchema),
     defaultValues: {
@@ -378,22 +403,30 @@ function StepFlyer({
     },
   });
 
+  const setLocation = (v: { address: string; lat: number | null; lng: number | null }) => {
+    form.setValue("last_seen_location", v.address, { shouldValidate: true });
+    setCoords(v.lat != null && v.lng != null ? { lat: v.lat, lng: v.lng } : null);
+  };
+
   // Instant insert: while the create call is in flight, the new flyer card shows optimistically.
   const [optimisticFlyer, addOptimistic] = useOptimistic<Flyer | null, Flyer | null>(null, (_cur, f) => f);
   const [state, submit, pending] = useActionState(async (_prev: StepState, values: FlyerValues): Promise<StepState> => {
     // The action runs inside a transition, so the optimistic card shows while pending.
-    addOptimistic(draftFlyer(pet, photo, mode, values));
+    addOptimistic(draftFlyer(pet, photo, mode, values, coords));
     try {
       const flyer = await createFlyer.mutateAsync({
         pet_id: pet.id,
         mode,
         last_seen_location: values.last_seen_location || undefined,
         last_seen_date: values.last_seen_date ? new Date(values.last_seen_date).toISOString() : null,
+        location_lat: coords?.lat ?? null,
+        location_lng: coords?.lng ?? null,
         distinctive_markings: values.distinctive_markings || undefined,
         contact_phone: values.contact_phone || undefined,
         contact_email: values.contact_email || undefined,
-        reward_enabled: values.reward_enabled,
-        reward_amount_cents: values.reward_enabled ? Math.round(Number(values.reward_pesos) * 100) : 0,
+        // Found-pet flyers never carry a reward.
+        reward_enabled: found ? false : values.reward_enabled,
+        reward_amount_cents: !found && values.reward_enabled ? Math.round(Number(values.reward_pesos) * 100) : 0,
         reward_currency: "PHP",
       });
       navigate(`/flyers/${flyer.id}`);
@@ -417,7 +450,7 @@ function StepFlyer({
   return (
     <div className="card" style={{ padding: 28 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span className="t-label" style={{ color: "var(--color-muted)" }}>Flyer details &amp; reward</span>
+        <span className="t-label" style={{ color: "var(--color-muted)" }}>{found ? "Found-pet details" : "Flyer details & reward"}</span>
         <Button type="button" variant="secondary" onClick={onBack}>
           ← Back
         </Button>
@@ -425,15 +458,14 @@ function StepFlyer({
       <form onSubmit={form.handleSubmit((v) => startTransition(() => submit(v)))} style={{ display: "flex", flexDirection: "column", gap: 16 }} noValidate>
         {mode === "emergency" && (
           <>
-            <FieldShell label="Last seen location" htmlFor="flyer-loc" error={form.formState.errors.last_seen_location?.message}>
-              <Input
-                id="flyer-loc"
-                placeholder="e.g. Barangay hall, Quezon City"
-                autoComplete="off"
-                aria-invalid={Boolean(form.formState.errors.last_seen_location)}
-                {...form.register("last_seen_location")}
-              />
-            </FieldShell>
+            <LocationPicker
+              id="flyer-loc"
+              label="Last seen location"
+              placeholder="Search an address or drop the pin…"
+              error={form.formState.errors.last_seen_location?.message}
+              value={form.watch("last_seen_location") ?? ""}
+              onChange={setLocation}
+            />
             <FieldShell label="Last seen date & time" htmlFor="flyer-date" error={form.formState.errors.last_seen_date?.message}>
               <Input id="flyer-date" type="datetime-local" {...form.register("last_seen_date")} />
             </FieldShell>
@@ -441,6 +473,28 @@ function StepFlyer({
               <Textarea
                 id="flyer-marks"
                 placeholder="e.g. white patch on left ear, blue collar"
+                {...form.register("distinctive_markings")}
+              />
+            </FieldShell>
+          </>
+        )}
+        {found && (
+          <>
+            <LocationPicker
+              id="flyer-loc-found"
+              label="Location found"
+              placeholder="Search an address or drop the pin where you found the pet…"
+              error={form.formState.errors.last_seen_location?.message}
+              value={form.watch("last_seen_location") ?? ""}
+              onChange={setLocation}
+            />
+            <FieldShell label="Date & time found" htmlFor="flyer-date-found" error={form.formState.errors.last_seen_date?.message}>
+              <Input id="flyer-date-found" type="datetime-local" {...form.register("last_seen_date")} />
+            </FieldShell>
+            <FieldShell label="Description" htmlFor="flyer-desc" error={form.formState.errors.distinctive_markings?.message}>
+              <Textarea
+                id="flyer-desc"
+                placeholder="e.g. orange tabby with a torn ear, very friendly, found near the market"
                 {...form.register("distinctive_markings")}
               />
             </FieldShell>
@@ -461,35 +515,37 @@ function StepFlyer({
           </FieldShell>
         </div>
 
-        <div className="field">
-          <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              style={{ width: 20, height: 20, accentColor: mode === "emergency" ? "var(--color-emergency)" : "var(--color-sage)" }}
-              checked={rewardOn}
-              onChange={(e) => {
-                setRewardOn(e.target.checked);
-                form.setValue("reward_enabled", e.target.checked);
-              }}
-            />
-            <span style={{ fontWeight: 600, fontSize: 14 }}>Offer a finder's reward</span>
-          </label>
-          {rewardOn && (
-            <FieldShell label="Reward amount (PHP)" htmlFor="flyer-reward" error={form.formState.errors.reward_pesos?.message}>
-              <Input
-                id="flyer-reward"
-                inputMode="decimal"
-                placeholder="e.g. 5000"
-                aria-invalid={Boolean(form.formState.errors.reward_pesos)}
-                {...form.register("reward_pesos")}
+        {!found && (
+          <div className="field">
+            <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                style={{ width: 20, height: 20, accentColor: mode === "emergency" ? "var(--color-emergency)" : "var(--color-sage)" }}
+                checked={rewardOn}
+                onChange={(e) => {
+                  setRewardOn(e.target.checked);
+                  form.setValue("reward_enabled", e.target.checked);
+                }}
               />
-            </FieldShell>
-          )}
-        </div>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Offer a finder's reward</span>
+            </label>
+            {rewardOn && (
+              <FieldShell label="Reward amount (PHP)" htmlFor="flyer-reward" error={form.formState.errors.reward_pesos?.message}>
+                <Input
+                  id="flyer-reward"
+                  inputMode="decimal"
+                  placeholder="e.g. 5000"
+                  aria-invalid={Boolean(form.formState.errors.reward_pesos)}
+                  {...form.register("reward_pesos")}
+                />
+              </FieldShell>
+            )}
+          </div>
+        )}
 
         {state.error && <ErrorBox message={state.error} />}
         <div className="btn-row">
-          <Button type="submit" variant={mode === "emergency" ? "emergency" : "sage"} disabled={pending}>
+          <Button type="submit" variant={mode === "emergency" ? "emergency" : found ? "found" : "sage"} disabled={pending}>
             {pending ? "Publishing…" : "Publish flyer"}
           </Button>
         </div>

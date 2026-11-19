@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Printer, Download, Coins } from "lucide-react";
+import { Printer, Download, Coins, MapPin } from "lucide-react";
 import { flyerDetailQuery, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
@@ -56,9 +56,11 @@ export function FlyerDetailPage() {
   }
 
   const emergency = flyer.mode === "emergency";
+  const found = flyer.mode === "found";
   const isOwner = Boolean(user && flyer.creator === user.id);
-  const accent = emergency ? "var(--color-emergency-deep)" : "var(--color-sage-deep)";
+  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-terracotta-deep)" : "var(--color-sage-deep)";
   const canReward = flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0;
+  const hasPin = flyer.location_lat != null && flyer.location_lng != null;
 
   return (
     <section style={{ padding: "48px 0 64px" }}>
@@ -91,6 +93,13 @@ export function FlyerDetailPage() {
                 <Link to="/auth/login">Log in to fund reward</Link>
               </Button>
             ))}
+          {hasPin && (
+            <Button variant="secondary" style={{ height: 40 }} asChild>
+              <Link to="/map">
+                <MapPin size={16} /> View on map
+              </Link>
+            </Button>
+          )}
           {isOwner && flyer.status === "active" && (
             <Button
               variant="sage"
@@ -98,7 +107,7 @@ export function FlyerDetailPage() {
               disabled={updateFlyer.isPending}
               onClick={() => void updateFlyer.mutateAsync({ status: "resolved" })}
             >
-              Mark reunited / adopted
+              {emergency ? "Mark reunited" : found ? "Mark returned home" : "Mark adopted"}
             </Button>
           )}
           {isOwner && (
@@ -130,7 +139,7 @@ export function FlyerDetailPage() {
                   {flyer.photo_url ? (
                     <img
                       src={flyer.photo_url}
-                      alt={`${flyer.pet.name} — ${emergency ? "lost pet" : "adoptable pet"} photo`}
+                      alt={`${flyer.pet.name} — ${emergency ? "lost pet" : found ? "found pet" : "adoptable pet"} photo`}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     />
                   ) : (
@@ -154,7 +163,7 @@ export function FlyerDetailPage() {
                 <StatusBadge status={flyer.status} />
               </div>
               <h1 className="t-h1" style={{ color: accent, fontSize: "clamp(32px, 4.5vw, 48px)" }}>
-                {emergency ? "Lost pet" : "Up for adoption"}: {flyer.pet.name}
+                {emergency ? "Lost pet" : found ? "Found pet" : "Up for adoption"}: {flyer.pet.name}
               </h1>
               <p className="t-lead">
                 {flyer.pet.species}
@@ -162,9 +171,9 @@ export function FlyerDetailPage() {
                 {flyer.pet.color ? ` · ${flyer.pet.color}` : ""}
                 {flyer.pet.age != null ? ` · ${flyer.pet.age} yr${flyer.pet.age === 1 ? "" : "s"}` : ""}
               </p>
-              {emergency && flyer.last_seen_location && (
+              {(emergency || found) && flyer.last_seen_location && (
                 <div>
-                  <p className="t-label">Last seen</p>
+                  <p className="t-label">{emergency ? "Last seen" : "Found at"}</p>
                   <p className="t-body" style={{ fontWeight: 600 }}>
                     {flyer.last_seen_location}
                     {flyer.last_seen_date ? ` — ${formatDate(flyer.last_seen_date)}` : ""}
@@ -173,7 +182,7 @@ export function FlyerDetailPage() {
               )}
               {flyer.distinctive_markings && (
                 <div>
-                  <p className="t-label">Distinctive markings</p>
+                  <p className="t-label">{found ? "Description" : "Distinctive markings"}</p>
                   <p className="t-body">{flyer.distinctive_markings}</p>
                 </div>
               )}
@@ -192,7 +201,7 @@ export function FlyerDetailPage() {
                 </p>
               )}
               <div style={{ borderTop: "1px solid var(--color-line)", paddingTop: 14, marginTop: 4 }}>
-                <p className="t-label">If found, contact</p>
+                <p className="t-label">{found ? "If this is your pet, contact" : "If found, contact"}</p>
                 <p className="t-body" style={{ fontWeight: 600 }}>
                   {flyer.contact_phone || "—"}
                   {flyer.contact_email ? ` · ${flyer.contact_email}` : ""}

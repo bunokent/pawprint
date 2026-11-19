@@ -22,10 +22,11 @@ test("registered user publishes a lost-pet flyer with a reward", async ({ page }
   expect((await uploadResp.json()).pet_classes).toContain("dog");
   await expect(page.getByRole("heading", { name: "Tell us about the pet" })).toBeVisible({ timeout: 60_000 });
 
-  // Step 2 — pet details. Species is auto-detected from the photo (dog.jpg → dog),
-  // so the species field is disabled and shows the detected value.
+  // Step 2 — pet details. Species is auto-detected from the photo (dog.jpg → dog)
+  // and shown as plain read-only text; breed/color may be prefilled by the
+  // classifier, so fill() replaces whatever detection put there.
   await page.locator("#pet-name").fill("Rex E2E");
-  await expect(page.locator("#pet-species")).toHaveValue("dog");
+  await expect(page.locator("#pet-species")).toHaveText("Dog");
   await page.locator("#pet-breed").fill("Mixed breed");
   await page.locator("#pet-color").fill("brown");
   await page.locator("#pet-age").fill("3");
