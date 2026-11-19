@@ -1,13 +1,20 @@
 import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
-type Mode = "emergency" | "outreach";
+type Mode = "emergency" | "found" | "outreach";
 
 export function ModeBadge({ mode, className }: { mode?: Mode } & HTMLAttributes<HTMLSpanElement>) {
   const emergency = mode === "emergency";
+  const found = mode === "found";
   return (
-    <span className={cn("badge", emergency ? "badge--emergency" : "badge--outreach", className)}>
-      {emergency ? "Lost — urgent" : mode === "outreach" ? "Adoptable" : "Flyer"}
+    <span
+      className={cn(
+        "badge",
+        emergency ? "badge--emergency" : found ? "badge--found" : "badge--outreach",
+        className,
+      )}
+    >
+      {emergency ? "Lost — urgent" : found ? "Found pet" : mode === "outreach" ? "Adoptable" : "Flyer"}
     </span>
   );
 }

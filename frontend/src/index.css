@@ -78,6 +78,8 @@ body {
 .btn--emergency:hover { background: var(--color-emergency-deep); box-shadow: var(--shadow-lift); }
 .btn--sage { background: var(--color-sage); color: #fff; }
 .btn--sage:hover { background: var(--color-sage-deep); box-shadow: var(--shadow-lift); }
+.btn--found { background: var(--color-terracotta); color: #fff; }
+.btn--found:hover { background: #b25a38; box-shadow: var(--shadow-lift); }
 .btn--secondary { background: transparent; color: var(--color-ink); border-color: var(--color-line); }
 .btn--secondary:hover { border-color: var(--color-ink); }
 .btn[disabled] { opacity: 0.55; cursor: not-allowed; transform: none; }
@@ -99,6 +101,7 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
   border-radius: 999px; font: 600 13px/1 var(--font-sans);
 }
 .badge--emergency { background: rgb(179 38 30 / 0.1); color: var(--color-emergency-deep); }
+.badge--found { background: rgb(201 111 74 / 0.16); color: #8a4a2b; }
 .badge--outreach { background: rgb(47 111 94 / 0.12); color: var(--color-sage-deep); }
 .badge--reward { background: var(--color-amber); color: #2b1a00; }
 .badge--neutral { background: var(--color-surface); color: var(--color-muted); }

@@ -4,13 +4,15 @@ import type { components } from "@/lib/api/schema";
 
 export type Flyer = components["schemas"]["Flyer"];
 export type FlyerList = { results: Flyer[]; next: string | null; previous: string | null };
-export type Mode = "emergency" | "outreach";
+export type Mode = "emergency" | "found" | "outreach";
 
 export interface FlyerCreateInput {
   pet_id: string;
   mode: Mode;
   last_seen_location?: string;
   last_seen_date?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
   distinctive_markings?: string;
   contact_phone?: string;
   contact_email?: string;
@@ -25,6 +27,7 @@ export const flyerKeys = {
     [...flyerKeys.all, "list", params] as const,
   detail: (id: string) => [...flyerKeys.all, "detail", id] as const,
   mine: ["flyers", "mine"] as const,
+  map: ["flyers", "map"] as const,
 };
 
 export const flyerListQuery = (params: { mode?: Mode; q?: string; cursor?: string }) =>
@@ -50,6 +53,13 @@ export const myFlyersQuery = () =>
   queryOptions({
     queryKey: flyerKeys.mine,
     queryFn: async () => (await api.get<FlyerList>("/flyers/mine")).data,
+  });
+
+/** Public pet-map pins: active lost/found flyers that carry lat/lng. */
+export const flyerMapQuery = () =>
+  queryOptions({
+    queryKey: flyerKeys.map,
+    queryFn: async () => (await api.get<Flyer[]>("/flyers/map")).data,
   });
 
 export function useCreateFlyer() {

@@ -154,8 +154,9 @@ describe("BuilderWizard", () => {
     });
     expect(await screen.findByRole("heading", { name: "Tell us about the pet" })).toBeInTheDocument();
 
-    // Step 2 — pet details
+    // Step 2 — pet details (breed/color are auto-prefilled from detection, so clear first)
     await user.type(screen.getByLabelText("Pet name"), "Bento");
+    await user.clear(screen.getByLabelText("Breed"));
     await user.type(screen.getByLabelText("Breed"), "Shiba Inu");
     await user.type(screen.getByLabelText("Personality tags"), "friendly, good with kids");
     await user.click(screen.getByRole("button", { name: "Continue" }));
@@ -197,7 +198,7 @@ describe("BuilderWizard", () => {
     expect(await screen.findByRole("heading", { name: "Tell us about the pet" })).toBeInTheDocument();
   });
 
-  it("keeps species editable when YOLO-World detects multiple standard species", async () => {
+  it("shows the detected species as plain read-only text (ambiguous cat+dog)", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     mswServer.use(
       http.post("*/api/pets/photos", () =>
@@ -210,6 +211,10 @@ describe("BuilderWizard", () => {
             pet_classes: ["cat", "dog"],
             detected_classes: ["cat", "dog"],
             max_confidence: 0.717,
+            breed: "",
+            breed_confidence: 0.0,
+            color: "",
+            color_confidence: 0.0,
           },
           { status: 201 },
         ),
@@ -220,13 +225,13 @@ describe("BuilderWizard", () => {
       target: { files: [new File(["img"], "ambiguous.jpg", { type: "image/jpeg" })] },
     });
     await screen.findByRole("heading", { name: "Tell us about the pet" });
-    const species = screen.getByLabelText("Species");
-    expect(species).toHaveValue("dog");
-    expect(species).toBeEnabled();
-    expect(screen.queryByText(/Species auto-detected/)).not.toBeInTheDocument();
+    // Plain read-only text — not a <select>, not editable.
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByTestId("species-value")).toHaveTextContent("Cat, Dog");
+    expect(screen.getByText("Auto detected: change photo to redetect")).toBeInTheDocument();
   });
 
-  it("uses the refined pet species name even when raw YOLO labels disagree", async () => {
+  it("shows the refined species name as read-only text even when raw YOLO labels disagree", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     mswServer.use(
       http.post("*/api/pets/photos", () =>
@@ -239,6 +244,10 @@ describe("BuilderWizard", () => {
             pet_classes: ["rabbit"],
             detected_classes: ["cat"],
             max_confidence: 0.85,
+            breed: "",
+            breed_confidence: 0.0,
+            color: "white",
+            color_confidence: 0.9,
           },
           { status: 201 },
         ),
@@ -249,10 +258,104 @@ describe("BuilderWizard", () => {
       target: { files: [new File(["img"], "rabbit.jpg", { type: "image/jpeg" })] },
     });
     await screen.findByRole("heading", { name: "Tell us about the pet" });
-    const species = screen.getByLabelText("Species");
-    expect(species).toHaveValue("other");
-    expect(species).toBeDisabled();
-    expect(screen.getByText(/Detected animal: Rabbit/)).toBeInTheDocument();
+    expect(screen.getByTestId("species-value")).toHaveTextContent("Rabbit");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("prefills breed & color with a High confidence badge and the helper tip", async () => {
+    useAuth.setState({ user: mockUser(), checked: true });
+    renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency" });
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: { files: [new File(["img"], "bento.jpg", { type: "image/jpeg" })] },
+    });
+    await screen.findByRole("heading", { name: "Tell us about the pet" });
+    // Default MSW upload: breed "Shiba Inu" @ 0.93, color "tan" @ 0.88 → prefilled.
+    expect(screen.getByLabelText("Breed")).toHaveValue("Shiba Inu");
+    expect(screen.getByLabelText("Color")).toHaveValue("tan");
+    expect(screen.getAllByText("High confidence")).toHaveLength(2);
+    expect(screen.getByTestId("autofill-tip")).toHaveTextContent(
+      "Auto-detected — change if not correct. Detection is not 100% accurate.",
+    );
+    // Fields stay editable.
+    expect(screen.getByLabelText("Breed")).toBeEnabled();
+    expect(screen.getByLabelText("Color")).toBeEnabled();
+  });
+
+  it("leaves breed & color blank with 'Not detected' when confidence is low (no guessing)", async () => {
+    useAuth.setState({ user: mockUser(), checked: true });
+    mswServer.use(
+      http.post("*/api/pets/photos", () =>
+        HttpResponse.json(
+          {
+            key: "pets/photos/unclear.jpg",
+            url: "http://localhost:8000/media/pets/photos/unclear.jpg",
+            thumb_key: "pets/photos/thumb_unclear.jpg",
+            thumb_url: "http://localhost:8000/media/pets/photos/unclear.jpg",
+            pet_classes: ["dog"],
+            detected_classes: ["dog"],
+            max_confidence: 0.9,
+            breed: "poodle",
+            breed_confidence: 0.41,
+            color: "brown",
+            color_confidence: 0.3,
+          },
+          { status: 201 },
+        ),
+      ),
+    );
+    renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency" });
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: { files: [new File(["img"], "unclear.jpg", { type: "image/jpeg" })] },
+    });
+    await screen.findByRole("heading", { name: "Tell us about the pet" });
+    expect(screen.getByLabelText("Breed")).toHaveValue("");
+    expect(screen.getByLabelText("Color")).toHaveValue("");
+    expect(screen.getByLabelText("Breed")).toHaveAttribute("placeholder", "Not detected");
+    expect(screen.getByLabelText("Color")).toHaveAttribute("placeholder", "Not detected");
+    expect(screen.getAllByText("Low confidence")).toHaveLength(2);
+    expect(screen.getByTestId("autofill-tip")).toBeInTheDocument();
+  });
+
+  it("re-running detection on a new photo updates the species text automatically", async () => {
+    useAuth.setState({ user: mockUser(), checked: true });
+    const user = userEvent.setup();
+    renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency" });
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: { files: [new File(["img"], "dog.jpg", { type: "image/jpeg" })] },
+    });
+    await screen.findByRole("heading", { name: "Tell us about the pet" });
+    expect(screen.getByTestId("species-value")).toHaveTextContent("Dog");
+
+    // Back to the photo step, upload a different photo (now detected as cat).
+    await user.click(screen.getByRole("button", { name: "← Back" }));
+    await screen.findByRole("heading", { name: "Report a lost pet" });
+    mswServer.use(
+      http.post("*/api/pets/photos", () =>
+        HttpResponse.json(
+          {
+            key: "pets/photos/cat.jpg",
+            url: "http://localhost:8000/media/pets/photos/cat.jpg",
+            thumb_key: "pets/photos/thumb_cat.jpg",
+            thumb_url: "http://localhost:8000/media/pets/photos/thumb_cat.jpg",
+            pet_classes: ["cat"],
+            detected_classes: ["cat"],
+            max_confidence: 0.9,
+            breed: "",
+            breed_confidence: 0.0,
+            color: "black",
+            color_confidence: 0.95,
+          },
+          { status: 201 },
+        ),
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: { files: [new File(["img"], "cat.jpg", { type: "image/jpeg" })] },
+    });
+    await screen.findByRole("heading", { name: "Tell us about the pet" });
+    expect(screen.getByTestId("species-value")).toHaveTextContent("Cat");
+    // Color re-prefilled from the new photo's detection.
+    expect(screen.getByLabelText("Color")).toHaveValue("black");
   });
 
   it("blocks publish when the reward is enabled but empty", async () => {

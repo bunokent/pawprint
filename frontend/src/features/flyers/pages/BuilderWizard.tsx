@@ -1,4 +1,4 @@
-import { startTransition, useActionState, useOptimistic, useState } from "react";
+import { startTransition, useActionState, useEffect, useOptimistic, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,26 +9,41 @@ import { Button } from "@/components/ui/button";
 import { FieldShell, Input, Textarea } from "@/components/ui/field";
 import { ErrorBox } from "@/components/ui/feedback";
 import { PhotoUpload } from "@/features/pets/components/PhotoUpload";
-import { useCreatePet, type Pet, type PhotoUploadResult } from "@/features/pets/api";
+import { useCreatePet, HIGH_CONFIDENCE, type Pet, type PhotoUploadResult } from "@/features/pets/api";
 import { useCreateFlyer, type Flyer, type Mode } from "@/features/flyers/api";
 import { FlyerCard } from "@/components/FlyerCard";
 
 const SPECIES = ["dog", "cat", "bird", "horse", "other"] as const;
 
 // Map YOLO-World's open-vocabulary labels to our standard species values.
-// Ambiguous multi-species detections stay editable; expanded animals use "other".
+// Expanded animals (lion, rabbit, …) use "other"; ambiguous multi-species
+// detections fall back to the first standard match.
 type Species = (typeof SPECIES)[number];
 function detectedSpecies(detectedClasses: string[]): Species | null {
   const labels = new Set(detectedClasses.map((label) => label.toLowerCase()));
   const standardMatches = SPECIES.slice(0, 4).filter((species) => labels.has(species));
   if (standardMatches.length === 1) return standardMatches[0];
-  if (standardMatches.length > 1) return null;
+  if (standardMatches.length > 1) return standardMatches[0];
   return detectedClasses.length > 0 ? "other" : null;
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Prefill only confident detections — below the threshold the field stays blank. */
+function prefill(value: string | undefined, confidence: number | undefined): string {
+  if (!value || (confidence ?? 0) < HIGH_CONFIDENCE) return "";
+  return value;
+}
+
+function confidenceBadge(confidence: number | undefined): { label: string; tone: string } | null {
+  if (confidence === undefined) return null;
+  return confidence >= HIGH_CONFIDENCE
+    ? { label: "High confidence", tone: "badge--outreach" }
+    : { label: "Low confidence", tone: "badge--neutral" };
 }
 
 const petSchema = z.object({
   name: z.string().min(1, "Give the pet a name.").max(120),
-  species: z.enum(SPECIES),
   breed: z.string().max(120).optional().or(z.literal("")),
   color: z.string().max(120).optional().or(z.literal("")),
   age: z.string().regex(/^\d{1,2}$/, "Age in years (up to 2 digits).").optional().or(z.literal("")),
@@ -234,31 +249,38 @@ function StepPet({
   const createPet = useCreatePet();
   // Prefer the CLIP-refined species names; fall back to raw YOLO-World labels.
   const detectedLabels = photo.pet_classes?.length ? photo.pet_classes : photo.detected_classes;
-  const detectedAnimal = detectedLabels[0];
+  const speciesText = detectedLabels.length > 0 ? detectedLabels.map(capitalize).join(", ") : "Not detected";
+  const autoSpecies = (detectedSpecies(detectedLabels) ?? "dog") as Species;
   const form = useForm<PetValues>({
     resolver: zodResolver(petSchema),
     defaultValues: {
       name: "",
-      species: detectedSpecies(detectedLabels) ?? "dog",
-      breed: "",
-      color: "",
+      breed: prefill(photo.breed, photo.breed_confidence),
+      color: prefill(photo.color, photo.color_confidence),
       age: "",
       temperament_tags: "",
     },
   });
-  const autoSpecies = detectedSpecies(detectedLabels);
-  const speciesDisabled = Boolean(autoSpecies);
+  // Re-running detection on a new photo re-prefills breed & color automatically.
+  useEffect(() => {
+    form.setValue("breed", prefill(photo.breed, photo.breed_confidence));
+    form.setValue("color", prefill(photo.color, photo.color_confidence));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photo.key]);
+  const breedBadge = confidenceBadge(photo.breed_confidence);
+  const colorBadge = confidenceBadge(photo.color_confidence);
+  const showAutofillTip = Boolean(photo.breed || photo.color);
   const [state, submit, pending] = useActionState(async (_prev: StepState, values: PetValues): Promise<StepState> => {
     try {
       const pet = await createPet.mutateAsync({
         name: values.name.trim(),
-        species: (speciesDisabled ? autoSpecies : values.species) as Species,
+        species: autoSpecies,
         breed: values.breed || undefined,
         color: values.color || undefined,
         age: values.age ? Number(values.age) : null,
         temperament_tags: parseTags(values.temperament_tags ?? ""),
         photo_path: photo.key,
-        status: mode === "emergency" ? "lost" : "adoptable",
+        status: mode === "emergency" ? "lost" : mode === "found" ? "found" : "adoptable",
       });
       onDone(pet);
       return { error: null };
@@ -280,19 +302,10 @@ function StepPet({
           <Input id="pet-name" autoComplete="off" aria-invalid={Boolean(form.formState.errors.name)} {...form.register("name")} />
         </FieldShell>
         <div className="split-2" style={{ gap: 16 }}>
-          <FieldShell label="Species" htmlFor="pet-species" error={form.formState.errors.species?.message}>
-            <select id="pet-species" className="select" {...form.register("species")} disabled={speciesDisabled}>
-              {SPECIES.map((s) => (
-                <option key={s} value={s} disabled={speciesDisabled && s !== autoSpecies}>
-                  {speciesDisabled && s === autoSpecies ? `Auto-detected: ${s.charAt(0).toUpperCase() + s.slice(1)}` : s.charAt(0).toUpperCase() + s.slice(1)}
-                </option>
-              ))}
-            </select>
-            {speciesDisabled && (
-              <p className="t-small" style={{ color: "var(--color-muted)", marginTop: 4 }}>
-                Detected animal: {detectedAnimal ? detectedAnimal.charAt(0).toUpperCase() + detectedAnimal.slice(1) : "unknown"} ({autoSpecies}). Change the photo to re-detect.
-              </p>
-            )}
+          <FieldShell label="Species" htmlFor="pet-species" hint="Auto detected: change photo to redetect">
+            <p id="pet-species" data-testid="species-value" className="t-body" style={{ fontWeight: 600, padding: "10px 0" }}>
+              {speciesText}
+            </p>
           </FieldShell>
           <FieldShell label="Age (years)" htmlFor="pet-age" error={form.formState.errors.age?.message}>
             <Input id="pet-age" inputMode="numeric" aria-invalid={Boolean(form.formState.errors.age)} {...form.register("age")} />
@@ -300,12 +313,23 @@ function StepPet({
         </div>
         <div className="split-2" style={{ gap: 16 }}>
           <FieldShell label="Breed" htmlFor="pet-breed" error={form.formState.errors.breed?.message}>
-            <Input id="pet-breed" autoComplete="off" {...form.register("breed")} />
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Input id="pet-breed" autoComplete="off" placeholder="Not detected" aria-invalid={Boolean(form.formState.errors.breed)} {...form.register("breed")} />
+              {breedBadge && <span className={`badge ${breedBadge.tone}`}>{breedBadge.label}</span>}
+            </div>
           </FieldShell>
           <FieldShell label="Color" htmlFor="pet-color" error={form.formState.errors.color?.message}>
-            <Input id="pet-color" autoComplete="off" {...form.register("color")} />
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Input id="pet-color" autoComplete="off" placeholder="Not detected" aria-invalid={Boolean(form.formState.errors.color)} {...form.register("color")} />
+              {colorBadge && <span className={`badge ${colorBadge.tone}`}>{colorBadge.label}</span>}
+            </div>
           </FieldShell>
         </div>
+        {showAutofillTip && (
+          <p className="t-small" data-testid="autofill-tip" style={{ color: "var(--color-muted)" }}>
+            Auto-detected — change if not correct. Detection is not 100% accurate.
+          </p>
+        )}
         <FieldShell
           label="Personality tags"
           htmlFor="pet-tags"

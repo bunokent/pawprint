@@ -12,7 +12,15 @@ export interface PhotoUploadResult {
   pet_classes: string[];
   detected_classes: string[];
   max_confidence: number;
+  /** CLIP breed/color classifier readout (YOLO handles detection only). */
+  breed?: string;
+  breed_confidence?: number;
+  color?: string;
+  color_confidence?: number;
 }
+
+/** Confidence at/above which an auto-detected breed/color is prefilled (else blank). */
+export const HIGH_CONFIDENCE = 0.8;
 
 export interface PetCreateInput {
   name: string;
