@@ -5,7 +5,7 @@ import io
 import pytest
 from PIL import Image
 
-from apps.vision.dto import DetectionResult
+from apps.vision.dto import AttributeDetection, DetectionResult
 from apps.vision.models import PetDetectionLog
 
 pytestmark = pytest.mark.django_db
@@ -25,6 +25,11 @@ def _mock_detection_pass(monkeypatch):
     monkeypatch.setattr(
         "apps.pets.services.PetPhotoService.detection.validate_pet_image", lambda b: result
     )
+    attributes = AttributeDetection(breed="shiba inu", breed_confidence=0.93, color="tan", color_confidence=0.88)
+    monkeypatch.setattr(
+        "apps.vision.services.PetAttributeService.classify_attributes",
+        lambda image, pet_classes: attributes,
+    )
     return result
 
 
@@ -39,6 +44,11 @@ def test_upload_pet_photo_success(auth_client, monkeypatch):
     assert body["pet_classes"] == ["dog"]
     assert body["key"].startswith("pets/photos/")
     assert body["url"]
+    # Breed/color classifier readout is included for the auto-fill fields.
+    assert body["breed"] == "shiba inu"
+    assert body["breed_confidence"] == pytest.approx(0.93)
+    assert body["color"] == "tan"
+    assert body["color_confidence"] == pytest.approx(0.88)
     # detection logged as passed
     assert PetDetectionLog.objects.filter(passed=True).count() == 1
 
@@ -51,6 +61,11 @@ def test_upload_non_pet_photo_422(auth_client, monkeypatch):
 
     monkeypatch.setattr(
         "apps.pets.services.PetPhotoService.detection.validate_pet_image", fail
+    )
+    # The breed/color classifier must NOT run for a rejected (non-pet) photo.
+    classifier = monkeypatch.setattr(
+        "apps.vision.services.PetAttributeService.classify_attributes",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("classifier ran on rejected photo")),
     )
     resp = auth_client.post(
         "/api/pets/photos", {"photo": io.BytesIO(_png_bytes((30, 30, 200))), "name": "car.png"},

@@ -9,7 +9,7 @@ from django.db import transaction
 
 from apps.common import storage
 from apps.common.exceptions import NoPetDetectedError
-from apps.vision.services import PetDetectionService
+from apps.vision.services import PetAttributeService, PetDetectionService, load_image
 
 from .models import Pet
 
@@ -23,6 +23,10 @@ class UploadedPhoto:
     pet_classes: list[str]
     detected_classes: list[str]
     max_confidence: float
+    breed: str = ""
+    breed_confidence: float = 0.0
+    color: str = ""
+    color_confidence: float = 0.0
 
 
 class PetService:
@@ -61,6 +65,9 @@ class PetPhotoService:
         cls.detection.record_detection(user, detection, passed=True)
 
         clean = cls.detection.strip_exif(image_bytes)
+        # Breed/color attributes come from the separate CLIP classifier (YOLO handles
+        # detection only); the UI blanks anything below its confidence threshold.
+        attributes = PetAttributeService.classify_attributes(load_image(image_bytes), detection.pet_classes)
         photo_id = uuid.uuid4()
         key = f"pets/photos/{user.pk}/{photo_id}.jpg"
         thumb_key = f"pets/photos/{user.pk}/{photo_id}_thumb.jpg"
@@ -76,6 +83,10 @@ class PetPhotoService:
             pet_classes=detection.pet_classes,
             detected_classes=detection.detected_classes,
             max_confidence=detection.max_confidence,
+            breed=attributes.breed,
+            breed_confidence=attributes.breed_confidence,
+            color=attributes.color,
+            color_confidence=attributes.color_confidence,
         )
 
 

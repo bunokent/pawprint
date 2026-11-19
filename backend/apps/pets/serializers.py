@@ -46,3 +46,7 @@ class PhotoUploadResponseSerializer(serializers.Serializer):
     pet_classes = serializers.ListField(child=serializers.CharField())
     detected_classes = serializers.ListField(child=serializers.CharField())
     max_confidence = serializers.FloatField()
+    breed = serializers.CharField(allow_blank=True)
+    breed_confidence = serializers.FloatField()
+    color = serializers.CharField(allow_blank=True)
+    color_confidence = serializers.FloatField()

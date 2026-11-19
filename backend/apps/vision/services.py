@@ -19,7 +19,7 @@ from PIL import Image, ImageOps
 
 from apps.common.exceptions import NoPetDetectedError
 
-from .dto import DetectionResult
+from .dto import AttributeDetection, DetectionResult
 
 if TYPE_CHECKING:
     from ultralytics import YOLOWorld
@@ -177,6 +177,15 @@ _CLIP_GATE_TEXT_FEATS: Any | None = None
 _CLIP_LABEL_RANGES: dict[str, tuple[int, int]] = {}
 
 
+def load_image(image_bytes: bytes) -> Image.Image:
+    """Open upload bytes EXIF-orientation-normalized and converted to RGB."""
+    image = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes)))
+    image.load()
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    return image
+
+
 def _resolve_world_model_path(path: str) -> str:
     """Return a YOLO-World checkpoint path, replacing stale non-World paths."""
     if "world" not in Path(path).name.lower():
@@ -324,10 +333,7 @@ class PetDetectionService:
         NoPetDetectedError when neither YOLO-World nor the CLIP animal gate finds an animal.
         """
         model = _get_model()
-        image = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes)))
-        image.load()
-        if image.mode != "RGB":
-            image = image.convert("RGB")
+        image = load_image(image_bytes)
         results = model.predict(
             image,
             conf=settings.YOLO_CONFIDENCE_THRESHOLD,
@@ -407,4 +413,115 @@ class PetDetectionService:
             detected_classes=detection.detected_classes,
             max_confidence=detection.max_confidence,
             passed=passed,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Breed & color attribute classifier — CLIP zero-shot over attribute label sets.
+# YOLO-World handles detection only; these prompts name the breed (dog/cat) and
+# the coat color. Confidence is the softmax probability of the top label; the
+# caller decides whether it is high enough to prefill (never guess below it).
+# ---------------------------------------------------------------------------
+DOG_BREEDS: tuple[str, ...] = (
+    "labrador retriever", "golden retriever", "german shepherd", "shiba inu",
+    "poodle", "beagle", "french bulldog", "bulldog", "chihuahua", "dachshund",
+    "siberian husky", "pomeranian", "welsh corgi", "pug", "rottweiler", "boxer",
+    "aspin", "mixed breed",
+)
+CAT_BREEDS: tuple[str, ...] = (
+    "persian", "siamese", "maine coon", "bengal", "ragdoll", "british shorthair",
+    "scottish fold", "sphynx", "american shorthair", "domestic shorthair", "mixed breed",
+)
+ANIMAL_COLORS: tuple[str, ...] = (
+    "black", "white", "brown", "tan", "cream", "orange", "gray", "golden",
+    "red", "brindle", "tricolor", "calico",
+)
+# key -> (labels, prompt templates; {} is the label)
+ATTRIBUTE_LABEL_SETS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "dog_breed": (DOG_BREEDS, ("a photo of a {} dog", "a close-up photo of a {} dog", "a clear photo of a pet {} dog")),
+    "cat_breed": (CAT_BREEDS, ("a photo of a {} cat", "a close-up photo of a {} cat", "a clear photo of a pet {} cat")),
+    "color": (ANIMAL_COLORS, ("a photo of a {} animal", "a photo of a {} pet", "a close-up photo of a {} colored animal")),
+}
+
+_ATTR_TEXT_FEATS: dict[str, Any] = {}
+_ATTR_RANGES: dict[str, dict[str, tuple[int, int]]] = {}
+_ATTR_LOCK = Lock()
+
+
+def _build_attr_text_feats(clip_model: Any) -> tuple[dict[str, Any], dict[str, dict[str, tuple[int, int]]]]:
+    """Encode CLIP text features for every attribute label set (per label prompt ranges)."""
+    import torch
+
+    feats: dict[str, Any] = {}
+    ranges: dict[str, dict[str, tuple[int, int]]] = {}
+    for key, (labels, templates) in ATTRIBUTE_LABEL_SETS.items():
+        prompts: list[str] = []
+        label_ranges: dict[str, tuple[int, int]] = {}
+        for label in labels:
+            start = len(prompts)
+            prompts.extend(template.format(label) for template in templates)
+            label_ranges[label] = (start, len(prompts))
+        with torch.no_grad():
+            feats[key] = _normalize_torch(clip_model.encode_text(clip_model.tokenize(prompts)))
+        ranges[key] = label_ranges
+    return feats, ranges
+
+
+def _get_attr_text_feats() -> tuple[dict[str, Any], dict[str, dict[str, tuple[int, int]]]]:
+    """Lazily build and cache the attribute text features once per process."""
+    global _ATTR_TEXT_FEATS, _ATTR_RANGES
+    if not _ATTR_TEXT_FEATS:
+        with _ATTR_LOCK:
+            if not _ATTR_TEXT_FEATS:
+                _ATTR_TEXT_FEATS, _ATTR_RANGES = _build_attr_text_feats(_get_clip_model())
+    return _ATTR_TEXT_FEATS, _ATTR_RANGES
+
+
+def _attr_clip_rank(image: Any, key: str, clip_model: Any | None = None) -> list[tuple[str, float]]:
+    """Rank one attribute label set for an image with CLIP (probabilities)."""
+    import torch
+
+    model = clip_model or _get_clip_model()
+    if clip_model is None:
+        text_feats_all, ranges_all = _get_attr_text_feats()
+    else:
+        text_feats_all, ranges_all = _build_attr_text_feats(model)
+    text_feats = text_feats_all[key]
+    ranges = ranges_all[key]
+    with torch.no_grad():
+        image_feat = model.encode_image(image)
+        logits = (100.0 * image_feat @ text_feats.T).squeeze(0)
+    scores = [(label, float(logits[start:end].mean().item())) for label, (start, end) in ranges.items()]
+    probs = torch.softmax(torch.tensor([score for _, score in scores]), dim=0)
+    ranked = sorted(zip([label for label, _ in scores], probs.tolist(), strict=True), key=lambda item: -item[1])
+    return [(label, float(prob)) for label, prob in ranked]
+
+
+class PetAttributeService:
+    """Zero-shot breed/color naming for an already-gated pet photo.
+
+    Detection stays with YOLO-World (`PetDetectionService`); this second stage only
+    reads attributes off the same CLIP encoder. Species without a breed list (rabbit,
+    bird, fish, …) get `breed=""` with confidence 0.0 — we never guess a breed there.
+    """
+
+    @staticmethod
+    def classify_attributes(image: Image.Image, pet_classes: list[str], clip_model: Any | None = None) -> AttributeDetection:
+        labels = {label.strip().lower() for label in pet_classes}
+        if "dog" in labels:
+            breed_key = "dog_breed"
+        elif "cat" in labels:
+            breed_key = "cat_breed"
+        else:
+            breed_key = None
+        if breed_key is not None:
+            breed, breed_confidence = _attr_clip_rank(image, breed_key, clip_model)[0]
+        else:
+            breed, breed_confidence = "", 0.0
+        color, color_confidence = _attr_clip_rank(image, "color", clip_model)[0]
+        return AttributeDetection(
+            breed=breed,
+            breed_confidence=breed_confidence,
+            color=color,
+            color_confidence=color_confidence,
         )

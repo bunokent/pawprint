@@ -11,3 +11,18 @@ class DetectionResult:
     pet_classes: list[str] = field(default_factory=list)
     detected_classes: list[str] = field(default_factory=list)
     max_confidence: float = 0.0
+
+
+@dataclass(frozen=True)
+class AttributeDetection:
+    """CLIP zero-shot breed/color readout for an already-gated pet photo.
+
+    YOLO-World handles detection only — breed and color come from this separate
+    classifier. `breed` is empty with confidence 0.0 for species without a breed
+    list (we never guess a breed for a rabbit or a fish).
+    """
+
+    breed: str = ""
+    breed_confidence: float = 0.0
+    color: str = ""
+    color_confidence: float = 0.0
