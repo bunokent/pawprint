@@ -193,6 +193,12 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   plus `apps.notifications` alerts to both sides, pushed over `ws/notifications/`
   (per-user group; ASGI wraps websockets in `AuthMiddlewareStack`). `GET /api/flyers/map`
   annotates each pin with its `match` counterpart.
+  - The embedding is also cached eagerly in `PetService.create_pet` when the pet has a photo,
+    so matching never depends on re-downloading the photo mid-task. `PetMatchService.ensure_embedding`
+    is fault-tolerant: a photo that cannot be read/embedded (missing object, storage or model
+    error) is logged and skipped — one broken photo never aborts matching for the other pairs,
+    and `manage.py backfill_matches` re-runs matching for all active lost/found flyers to repair
+    data created before a fix (idempotent: unique pair constraint, notify only on first create).
 - Flyer templates (`templates/flyers/{emergency,outreach}.html`) and the on-screen
   `.print-sheet` follow the `taste` skill print typography (`@page { size: A4; margin: 0 }`,
   `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
@@ -788,11 +794,32 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   e2e ⑨ updated for the nameless found flow. `schema.yml` regenerated + `npm run typegen`.
   Verified: **163 pytest passed @ 94.22%**, **124 Vitest @ 89.91/82.62/86.17/90.68**,
   **11/11 Playwright** (10 journeys), `ruff` + `mypy` clean, `tsc -b` + `vite build` green.
+- **Phase 32** — Fixed lost/found match notifications + centred map pin photos.
+  Backend: `PetMatchService.ensure_embedding` was not fault-tolerant — one counterpart photo
+  that failed to re-download from storage (e.g. a stale key) raised and killed the whole
+  `match_flyer` task, so **no** `PetMatch`/notification was ever created (reproduced on the
+  dev DB: 0 matches, 0 notifications, embeddings missing). Now storage/CLIP errors are caught
+  and logged per pet, the embedding is also cached eagerly in `PetService.create_pet`, and
+  `manage.py backfill_matches` (`PetMatchService.match_all_active_flyers`) re-runs matching
+  for all active lost/found flyers idempotently — run once on the dev data it produced the
+  expected same-photo match (score 1.000) + both notifications, and `GET /api/flyers/map`
+  shows the `match` halo on both pins. `NotificationService.notify_match` falls back to
+  "a found pet"/"your lost pet" for unnamed found pets. New tests: storage-error resilience,
+  skip-broken-but-still-match, `backfill_matches` idempotency, eager embedding on pet create.
+  Frontend map: Leaflet's own marker CSS (`.leaflet-marker-pane img { width: auto }`,
+  specificity 0,2,1) outranked `.pp-pin__ring img { width: 100% }`, so pin photos rendered at
+  their intrinsic aspect ratio (33×50) instead of filling the circle — added
+  `.leaflet-container .leaflet-marker-pane …` scoped overrides (width/height 100%,
+  `object-fit: cover; object-position: center`) for pin and stack-card images, verified live
+  (photos now fill the 56 px circle, centred); tapping a pin also `panTo`s it into view.
+  Tests: leaflet-scoped CSS assertion in `maps.test.ts`, `panTo` assertion in
+  `PetMapPage.test.tsx`. Verified: **168 pytest passed @ 94.60%**,
+  **125 Vitest** (coverage exit 0; rewards 100%), `tsc -b` clean.
 
-**Final status:** backend **163 passed @ 94.22%** (100% flyers/services, notifications
+**Final status:** backend **168 passed @ 94.60%** (100% flyers/services, notifications
 selectors/serializers/views);
-frontend **124 vitest tests** @ 89.91/82.62/86.17/90.68 + **11 Playwright tests
-green** (10 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
+frontend **125 vitest tests** @ 89.93/82.62/86.17/90.71 + Playwright journeys
+green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
 `npm run docs:pdf` regenerated.
