@@ -586,6 +586,84 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/notifications:
+    get:
+      operationId: notifications_retrieve
+      description: GET /api/notifications — latest notifications + unread count (auth
+        only).
+      tags:
+      - notifications
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+          description: ''
+  /api/notifications/:
+    get:
+      operationId: notifications_retrieve_2
+      description: GET /api/notifications — latest notifications + unread count (auth
+        only).
+      tags:
+      - notifications
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+          description: ''
+  /api/notifications/read:
+    post:
+      operationId: notifications_read_create
+      description: POST /api/notifications/read — mark all (or the given ids) as read.
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRead'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NotificationRead'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NotificationRead'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/notificationsread:
+    post:
+      operationId: notificationsread_create
+      description: POST /api/notifications/read — mark all (or the given ids) as read.
+      tags:
+      - notificationsread
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRead'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NotificationRead'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NotificationRead'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/pets:
     post:
       operationId: pets_create
@@ -857,6 +935,11 @@ components:
         export_pdf_url:
           type: string
           readOnly: true
+        match:
+          allOf:
+          - $ref: '#/components/schemas/FlyerMatch'
+          nullable: true
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -872,10 +955,30 @@ components:
       - export_pdf_url
       - export_png_url
       - id
+      - match
       - pet
       - photo_url
       - status
       - updated_at
+    FlyerMatch:
+      type: object
+      description: Vision-match counterpart of a flyer pin (lost <-> found).
+      properties:
+        flyer_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+        pet_name:
+          type: string
+        score:
+          type: number
+          format: double
+      required:
+      - flyer_id
+      - mode
+      - pet_name
+      - score
     FlyerStatusEnum:
       enum:
       - draft
@@ -905,6 +1008,16 @@ components:
           type: string
       required:
       - redirect_uri
+    KindEnum:
+      enum:
+      - match_found
+      - match_lost
+      - system
+      type: string
+      description: |-
+        * `match_found` - Possible match for your lost pet
+        * `match_lost` - Your found pet may be someone's lost pet
+        * `system` - System
     Login:
       type: object
       properties:
@@ -928,6 +1041,63 @@ components:
         * `emergency` - Emergency (lost pet)
         * `found` - Found pet
         * `outreach` - Outreach (adoption)
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/KindEnum'
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        body:
+          type: string
+          readOnly: true
+        link:
+          type: string
+          readOnly: true
+        read_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - body
+      - created_at
+      - id
+      - kind
+      - link
+      - read_at
+      - title
+    NotificationList:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        unread_count:
+          type: integer
+      required:
+      - results
+      - unread_count
+    NotificationRead:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            format: uuid
     PaginatedFlyerList:
       type: object
       required:

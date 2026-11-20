@@ -35,6 +35,9 @@ class Pet(models.Model):
     temperament_tags = models.JSONField(default=list, blank=True)
     health_tags = models.JSONField(default=list, blank=True)
     photo_path = models.CharField(max_length=512, blank=True)
+    # CLIP ViT-B/32 image embedding of the pet photo (list of 512 floats), cached at
+    # match time — used to compare found photos against lost ones (PetMatch).
+    photo_embedding = models.JSONField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.ADOPTABLE)
     # Materialized full-text search vector over (name, breed, color) — GIN indexed.
     search_vector = SearchVectorField(null=True, editable=False)

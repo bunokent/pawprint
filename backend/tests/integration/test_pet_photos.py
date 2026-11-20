@@ -63,7 +63,7 @@ def test_upload_non_pet_photo_422(auth_client, monkeypatch):
         "apps.pets.services.PetPhotoService.detection.validate_pet_image", fail
     )
     # The breed/color classifier must NOT run for a rejected (non-pet) photo.
-    classifier = monkeypatch.setattr(
+    monkeypatch.setattr(
         "apps.vision.services.PetAttributeService.classify_attributes",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("classifier ran on rejected photo")),
     )

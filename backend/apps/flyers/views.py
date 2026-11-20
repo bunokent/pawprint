@@ -102,7 +102,28 @@ class FlyerMapView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request: Request) -> Response:
-        return Response(FlyerSerializer(list_map_flyers(), many=True).data)
+        flyers = list(list_map_flyers())
+        # One extra query: vision matches for these flyers (drives the map halo).
+        from django.db.models import Q
+
+        from apps.vision.models import PetMatch
+
+        ids = {f.pk for f in flyers}
+        matches: dict[str, dict] = {}
+        if ids:
+            rows = PetMatch.objects.filter(
+                Q(lost_flyer_id__in=ids) | Q(found_flyer_id__in=ids)
+            ).select_related("lost_flyer__pet", "found_flyer__pet")
+            for m in rows:
+                for flyer_id, other in ((m.lost_flyer_id, m.found_flyer), (m.found_flyer_id, m.lost_flyer)):
+                    if flyer_id in ids:
+                        matches[str(flyer_id)] = {
+                            "flyer_id": str(other.pk),
+                            "mode": other.mode,
+                            "pet_name": other.pet.name,
+                            "score": m.score,
+                        }
+        return Response(FlyerSerializer(flyers, many=True, context={"matches": matches}).data)
 
 
 class MyFlyersView(generics.ListAPIView):

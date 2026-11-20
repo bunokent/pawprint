@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "apps.rewards",
     "apps.webhooks",
     "apps.vision",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [
@@ -244,6 +245,10 @@ FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")
 # ---------------------------------------------------------------------------
 YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL_PATH", "yolov8s-worldv2.pt")
 YOLO_CONFIDENCE_THRESHOLD = float(os.environ.get("YOLO_CONFIDENCE_THRESHOLD", "0.20"))
+
+# CLIP image-embedding cosine similarity at/above which a found photo is
+# considered a possible match for a lost pet photo (notifications + map halo).
+PET_MATCH_SIMILARITY_THRESHOLD = float(os.environ.get("PET_MATCH_SIMILARITY_THRESHOLD", "0.80"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

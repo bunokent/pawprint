@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import logging
+import math
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any
@@ -440,7 +441,10 @@ ANIMAL_COLORS: tuple[str, ...] = (
 ATTRIBUTE_LABEL_SETS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "dog_breed": (DOG_BREEDS, ("a photo of a {} dog", "a close-up photo of a {} dog", "a clear photo of a pet {} dog")),
     "cat_breed": (CAT_BREEDS, ("a photo of a {} cat", "a close-up photo of a {} cat", "a clear photo of a pet {} cat")),
-    "color": (ANIMAL_COLORS, ("a photo of a {} animal", "a photo of a {} pet", "a close-up photo of a {} colored animal")),
+    "color": (
+        ANIMAL_COLORS,
+        ("a photo of a {} animal", "a photo of a {} pet", "a close-up photo of a {} colored animal"),
+    ),
 }
 
 _ATTR_TEXT_FEATS: dict[str, Any] = {}
@@ -506,7 +510,9 @@ class PetAttributeService:
     """
 
     @staticmethod
-    def classify_attributes(image: Image.Image, pet_classes: list[str], clip_model: Any | None = None) -> AttributeDetection:
+    def classify_attributes(
+        image: Image.Image, pet_classes: list[str], clip_model: Any | None = None
+    ) -> AttributeDetection:
         labels = {label.strip().lower() for label in pet_classes}
         if "dog" in labels:
             breed_key = "dog_breed"
@@ -525,3 +531,102 @@ class PetAttributeService:
             color=color,
             color_confidence=color_confidence,
         )
+
+
+# ---------------------------------------------------------------------------
+# Photo embeddings + lost/found matching — the same CLIP encoder, used
+# image-to-image: cosine similarity between a found photo and each active lost
+# photo decides "possible match" (notifications + map halo). Embeddings are
+# cached on Pet.photo_embedding.
+# ---------------------------------------------------------------------------
+
+
+def clip_image_embedding(image: Image.Image, clip_model: Any | None = None) -> list[float]:
+    """Normalized CLIP ViT-B/32 image embedding as a plain list of floats."""
+    import torch
+
+    model = clip_model or _get_clip_model()
+    with torch.no_grad():
+        feat = _normalize_torch(model.encode_image(image)).squeeze(0)
+    return [round(float(v), 6) for v in feat.tolist()]
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity of two equal-length vectors (pure Python — no torch)."""
+    if len(a) != len(b) or not a:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+class PetMatchService:
+    """Compares a flyer's pet photo against the opposite mode's active flyers."""
+
+    @staticmethod
+    def ensure_embedding(pet) -> list[float] | None:  # noqa: ANN001, ANN202
+        """Return the pet's CLIP embedding, computing + caching it from the stored photo.
+
+        Under PAWPRINT_TESTING the storage/CLIP path is skipped (tests set
+        photo_embedding explicitly) so the suite stays hermetic and fast.
+        """
+        if pet.photo_embedding:
+            return pet.photo_embedding
+        if not pet.photo_path or settings.TESTING:
+            return None
+        from apps.common import storage
+
+        raw = storage.read_bytes(pet.photo_path)
+        embedding = clip_image_embedding(load_image(raw))
+        pet.photo_embedding = embedding
+        pet.save(update_fields=["photo_embedding"])
+        return embedding
+
+    @staticmethod
+    def match_flyer(flyer_id: str) -> list:  # noqa: ANN401
+        """Match one flyer's pet photo against active flyers of the opposite mode.
+
+        Creates PetMatch rows (and notifications, once per pair) for every pair
+        whose embedding cosine similarity >= PET_MATCH_SIMILARITY_THRESHOLD.
+        """
+        import uuid as _uuid
+
+        from apps.flyers.models import Flyer
+        from apps.notifications.services import NotificationService
+
+        from .models import PetMatch
+
+        flyer = Flyer.objects.select_related("pet").filter(pk=_uuid.UUID(str(flyer_id))).first()
+        if flyer is None or flyer.mode not in (Flyer.Mode.EMERGENCY, Flyer.Mode.FOUND):
+            return []
+        embedding = PetMatchService.ensure_embedding(flyer.pet)
+        if not embedding:
+            return []
+        counterpart_mode = Flyer.Mode.FOUND if flyer.mode == Flyer.Mode.EMERGENCY else Flyer.Mode.EMERGENCY
+        counterparts = (
+            Flyer.objects.select_related("pet", "pet__owner", "creator")
+            .filter(status=Flyer.Status.ACTIVE, mode=counterpart_mode)
+            .exclude(pet_id=flyer.pet_id)
+        )
+        matches = []
+        for other in counterparts:
+            other_embedding = PetMatchService.ensure_embedding(other.pet)
+            if not other_embedding:
+                continue
+            score = cosine_similarity(embedding, other_embedding)
+            if score < settings.PET_MATCH_SIMILARITY_THRESHOLD:
+                continue
+            lost, found = (other, flyer) if flyer.mode == Flyer.Mode.FOUND else (flyer, other)
+            match, created = PetMatch.objects.get_or_create(
+                lost_flyer=lost, found_flyer=found, defaults={"score": score}
+            )
+            if not created and match.score != score:
+                match.score = score
+                match.save(update_fields=["score"])
+            if created:
+                NotificationService.notify_match(match)
+            matches.append(match)
+        return matches

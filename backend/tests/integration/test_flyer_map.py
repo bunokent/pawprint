@@ -20,7 +20,7 @@ def _mock_asset_rendering(monkeypatch):
 def test_map_endpoint_guest_allowed_with_query_ceiling(api_client, django_assert_max_num_queries):
     FlyerFactory(status=Flyer.Status.ACTIVE, mode=Flyer.Mode.EMERGENCY, location_lat=14.55, location_lng=121.02)
     FlyerFactory(status=Flyer.Status.ACTIVE, mode=Flyer.Mode.FOUND, location_lat=14.60, location_lng=121.00)
-    with django_assert_max_num_queries(6):
+    with django_assert_max_num_queries(7):  # +1 query for vision matches on the pins
         resp = api_client.get("/api/flyers/map")
     assert resp.status_code == 200
     body = resp.json()
@@ -31,6 +31,7 @@ def test_map_endpoint_guest_allowed_with_query_ceiling(api_client, django_assert
         assert flyer["location_lng"] is not None
         assert flyer["pet"]["name"]
         assert flyer["photo_url"] is not None or flyer["pet"]["photo_path"] == ""
+        assert flyer["match"] is None  # no vision matches in this fixture
 
 
 def test_map_endpoint_excludes_unlocated_draft_and_outreach(api_client):
