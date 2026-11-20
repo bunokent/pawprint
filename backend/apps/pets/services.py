@@ -34,7 +34,7 @@ class PetService:
 
     @staticmethod
     @transaction.atomic
-    def create_pet(owner, *, name: str, species: str = "dog", breed: str = "", color: str = "",
+    def create_pet(owner, *, name: str = "", species: str = "dog", breed: str = "", color: str = "",
                    age: int | None = None, temperament_tags: list[str] | None = None,
                    health_tags: list[str] | None = None, photo_path: str = "",
                    status: str = Pet.Status.ADOPTABLE) -> Pet:

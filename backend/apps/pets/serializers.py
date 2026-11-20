@@ -27,7 +27,8 @@ class PetSerializer(serializers.ModelSerializer[Pet]):
 
 
 class PetCreateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=120)
+    # Optional/blank: found-pet reports have no name (the owner is unknown).
+    name = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
     species = serializers.ChoiceField(choices=Pet.Species.choices, default=Pet.Species.DOG)
     breed = serializers.CharField(max_length=120, required=False, allow_blank=True)
     color = serializers.CharField(max_length=120, required=False, allow_blank=True)

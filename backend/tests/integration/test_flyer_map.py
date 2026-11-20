@@ -113,6 +113,22 @@ def test_create_pet_with_found_status(auth_client, user):
     assert resp.json()["status"] == "found"
 
 
+def test_create_found_pet_without_name(auth_client, user):
+    """Found-pet reports have no name — the finder doesn't know the owner's pet."""
+    resp = auth_client.post(
+        "/api/pets",
+        {"species": "dog", "status": "found", "color": "brown", "photo_path": "pets/photos/x.jpg"},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.json()["name"] == ""
+    assert resp.json()["status"] == "found"
+    # An explicit blank name is also accepted.
+    resp = auth_client.post("/api/pets", {"name": "", "species": "cat"}, format="json")
+    assert resp.status_code == 201
+    assert resp.json()["name"] == ""
+
+
 def test_gallery_includes_found_mode(api_client):
     FlyerFactory(mode=Flyer.Mode.FOUND, status=Flyer.Status.ACTIVE)
     FlyerFactory(mode=Flyer.Mode.EMERGENCY, status=Flyer.Status.ACTIVE)

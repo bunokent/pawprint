@@ -27,7 +27,8 @@ class Pet(models.Model):
     owner = models.ForeignKey(
         "users.User", on_delete=models.CASCADE, related_name="pets"
     )
-    name = models.CharField(max_length=120)
+    # Blank for found pets — the finder doesn't know the pet's name.
+    name = models.CharField(max_length=120, blank=True, default="")
     species = models.CharField(max_length=16, choices=Species.choices, default=Species.DOG)
     breed = models.CharField(max_length=120, blank=True)
     color = models.CharField(max_length=120, blank=True)

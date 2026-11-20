@@ -680,7 +680,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/PetCreate'
-        required: true
       responses:
         '201':
           content:
@@ -704,7 +703,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/PetCreate'
-        required: true
       responses:
         '201':
           content:
@@ -1166,13 +1164,13 @@ components:
       required:
       - created_at
       - id
-      - name
       - photo_url
     PetCreate:
       type: object
       properties:
         name:
           type: string
+          default: ''
           maxLength: 120
         species:
           allOf:
@@ -1206,8 +1204,6 @@ components:
           allOf:
           - $ref: '#/components/schemas/StatusF90Enum'
           default: adoptable
-      required:
-      - name
     PhotoUploadResponse:
       type: object
       properties:
