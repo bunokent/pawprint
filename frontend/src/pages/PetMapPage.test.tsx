@@ -1,27 +1,76 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PetMapPage, petPinIcon, pinRingColor } from "@/pages/PetMapPage";
+import { PetMapPage } from "@/pages/PetMapPage";
 import { mswServer } from "@/test/setup";
 import { renderWithProviders } from "@/test/utils";
 import { mockFlyer, mockFoundFlyer } from "@/test/handlers";
+import { petPinIcon, pinRingColor } from "@/lib/maps";
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-  delete (window as unknown as { google?: unknown }).google;
+const state = vi.hoisted(() => ({
+  listeners: {} as Record<string, Array<(e: unknown) => void>>,
+  maps: [] as Array<Record<string, any>>,
+  tiles: [] as Array<{ url: string; opts: unknown }>,
+  markers: [] as Array<Record<string, any>>,
+  divIcons: [] as Array<{ kind: string; opts: any }>,
+  failMap: false,
+}));
+
+vi.mock("leaflet", async () => {
+  const { makeFakeLeaflet } = await import("@/test/fake-leaflet");
+  return makeFakeLeaflet(state);
+});
+
+beforeEach(async () => {
+  const { resetFakeLeafletState } = await import("@/test/fake-leaflet");
+  resetFakeLeafletState(state);
 });
 
 describe("PetMapPage", () => {
-  it("shows the pin list fallback for guests when no Maps key is configured", async () => {
+  it("renders the Leaflet map with one photo pin per flyer and a popup on pin click", async () => {
     renderWithProviders(<PetMapPage />, { route: "/map" });
     expect(await screen.findByRole("heading", { name: "Pet map" })).toBeInTheDocument();
+    expect(await screen.findByTestId("pet-map")).toBeInTheDocument();
+    // Map mode: no list fallback.
+    expect(screen.queryByTestId("pin-list")).not.toBeInTheDocument();
+    // OSM tile layer on the map container.
+    expect(state.tiles[0].url).toContain("tile.openstreetmap.org");
+    expect(state.maps[0].opts.center).toEqual([mockFlyer().location_lat, mockFlyer().location_lng]);
+
+    await waitFor(() => expect(state.markers).toHaveLength(2));
+    await waitFor(() => expect((state.listeners["marker:click"] ?? []).length).toBe(2));
+    expect(state.markers[0].latlng).toEqual({ lat: mockFlyer().location_lat, lng: mockFlyer().location_lng });
+    expect(state.markers[1].latlng).toEqual({ lat: mockFoundFlyer().location_lat, lng: mockFoundFlyer().location_lng });
+    // Photo pins carry the status ring: crimson lost, terracotta found.
+    expect(state.markers[0].opts.icon.opts.html).toContain("border-color:#b3261e");
+    expect(state.markers[0].opts.icon.opts.html).toContain('alt="Bento"');
+    expect(state.markers[1].opts.icon.opts.html).toContain("border-color:#c96f4a");
+    expect(state.markers[1].opts.icon.opts.html).toContain('alt="Miso"');
+
+    // Click the found pin (second marker) → popup with details + Show Full Details link.
+    const user = userEvent.setup();
+    (state.listeners["marker:click"] ?? [])[1]({});
+    const popup = await screen.findByTestId("map-pin-popup");
+    expect(popup).toHaveTextContent("Miso");
+    expect(popup).toHaveTextContent("cat · Domestic shorthair · orange");
+    expect(popup).toHaveTextContent(/Found .*Near the market, Manila/);
+    expect(screen.getByRole("link", { name: "Show Full Details" })).toHaveAttribute("href", `/flyers/${mockFoundFlyer().id}`);
+
+    // Close the popup.
+    await user.click(screen.getByRole("button", { name: "Close popup" }));
+    await waitFor(() => expect(screen.queryByTestId("map-pin-popup")).not.toBeInTheDocument());
+  });
+
+  it("falls back to the pin list when the map cannot be created", async () => {
+    state.failMap = true;
+    renderWithProviders(<PetMapPage />, { route: "/map" });
     const list = await screen.findByTestId("pin-list");
+    expect(screen.queryByTestId("pet-map")).not.toBeInTheDocument();
+    expect(screen.getByText(/could not load/)).toBeInTheDocument();
     // Mock pins: Bento (lost) + Miso (found).
     expect(list).toHaveTextContent("Bento");
     expect(list).toHaveTextContent("Miso");
-    expect(screen.queryByTestId("pet-map")).not.toBeInTheDocument();
-    // Each pin links to the flyer page.
     const links = screen.getAllByRole("link", { name: "Show Full Details" });
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute("href", `/flyers/${mockFlyer().id}`);
@@ -31,7 +80,8 @@ describe("PetMapPage", () => {
     expect(screen.getByText("Found")).toBeInTheDocument();
   });
 
-  it("navigates to the flyer page from a pin", async () => {
+  it("navigates to the flyer page from a pin (list fallback)", async () => {
+    state.failMap = true;
     const user = userEvent.setup();
     renderWithProviders(<PetMapPage />, {
       route: "/map",
@@ -53,70 +103,6 @@ describe("PetMapPage", () => {
     renderWithProviders(<PetMapPage />, { route: "/map" });
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load the pet map");
   });
-
-  it("renders the Google Map with one pin per flyer and a popup on pin click", async () => {
-    vi.stubEnv("VITE_GOOGLE_MAPS_API_KEY", "test-key");
-    const listeners: Record<string, Array<(e: unknown) => void>> = {};
-    const markers: Array<{ opts: { position: { lat: number; lng: number }; title?: string } }> = [];
-    class FakeMap {
-      constructor(
-        public el: HTMLElement,
-        public opts: unknown,
-      ) {}
-      fitBounds() {}
-    }
-    class FakeLatLngBounds {
-      extend() {}
-    }
-    class FakeSize {
-      constructor(
-        public width: number,
-        public height: number,
-      ) {}
-    }
-    class FakePoint {
-      constructor(
-        public x: number,
-        public y: number,
-      ) {}
-    }
-    class FakeMarker {
-      constructor(public opts: { position: { lat: number; lng: number }; title?: string; map?: unknown }) {
-        markers.push(this);
-      }
-      addListener(name: string, cb: (e: unknown) => void) {
-        (listeners[`marker:${name}`] ??= []).push(cb);
-      }
-      setIcon() {}
-      setMap() {}
-    }
-    (window as unknown as { google: unknown }).google = {
-      maps: { Map: FakeMap, Marker: FakeMarker, LatLngBounds: FakeLatLngBounds, Size: FakeSize, Point: FakePoint },
-    };
-
-    renderWithProviders(<PetMapPage />, { route: "/map" });
-    expect(await screen.findByTestId("pet-map")).toBeInTheDocument();
-    await waitFor(() => expect(markers).toHaveLength(2));
-    // Wait until the pin click listeners are registered before simulating a click.
-    await waitFor(() => expect((listeners["marker:click"] ?? []).length).toBe(2));
-    expect(markers[0].opts.position).toEqual({ lat: mockFlyer().location_lat, lng: mockFlyer().location_lng });
-    expect(markers[1].opts.position).toEqual({ lat: mockFoundFlyer().location_lat, lng: mockFoundFlyer().location_lng });
-
-    // Click the lost pin → popup with details + Show Full Details link.
-    const user = userEvent.setup();
-    for (const cb of listeners["marker:click"] ?? []) cb({});
-    // The last registered listener belongs to the second marker; click via first marker instead.
-    const popup = await screen.findByTestId("map-pin-popup");
-    expect(popup).toHaveTextContent("Miso");
-    expect(popup).toHaveTextContent("cat · Domestic shorthair · orange");
-    expect(popup).toHaveTextContent(/Found .*Near the market, Manila/);
-    const details = screen.getByRole("link", { name: "Show Full Details" });
-    expect(details).toHaveAttribute("href", `/flyers/${mockFoundFlyer().id}`);
-
-    // Close the popup.
-    await user.click(screen.getByRole("button", { name: "Close popup" }));
-    await waitFor(() => expect(screen.queryByTestId("map-pin-popup")).not.toBeInTheDocument());
-  });
 });
 
 describe("pin helpers", () => {
@@ -126,7 +112,12 @@ describe("pin helpers", () => {
     expect(pinRingColor(undefined)).toBe("#b3261e");
   });
 
-  it("petPinIcon resolves null without a photo when canvas is unavailable (jsdom)", async () => {
-    await expect(petPinIcon(mockFlyer({ photo_url: "" }))).resolves.toBeNull();
+  it("petPinIcon renders the photo with a ring, or the initial without one", () => {
+    const withPhoto = petPinIcon(mockFlyer()) as unknown as { opts: { html: string } };
+    expect(withPhoto.opts.html).toContain(`src="${mockFlyer().photo_url}"`);
+    expect(withPhoto.opts.html).toContain('alt="Bento"');
+    const noPhoto = petPinIcon(mockFoundFlyer({ photo_url: "" })) as unknown as { opts: { html: string } };
+    expect(noPhoto.opts.html).toContain("pp-pin__letter");
+    expect(noPhoto.opts.html).toContain(">M</span>");
   });
 });

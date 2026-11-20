@@ -1,77 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
+import L from "leaflet";
 import { MapPin, X } from "lucide-react";
 import { flyerMapQuery, type Flyer } from "@/features/flyers/api";
 import { Button } from "@/components/ui/button";
 import { ModeBadge, StatusBadge } from "@/components/ui/badge";
 import { EmptyState, ErrorBox, Skeleton } from "@/components/ui/feedback";
-import { googleMapsEnabled, loadGoogleMaps } from "@/lib/maps";
+import { createMap, petPinIcon } from "@/lib/maps";
 import { formatDate } from "@/lib/utils";
-
-/** Default map centre — Manila, where PawPrint operates. */
-const DEFAULT_CENTER: google.maps.LatLngLiteral = { lat: 14.5995, lng: 120.9842 };
-
-/** Photo-pin diameter in px (ring + circular photo). */
-const PIN_SIZE = 56;
-
-/** Pin ring colours from the design system: crimson = lost, terracotta = found. */
-const PIN_RING = { lost: "#b3261e", found: "#c96f4a" } as const;
-
-export function pinRingColor(mode: string | undefined): string {
-  return mode === "found" ? PIN_RING.found : PIN_RING.lost;
-}
-
-/**
- * Draws the pet photo clipped to a circle with a status-coloured ring and
- * resolves to a PNG data URL for use as a marker icon. Without a photo (or
- * when canvas is unavailable) it resolves to a plain coloured dot — or null.
- */
-export function petPinIcon(flyer: Flyer, size = PIN_SIZE): Promise<string | null> {
-  return new Promise((resolve) => {
-    const draw = (img: HTMLImageElement | null) => {
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return resolve(null);
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
-      ctx.fillStyle = pinRingColor(flyer.mode);
-      ctx.fill();
-      if (img) {
-        const inner = size - 8;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(size / 2, size / 2, inner / 2, 0, Math.PI * 2);
-        ctx.clip();
-        const scale = Math.max(inner / img.width, inner / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        ctx.restore();
-      }
-      resolve(canvas.toDataURL("image/png"));
-    };
-    if (!flyer.photo_url) return draw(null);
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      try {
-        draw(img);
-      } catch {
-        draw(null);
-      }
-    };
-    img.onerror = () => draw(null);
-    img.src = flyer.photo_url;
-  });
-}
 
 /** Public interactive pet map: one photo pin per active lost/found flyer with coordinates. */
 export function PetMapPage() {
   const query = useQuery(flyerMapQuery());
-  const mapsOn = googleMapsEnabled();
 
   return (
     <section style={{ padding: "64px 0" }}>
@@ -98,59 +39,55 @@ export function PetMapPage() {
             <p>Lost and found flyers with a map location will appear here.</p>
           </EmptyState>
         )}
-        {query.data && query.data.length > 0 && (mapsOn ? <GooglePins flyers={query.data} /> : <PinList flyers={query.data} />)}
+        {query.data && query.data.length > 0 && <LeafletPins flyers={query.data} />}
       </div>
     </section>
   );
 }
 
-/** Google Map with one canvas photo-pin per flyer; clicking a pin opens a popup card. */
-function GooglePins({ flyers }: { flyers: Flyer[] }) {
+/**
+ * Leaflet (OpenStreetMap) map with one circular photo pin per flyer; clicking
+ * a pin opens a popup card. Falls back to the pin list when the map cannot be
+ * created (e.g. jsdom in unit tests).
+ */
+function LeafletPins({ flyers }: { flyers: Flyer[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [mapFailed, setMapFailed] = useState(false);
   const pins = flyers.filter((f) => f.location_lat != null && f.location_lng != null);
 
   useEffect(() => {
-    let cancelled = false;
-    void loadGoogleMaps()
-      .then((maps) => {
-        if (cancelled || !containerRef.current) return;
-        const first = pins[0];
-        const map = new maps.Map(containerRef.current, {
-          center: first ? { lat: first.location_lat!, lng: first.location_lng! } : DEFAULT_CENTER,
-          zoom: first ? 13 : 11,
-          clickableIcons: false,
-        });
-        const bounds = new maps.LatLngBounds();
-        for (const f of pins) {
-          const position = { lat: f.location_lat!, lng: f.location_lng! };
-          const marker = new maps.Marker({ position, map, title: `${f.pet.name} — ${f.mode}` });
-          marker.addListener("click", () => setSelectedId(f.id));
-          // Photo pin: swap the default marker for a circular pet photo once drawn.
-          void petPinIcon(f).then((icon) => {
-            if (icon) {
-              marker.setIcon({
-                url: icon,
-                scaledSize: new maps.Size(PIN_SIZE, PIN_SIZE),
-                anchor: new maps.Point(PIN_SIZE / 2, PIN_SIZE / 2),
-              });
-            }
-          });
-          bounds.extend(position);
-        }
-        if (pins.length > 1) map.fitBounds(bounds);
-      })
-      .catch(() => setLoadFailed(true));
+    const el = containerRef.current;
+    if (!el || pins.length === 0) return;
+    let map: L.Map | undefined;
+    try {
+      const first = pins[0];
+      map = createMap(el, { center: [first.location_lat!, first.location_lng!], zoom: 13 });
+      const bounds = L.latLngBounds(pins.map((p) => [p.location_lat!, p.location_lng!] as L.LatLngExpression));
+      for (const f of pins) {
+        const marker = L.marker([f.location_lat!, f.location_lng!], {
+          icon: petPinIcon(f),
+          title: `${f.pet.name} — ${f.mode}`,
+        }).addTo(map);
+        marker.on("click", () => setSelectedId(f.id));
+      }
+      if (pins.length > 1) map.fitBounds(bounds, { padding: [40, 40] });
+    } catch {
+      setMapFailed(true);
+      return;
+    }
     return () => {
-      cancelled = true;
+      map?.remove();
     };
     // Pins are derived from the fetched flyers; rebuild only when they change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyers]);
 
-  if (loadFailed) {
+  if (mapFailed) {
     return <PinList flyers={flyers} note="The map could not load — showing the pins as a list instead." />;
+  }
+  if (pins.length === 0) {
+    return <PinList flyers={flyers} />;
   }
 
   const selected = flyers.find((f) => f.id === selectedId) ?? null;
@@ -218,7 +155,7 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
   );
 }
 
-/** Fallback when no Maps key is configured (dev/test/e2e): the same pins as a list. */
+/** Fallback when the map cannot be created: the same pins as a list. */
 function PinList({ flyers, note }: { flyers: Flyer[]; note?: string }) {
   const pins = flyers.filter((f) => f.location_lat != null && f.location_lng != null);
   const list = pins.length > 0 ? pins : flyers;
@@ -227,11 +164,6 @@ function PinList({ flyers, note }: { flyers: Flyer[]; note?: string }) {
       {note && (
         <p className="t-small" style={{ color: "var(--color-muted)", marginBottom: 12 }}>
           {note}
-        </p>
-      )}
-      {!note && !googleMapsEnabled() && (
-        <p className="t-small" style={{ color: "var(--color-muted)", marginBottom: 12 }}>
-          Interactive map view needs a Google Maps key — showing the pins as a list.
         </p>
       )}
       <div data-testid="pin-list" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 24 }}>

@@ -2,11 +2,13 @@ import { expect, test } from "@playwright/test";
 import { API } from "./helpers";
 
 /**
- * Journey 8 — public pet map: the /map page lists every active lost/found flyer
- * that carries coordinates; each pin links to the flyer's public page.
- * (e2e runs without VITE_GOOGLE_MAPS_API_KEY, so the page shows the pin list.)
+ * Journey 8 — public pet map: the /map page renders a Leaflet (OpenStreetMap)
+ * map with one circular photo pin per active lost/found flyer that carries
+ * coordinates; tapping a pin opens a popup card linking to the flyer's public
+ * page. (OSM tiles need internet access, but the pins are plain DOM and render
+ * regardless, so the journey stays hermetic.)
  */
-test("guest browses the pet map and opens a flyer from a pin", async ({ page }) => {
+test("guest browses the interactive pet map and opens a flyer from a pin", async ({ page }) => {
   // The public map endpoint returns active lost/found flyers with lat/lng.
   const resp = await page.request.get(`${API}/flyers/map`);
   expect(resp.status()).toBe(200);
@@ -27,14 +29,22 @@ test("guest browses the pet map and opens a flyer from a pin", async ({ page }) 
   await page.waitForURL(/\/map$/);
   await expect(page.getByRole("heading", { name: "Pet map" })).toBeVisible();
 
-  // Pin list fallback (no Maps key in e2e): both seeded pets are listed.
-  await expect(page.getByText("Bruno")).toBeVisible();
-  await expect(page.getByText("Miso")).toBeVisible();
-  await expect(page.getByTestId("pin-list").getByText("Found pet", { exact: true })).toBeVisible(); // mode badge on Miso's pin
+  // Leaflet map with one photo pin per seeded flyer (seeded pets have no photo,
+  // so the pins show the pet's initial — pinned via data-pet-name either way).
+  const map = page.getByTestId("pet-map");
+  await expect(map).toBeVisible();
+  await expect(map.locator('.pp-pin [data-pet-name="Bruno"]')).toBeVisible();
+  await expect(map.locator('.pp-pin [data-pet-name="Miso"]')).toBeVisible();
+  // Legend distinguishes lost vs found.
+  await expect(page.getByText("Lost", { exact: true })).toBeVisible();
+  await expect(page.getByText("Found", { exact: true })).toBeVisible();
 
-  // Open Bruno's flyer from its pin.
-  const brunoCard = page.locator(".card", { hasText: "Bruno" });
-  await brunoCard.getByRole("link", { name: "Show Full Details" }).click();
+  // Tap Bruno's pin → popup card → open the flyer.
+  await map.locator('.pp-pin [data-pet-name="Bruno"]').click();
+  const popup = page.getByTestId("map-pin-popup");
+  await expect(popup).toBeVisible();
+  await expect(popup).toContainText("Bruno");
+  await popup.getByRole("link", { name: "Show Full Details" }).click();
   await page.waitForURL(/\/flyers\/[0-9a-f-]{36}$/);
   await expect(page.getByRole("heading", { name: "Lost pet: Bruno" })).toBeVisible();
   // The detail page links back to the map (flyer carries coordinates).

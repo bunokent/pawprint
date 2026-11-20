@@ -245,4 +245,9 @@ export const handlers = [
     if (!tx) return err(404, "not_found", "Transaction not found.");
     return HttpResponse.json(tx);
   }),
+
+  // Nominatim (OpenStreetMap) geocoding used by the Leaflet location picker —
+  // hermetic defaults for unit tests; specific tests override via mswServer.use.
+  http.get("https://nominatim.openstreetmap.org/search", () => HttpResponse.json([])),
+  http.get("https://nominatim.openstreetmap.org/reverse", () => HttpResponse.json({ display_name: "Test location, Manila" })),
 ];
