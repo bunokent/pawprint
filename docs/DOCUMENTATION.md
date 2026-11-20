@@ -49,9 +49,11 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   lists; other species → empty) and color, with raw confidences returned on the upload response.
   Labels are grouped into domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird,
   and fish categories. The same CLIP encoder also produces a 512-dim image embedding per pet
-   photo (cached on `Pet.photo_embedding`), used to match found photos against lost ones —
-   cosine similarity ≥ `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80) creates a
-   `vision.PetMatch` and notifications to both sides (Phase 30). In-app notifications live
+   photo (cached per photo on `PetPhoto.photo_embedding`; legacy single-photo pets on
+   `Pet.photo_embedding`), used to match found photos against lost ones — the **best** cosine
+   similarity over every cross-photo pair ≥ `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80)
+   creates a `vision.PetMatch` and notifications to both sides, so the same pet photographed
+   from different angles still matches (Phase 33). In-app notifications live
    in `apps.notifications` (REST + per-user `ws/notifications/` push). Maps: Leaflet 1.9
    (npm dependency, no API key) over OpenStreetMap
   tiles, with Nominatim geocoding (address search + reverse geocode), for the location
@@ -105,8 +107,12 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `rewards`, `webhooks`, `v
 - `users.User` — AbstractUser, UUID PK, email login, `display_name`, `phone`, `avatar_path`,
   `google_id` (nullable unique), `email_verified`, `stripe_customer_id`.
 - `pets.Pet` — UUID PK, `owner` FK, species/breed/color/age, `temperament_tags` & `health_tags`
-  JSON (GIN indexes), `photo_path`, `status` (`lost|found|adoptable|reunited|adopted`),
+  JSON (GIN indexes), `photo_path` (cover photo), `status` (`lost|found|adoptable|reunited|adopted`),
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
+- `pets.PetPhoto` — one photo per row: `pet` FK (`related_name="photos"`, cascade), `photo_path`,
+  `photo_embedding` (per-angle CLIP cache), index `(pet, created_at)` (migration `pets/0006`).
+  A pet carries up to 6 photos (different angles of the same pet); lost/found matching takes
+  the max cosine similarity over all cross-photo pairs (Phase 33).
 - `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
   fields, `location_lat`/`location_lng` floats (the map pin), contact fields, reward fields, QR
   target, export paths, `status` (`draft|generating|active|resolved`); indexes
@@ -187,14 +193,20 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   PNG, uploads to private Cloudinary, marks the flyer `active`, then broadcasts `flyer.generated`
   over Django Channels (`ws/flyers/`).
 - On create/update of a lost/found flyer, `FlyerService` also dispatches
-  `apps.vision.tasks.match_flyer` (queue `images`): the pet's CLIP photo embedding (cached on
-  `Pet.photo_embedding`) is cosine-compared against the opposite mode's active flyers; every
-  pair ≥ `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80) gets a unique `vision.PetMatch` row
+  `apps.vision.tasks.match_flyer` (queue `images`): **every** photo of the pet (`PetPhoto`
+  rows, `prefetch_related("pet__photos")`) is cosine-compared against every photo of the
+  opposite mode's active flyers, and the **best cross-photo pair** decides the score — so the
+  same pet shown from a different angle (front vs side vs back) still matches, not just
+  literally the same picture. Every pair whose max similarity ≥
+  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80) gets a unique `vision.PetMatch` row
   plus `apps.notifications` alerts to both sides, pushed over `ws/notifications/`
   (per-user group; ASGI wraps websockets in `AuthMiddlewareStack`). `GET /api/flyers/map`
   annotates each pin with its `match` counterpart.
-  - The embedding is also cached eagerly in `PetService.create_pet` when the pet has a photo,
-    so matching never depends on re-downloading the photo mid-task. `PetMatchService.ensure_embedding`
+  - `PetCreateSerializer` accepts `photo_paths` (list, max 6; `photo_path` stays as the cover =
+    first photo), and `PetService.create_pet` creates one `PetPhoto` row per photo with an
+    eagerly cached CLIP embedding (the legacy `Pet.photo_embedding` is still cached as the
+    fallback for pets predating `PetPhoto`), so matching never depends on re-downloading photos
+    mid-task. `PetMatchService.ensure_embedding`
     is fault-tolerant: a photo that cannot be read/embedded (missing object, storage or model
     error) is logged and skipped — one broken photo never aborts matching for the other pairs,
     and `manage.py backfill_matches` re-runs matching for all active lost/found flyers to repair
@@ -259,7 +271,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `NoPetDetectedError` → HTTP 422 `{"error":{"code":"no_pet_detected","message":…,
   "detected_labels":[…]}}` so the user can retry instantly. Zero penalties.
 - Frontend UX (`PhotoUpload`): a full-width, fixed-height drop rectangle supports click, keyboard,
-  and drag-and-drop selection with a clear drag-active state. During upload, the local pet preview
+  and drag-and-drop selection with a clear drag-active state — and **multiple files at once**
+  (up to 4 photos, e.g. different angles of the same pet). Accepted photos upload sequentially
+  behind the same overlay; a thumbnail strip appears under the cover frame with per-photo
+  remove buttons and tap-to-make-cover, plus an "N photos" badge and a locked
+  "Photo limit reached" state at the cap. During upload, the local pet preview
   stays visible behind an animated scan line and spinner; a live region reports **Uploading photo →
   Scanning photo → Detecting your pet → Saving securely**, with a four-step indicator and progress
   bar. Axios supplies the real byte-upload percentage; because `POST /api/pets/photos` is one
@@ -274,8 +290,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   back to raw `detected_classes`; ambiguous multi-species falls back to the first standard
   match for the stored value, non-standard animals map to `other`). Re-uploading a photo
   re-runs detection and updates the text automatically. Breed and color are prefilled only at
-  confidence ≥ 0.80 (with a "High confidence" badge); below that they stay blank with a
-  "Not detected" placeholder and a "Low confidence" badge, plus the helper tip "Auto-detected —
+  confidence ≥ 0.80; below that they stay blank — the fields carry **only the "Not detected"
+  placeholder, no confidence badges** — plus the helper tip "Auto-detected —
   change if not correct. Detection is not 100% accurate." — both fields always stay editable.
 - E2E journey ④ drives both photos through the real models: `e2e/fixtures/dog.jpg`
   passes as refined `dog` (raw `cat` @ 0.717 + `dog` @ 0.655 stay in `detected_classes`),
@@ -313,8 +329,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
   urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
-  going back to the photo step with an uploaded photo shows a **Next** button to continue
-  without re-uploading), `/my-flyers`, `/rewards/success`, `/rewards/cancel`, `/auth/login`
+  the photo step stays open until **Next** so up to 4 angle photos can be added, and going
+  back with uploaded photos shows **Next** to continue without re-uploading; the pet is
+  created with `photo_path` = cover + `photo_paths` = all angles). Found mode hides
+  **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
+  `/rewards/success`, `/rewards/cancel`, `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
   settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
   name/phone, read-only email). The header nav links Flyers, **Pet map**, the avatar + display
@@ -355,7 +374,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 11. Testing & Coverage
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  → **150 passed, 95.41% total** (100% on all `services.py`, `drivers.py`,
+  → **176 passed, 94.80% total** (100% on all `services.py`, `drivers.py`,
   `apps/vision/services.py`, and the Cloudinary storage driver);
   `django_assert_max_num_queries` ceilings on list/detail endpoints; 429 tests for the
   `auth_write` (20/min) and `upload` (10/min) throttles; webhook idempotency tests (duplicate
@@ -367,16 +386,22 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   multi-species handling); CLIP breed/color classifier tests (`PetAttributeService`: dog/cat
   breed lists, other-species empty breed, color always classified, raw confidences on the
   upload response); found-mode + `location_lat`/`location_lng` + `GET /api/flyers/map`
-  integration tests; Cloudinary driver unit tests (SDK mocked, 100% on the driver);
+  integration tests; multi-angle matching tests (`PetPhoto` per-angle embeddings, max-over-pairs
+  scoring in `match_flyer`, `photo_paths` on `POST /api/pets` + PetPhoto rows); Cloudinary
+  driver unit tests (SDK mocked, 100% on the driver);
   profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
   `factory-boy` factories.
-- Frontend: `npm run test:run` → **112 Vitest tests, 10 files** (RTL + MSW, jsdom), including
-  drag-and-drop, real Axios upload-progress callbacks, all four live processing labels, the animated
+- Frontend: `npm run test:run` → **129 Vitest tests, 11 files** (RTL + MSW, jsdom), including
+  drag-and-drop, multi-file photo picking (sequential uploads, thumbnail strip, remove /
+  make-cover, 4-photo cap + "Photo limit reached" lock), real Axios upload-progress callbacks,
+  all four live processing labels, the animated
   indeterminate bar, read-only detected-species text (rabbit over raw `cat`, ambiguous cat+dog,
-  re-detect on re-upload), breed/color prefill at ≥0.80 with High/Low-confidence badges and the
-  "Not detected" placeholder below threshold, the found-pet wizard flow (`?mode=found`, no
+  re-detect on re-upload), breed/color prefill at ≥0.80 with only the "Not detected" placeholder
+  below threshold (no confidence badges anywhere), the wizard staying on the photo step until
+  **Next** and posting `photo_paths`, the found-pet wizard flow (`?mode=found`, no pet-name/age
+  fields, `age: null` + `photo_paths` in the create payload, no
   reward toggle, location/date/description, `location_lat/lng: null` from the fallback input),
   the gallery Found filter, found rendering on detail/cards, per-mode resolve labels,
   `LocationPicker` map mode (fake `leaflet` via `src/test/fake-leaflet.ts`: pin drop + drag
@@ -384,7 +409,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   map-init-failure fallback, the `/map` page (Leaflet photo pins + popup, pin-list fallback,
   empty/error states), and `src/lib/maps.ts` helper tests (OSM tile layer, pin icons,
   Nominatim search/reverse incl. failure fallback);
-  `npm run test:coverage` → **90.07% stmts / 82.07% branches / 86.10% funcs / 91.10% lines**
+  `npm run test:coverage` → **89.35% stmts / 82.39% branches / 84.47% funcs / 90.51% lines**
   (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
   `npx tsc -b --noEmit` clean; `npm run build` green.
 - E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **10 journeys /
@@ -393,9 +418,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   PG :5433; filesystem `/media/` is served explicitly under TESTING so signed URLs load),
   and the Vite dev server on :5173 proxying to :8010. Journeys: ① guest browse →
   filter → search → detail+QR, ② register → logout → login (demo account), ③ create an
-  emergency flyer through the 3-step wizard (YOLO-World-gated upload, read-only detected
-  species) → public detail page, ④ landscape photo → 422 `no_pet_detected` retry UX → dog
-  photo passes, ⑤ GCash reward checkout → QR modal → HMAC-signed PayMongo webhook flips
+  emergency flyer through the 3-step wizard (YOLO-World-gated upload → preview → **Next** →
+  read-only detected species) → public detail page, ④ landscape photo → 422 `no_pet_detected`
+  retry UX → dog photo passes → preview → **Next**, ⑤ GCash reward checkout → QR modal →
+  HMAC-signed PayMongo webhook flips
   status to `succeeded` (and a forged signature is 400), ⑥ open the flyer's
   `qr_target_value` like a scanner → public detail page with SVG QR, ⑦ profile settings →
   avatar upload + display name/phone save → header avatar, profile restored afterwards,
@@ -405,8 +431,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   ×N card deck — newest on top with the green/red ring, oldest peeking behind — and tapping
   the stack opens a popup listing every stacked flyer; the test cleans up after itself),
   ⑨ found-pet flow
-  (`/builder?mode=found` → no pet-name/tags fields → publish → unnamed "Found pet" detail,
-  mode `found`, no reward; guests get the register prompt).
+  (`/builder?mode=found` → photo gate → **Next** → no pet-name/age/tags fields → publish →
+  unnamed "Found pet" detail, mode `found`, no reward; guests get the register prompt).
 - Static analysis: `mypy apps`, `ruff check .`, `npm run lint` (tsc), `npm run build`
   (0 TS errors). All of the above run in GitHub Actions (`.github/workflows/ci.yml`):
   `backend-lint` (ruff + mypy, no DB), `backend-test` (pytest + coverage against a
@@ -815,10 +841,36 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   Tests: leaflet-scoped CSS assertion in `maps.test.ts`, `panTo` assertion in
   `PetMapPage.test.tsx`. Verified: **168 pytest passed @ 94.60%**,
   **125 Vitest** (coverage exit 0; rewards 100%), `tsc -b` clean.
+- **Phase 33** — Match the same pet across different-angle photos + builder cleanup.
+  Motivation: matching only compared the single cover photo, so a lost report and a found
+  report of the *same dog photographed from another angle* did not match ("you only match the
+  same picture, not what's on the picture"). Backend: new `pets.PetPhoto` model (one row per
+  photo — `pet` FK `related_name="photos"`, `photo_path`, per-angle `photo_embedding`,
+  migration `pets/0006`); `PetCreateSerializer` accepts `photo_paths` (list, max 6, `photo_path`
+  stays the cover = first photo); `PetService.create_pet` creates a `PetPhoto` per photo with an
+  eagerly cached, fault-tolerant CLIP embedding (cover row reuses the `Pet` embedding, no extra
+  storage read). `PetMatchService.pet_embeddings(pet)` returns every photo embedding (legacy
+  `Pet.photo_embedding` fallback), and `match_flyer` now scores a lost/found pair as the **max
+  cosine similarity over the full cross-photo pair product** (both sides
+  `prefetch_related("pet__photos")`) — the best angle pair decides, so different angles of the
+  same pet match. Frontend builder: `PhotoUpload` is multi-file (up to 4 photos, sequential
+  upload, thumbnail strip with remove + tap-to-make-cover, "N photos" badge, locked
+  "Photo limit reached" at the cap); the wizard stays on the photo step until **Next** (extra
+  angles can be added; going back keeps the photos); the create payload sends `photo_path` +
+  `photo_paths`. Found mode now hides the **Age** field too and sends `age: null` (like the
+  already-hidden name/tags), and breed/color no longer render High/Low **confidence badges** —
+  only the "Not detected" placeholder (confident ≥0.80 detections still prefill). Tests:
+  cross-angle match + notifications, no-match when no pair clears the threshold,
+  `pet_embeddings` fallback, `create_pet` PetPhoto rows/cap/merge, `photo_paths` API
+  integration, `PetPhotoFactory`; frontend multi-pick/remove/cover/cap, `photo_paths` payload,
+  found-mode `age: null` + hidden age, badge removal; e2e ③④⑨ updated for the Next step and
+  `#pet-age` absence. Verified: **176 pytest passed @ 94.80%** (ruff + mypy clean),
+  **129 Vitest** @ 89.35/82.39/84.47/90.51 (coverage exit 0; rewards 100%), `tsc -b` clean,
+  **11/11 Playwright journeys** green.
 
-**Final status:** backend **168 passed @ 94.60%** (100% flyers/services, notifications
+**Final status:** backend **176 passed @ 94.80%** (100% flyers/services, notifications
 selectors/serializers/views);
-frontend **125 vitest tests** @ 89.93/82.62/86.17/90.71 + Playwright journeys
+frontend **129 vitest tests** @ 89.35/82.39/84.47/90.51 + Playwright journeys (11/11)
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
