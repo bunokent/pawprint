@@ -29,11 +29,13 @@ test("non-pet photo gets a 422 retry UX; pet photo passes", async ({ page }) => 
   // Still on step 1 — the wizard did not advance.
   await expect(page.getByRole("heading", { name: "Report a lost pet" })).toBeVisible();
 
-  // Retry with a real dog photo → 201 from the gate, auto-advance to step 2.
+  // Retry with a real dog photo → 201 from the gate, preview shown, Next → step 2.
   const retry = page.waitForResponse(
     (r) => r.url().endsWith("/api/pets/photos") && r.request().method() === "POST",
   );
   await page.setInputFiles("input[type=file]", fixture("dog.jpg"));
   expect((await retry).status()).toBe(201);
+  await expect(page.getByAltText("Uploaded pet preview")).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Tell us about the pet" })).toBeVisible({ timeout: 60_000 });
 });

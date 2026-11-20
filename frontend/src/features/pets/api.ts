@@ -30,7 +30,10 @@ export interface PetCreateInput {
   age?: number | null;
   temperament_tags?: string[];
   health_tags?: string[];
+  /** Cover photo (first of photo_paths when several angles are uploaded). */
   photo_path?: string;
+  /** All uploaded angles of the same pet — matching takes the best cross-photo pair. */
+  photo_paths?: string[];
   status?: string;
 }
 

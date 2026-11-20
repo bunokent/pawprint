@@ -860,6 +860,7 @@ export interface components {
             temperament_tags?: string[];
             health_tags?: string[];
             photo_path?: string;
+            photo_paths?: string[];
             /** @default adoptable */
             status: components["schemas"]["StatusF90Enum"];
         };

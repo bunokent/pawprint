@@ -11,8 +11,8 @@ test("registered user publishes a lost-pet flyer with a reward", async ({ page }
   await page.goto("/builder?mode=emergency");
   await expect(page.getByRole("heading", { name: "Report a lost pet" })).toBeVisible();
 
-  // Step 1 — photo upload passes the YOLO-World pet gate and auto-advances to step 2
-  // (the "Pet detected ✓" badge lives on step 1, which unmounts on success).
+  // Step 1 — photo upload passes the YOLO-World pet gate; the wizard stays on the
+  // photo step (more angle photos can be added) until Next is clicked.
   const upload = page.waitForResponse(
     (r) => r.url().endsWith("/api/pets/photos") && r.request().method() === "POST",
   );
@@ -20,6 +20,8 @@ test("registered user publishes a lost-pet flyer with a reward", async ({ page }
   const uploadResp = await upload;
   expect(uploadResp.status()).toBe(201);
   expect((await uploadResp.json()).pet_classes).toContain("dog");
+  await expect(page.getByAltText("Uploaded pet preview")).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Tell us about the pet" })).toBeVisible({ timeout: 60_000 });
 
   // Step 2 — pet details. Species is auto-detected from the photo (dog.jpg → dog)

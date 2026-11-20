@@ -172,11 +172,14 @@ describe("BuilderWizard", () => {
       routes: [["/flyers/:id", <FlyerDetailPage />]],
     });
 
-    // Step 1 — mode + photo
+    // Step 1 — mode + photo (stays on the photo step until Next, so extra angle
+    // photos can be added before continuing)
     expect(screen.getByRole("heading", { name: "Report a lost pet" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "bento.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByRole("heading", { name: "Tell us about the pet" })).toBeInTheDocument();
 
     // Step 2 — pet details (breed/color are auto-prefilled from detection, so clear first)
@@ -211,6 +214,8 @@ describe("BuilderWizard", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "bento.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
 
     // Go back to the photo step — the uploaded photo is still there.
@@ -246,9 +251,12 @@ describe("BuilderWizard", () => {
       ),
     );
     renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency" });
+    const user = userEvent.setup();
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "ambiguous.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     // Plain read-only text — not a <select>, not editable.
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
@@ -279,25 +287,33 @@ describe("BuilderWizard", () => {
       ),
     );
     renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency" });
+    const user = userEvent.setup();
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "rabbit.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     expect(screen.getByTestId("species-value")).toHaveTextContent("Rabbit");
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 
-  it("prefills breed & color with a High confidence badge and the helper tip", async () => {
+  it("prefills breed & color from confident detection — no confidence badges, just the helper tip", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency" });
+    const user = userEvent.setup();
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "bento.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     // Default MSW upload: breed "Shiba Inu" @ 0.93, color "tan" @ 0.88 → prefilled.
     expect(screen.getByLabelText("Breed")).toHaveValue("Shiba Inu");
     expect(screen.getByLabelText("Color")).toHaveValue("tan");
-    expect(screen.getAllByText("High confidence")).toHaveLength(2);
+    // No High/Low confidence badges — the fields carry no badge chrome at all.
+    expect(screen.queryByText("High confidence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Low confidence")).not.toBeInTheDocument();
     expect(screen.getByTestId("autofill-tip")).toHaveTextContent(
       "Auto-detected — change if not correct. Detection is not 100% accurate.",
     );
@@ -306,7 +322,7 @@ describe("BuilderWizard", () => {
     expect(screen.getByLabelText("Color")).toBeEnabled();
   });
 
-  it("leaves breed & color blank with 'Not detected' when confidence is low (no guessing)", async () => {
+  it("leaves breed & color blank with only the 'Not detected' placeholder when confidence is low (no guessing, no badges)", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     mswServer.use(
       http.post("*/api/pets/photos", () =>
@@ -329,15 +345,20 @@ describe("BuilderWizard", () => {
       ),
     );
     renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency" });
+    const user = userEvent.setup();
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "unclear.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     expect(screen.getByLabelText("Breed")).toHaveValue("");
     expect(screen.getByLabelText("Color")).toHaveValue("");
     expect(screen.getByLabelText("Breed")).toHaveAttribute("placeholder", "Not detected");
     expect(screen.getByLabelText("Color")).toHaveAttribute("placeholder", "Not detected");
-    expect(screen.getAllByText("Low confidence")).toHaveLength(2);
+    // Just the placeholder — no High/Low confidence badge is rendered.
+    expect(screen.queryByText("High confidence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Low confidence")).not.toBeInTheDocument();
     expect(screen.getByTestId("autofill-tip")).toBeInTheDocument();
   });
 
@@ -348,6 +369,8 @@ describe("BuilderWizard", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "dog.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     expect(screen.getByTestId("species-value")).toHaveTextContent("Dog");
 
@@ -377,6 +400,9 @@ describe("BuilderWizard", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "cat.jpg", { type: "image/jpeg" })] },
     });
+    // The new angle photo is appended (2 photos now) and drives detection.
+    await screen.findByAltText("Uploaded photo 2");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     expect(screen.getByTestId("species-value")).toHaveTextContent("Cat");
     // Color re-prefilled from the new photo's detection.
@@ -390,6 +416,8 @@ describe("BuilderWizard", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "mochi.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     await user.type(screen.getByLabelText("Pet name"), "Mochi");
     await user.click(screen.getByRole("button", { name: "Continue" }));
@@ -432,15 +460,27 @@ describe("BuilderWizard", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "miso.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Describe the found pet" });
 
-    // Step 2 — found mode hides the lost/adoptable-only fields (name, personality tags).
+    // Step 2 — found mode hides the lost/adoptable-only fields (name, age, personality tags).
     expect(screen.queryByLabelText("Pet name")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Age (years)")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Personality tags")).not.toBeInTheDocument();
     expect(screen.getByTestId("found-hint")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    // The pet is created unnamed with status "found".
-    await waitFor(() => expect(createdPets[0]).toMatchObject({ name: "", status: "found" }));
+    // The pet is created unnamed, ageless, with status "found" — photo_path is the
+    // cover and photo_paths carries every uploaded angle.
+    await waitFor(() =>
+      expect(createdPets[0]).toMatchObject({
+        name: "",
+        status: "found",
+        age: null,
+        photo_path: "pets/photos/bento.jpg",
+        photo_paths: ["pets/photos/bento.jpg"],
+      }),
+    );
 
     // Step 3 — found fields: location picker (fallback input without a Maps key), date, description. No reward toggle.
     expect(await screen.findByRole("heading", { name: "Found-pet details" })).toBeInTheDocument();
@@ -464,6 +504,63 @@ describe("BuilderWizard", () => {
     // Lands on the found flyer's public detail page (unnamed → just "Found pet").
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Found pet");
     expect(screen.getByRole("heading", { level: 1 })).not.toHaveTextContent(":");
+  });
+
+  it("uploads several angle photos and posts them all as photo_paths (cover = first)", async () => {
+    useAuth.setState({ user: mockUser(), checked: true });
+    const user = userEvent.setup();
+    const createdPets: Array<Record<string, unknown>> = [];
+    // Counter-based keys: MSW cannot read the jsdom FormData body, so the handler
+    // numbers each accepted upload instead of echoing the file name.
+    let n = 0;
+    mswServer.use(
+      http.post("*/api/pets/photos", () => {
+        n += 1;
+        return HttpResponse.json(
+          {
+            key: `pets/photos/angle-${n}.jpg`,
+            url: `http://x/angle-${n}.jpg`,
+            thumb_key: `t-angle-${n}.jpg`,
+            thumb_url: `http://x/t-angle-${n}.jpg`,
+            pet_classes: ["dog"],
+            detected_classes: ["dog"],
+            max_confidence: 0.9,
+            breed: "",
+            breed_confidence: 0,
+            color: "",
+            color_confidence: 0,
+          },
+          { status: 201 },
+        );
+      }),
+      http.post("*/api/pets", async ({ request }) => {
+        createdPets.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(mockPet({ id: "66666666-6666-6666-6666-666666666666" }), { status: 201 });
+      }),
+    );
+    renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency", routePath: "/builder" });
+
+    // Pick two angles of the same pet in one go.
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: {
+        files: [
+          new File(["a"], "front.jpg", { type: "image/jpeg" }),
+          new File(["b"], "side.jpg", { type: "image/jpeg" }),
+        ],
+      },
+    });
+    await screen.findByAltText("Uploaded photo 2");
+    expect(screen.getByText("2 photos")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Tell us about the pet" });
+    await user.type(screen.getByLabelText("Pet name"), "Gab");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(createdPets).toHaveLength(1));
+    expect(createdPets[0]).toMatchObject({
+      photo_path: "pets/photos/angle-1.jpg",
+      photo_paths: ["pets/photos/angle-1.jpg", "pets/photos/angle-2.jpg"],
+    });
   });
 
   it("surfaces the 422 gatekeeper error inside the wizard", async () => {
@@ -520,6 +617,8 @@ describe("MyFlyersPage", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "bento.jpg", { type: "image/jpeg" })] },
     });
+    await screen.findByAltText("Uploaded pet preview");
+    await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     await user.type(screen.getByLabelText("Pet name"), "Bento");
     await user.click(screen.getByRole("button", { name: "Continue" }));

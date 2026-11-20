@@ -15,15 +15,23 @@ const uploadFile = (name = "bento.jpg") => {
   fireEvent.change(input, { target: { files: [new File(["img-bytes"], name, { type: "image/jpeg" })] } });
 };
 
-/** Stateful harness — PhotoUpload is a controlled component. */
-function Harness({ spy }: { spy: (r: PhotoUploadResult) => void }) {
-  const [uploaded, setUploaded] = useState<PhotoUploadResult | null>(null);
+/** Stateful harness — PhotoUpload is a controlled component (multi-photo). */
+function Harness({ spy, onMakeCover }: { spy: (r: PhotoUploadResult) => void; onMakeCover?: (key: string) => void }) {
+  const [uploaded, setUploaded] = useState<PhotoUploadResult[]>([]);
   return (
     <PhotoUpload
       uploaded={uploaded}
       onUploaded={(r) => {
         spy(r);
-        setUploaded(r);
+        setUploaded((prev) => [...prev.filter((p) => p.key !== r.key), r]);
+      }}
+      onRemove={(key) => setUploaded((prev) => prev.filter((p) => p.key !== key))}
+      onMakeCover={(key) => {
+        onMakeCover?.(key);
+        setUploaded((prev) => {
+          const target = prev.find((p) => p.key === key);
+          return target ? [target, ...prev.filter((p) => p.key !== key)] : prev;
+        });
       }}
     />
   );
@@ -44,7 +52,7 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
   it("shows the 422 no-pet error with detected labels and allows retry — no ban", async () => {
     setUploadRejects(true);
     const onUploaded = vi.fn();
-    renderWithProviders(<PhotoUpload onUploaded={onUploaded} uploaded={null} />);
+    renderWithProviders(<PhotoUpload onUploaded={onUploaded} onRemove={() => {}} onMakeCover={() => {}} uploaded={[]} />);
     uploadFile("landscape.jpg");
     const alert = await screen.findByTestId("no-pet-error");
     expect(alert).toHaveTextContent("No pet detected in the photo.");
@@ -55,13 +63,13 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
     expect(alert).toHaveTextContent("No strikes, no bans");
     expect(onUploaded).not.toHaveBeenCalled();
     // Retry is possible: the choose button is still available.
-    expect(screen.getByRole("button", { name: /Choose a (different )?photo/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Choose a photo/ })).toBeEnabled();
   });
 
   it("shows a generic error box for non-422 failures", async () => {
     mswServer.use(http.post("*/api/pets/photos", () => HttpResponse.json({ error: { code: "server_error", message: "Upload storage unavailable." } }, { status: 500 })));
     const onUploaded = vi.fn();
-    renderWithProviders(<PhotoUpload onUploaded={onUploaded} uploaded={null} />);
+    renderWithProviders(<PhotoUpload onUploaded={onUploaded} onRemove={() => {}} onMakeCover={() => {}} uploaded={[]} />);
     uploadFile();
     expect(await screen.findByRole("alert")).toHaveTextContent("Upload storage unavailable.");
   });
@@ -70,17 +78,138 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
     renderWithProviders(
       <PhotoUpload
         onUploaded={() => {}}
-        uploaded={{ key: "k", url: "http://x/full.jpg", thumb_key: "t", thumb_url: "http://x/thumb.jpg", pet_classes: ["cat"], detected_classes: ["cat"], max_confidence: 0.9 }}
+        onRemove={() => {}}
+        onMakeCover={() => {}}
+        uploaded={[{ key: "k", url: "http://x/full.jpg", thumb_key: "t", thumb_url: "http://x/thumb.jpg", pet_classes: ["cat"], detected_classes: ["cat"], max_confidence: 0.9 }]}
       />,
     );
     expect(screen.getByAltText("Uploaded pet preview")).toHaveAttribute("src", "http://x/thumb.jpg");
-    expect(screen.getByRole("button", { name: /Choose a different photo/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add photo (1/4)" })).toBeInTheDocument();
+  });
+
+  it("accepts several photos at once (different angles) and lists thumbnails", async () => {
+    // Counter-based keys: MSW cannot read the jsdom FormData body, so the handler
+    // numbers each accepted upload instead of echoing the file name.
+    let n = 0;
+    mswServer.use(
+      http.post("*/api/pets/photos", () => {
+        n += 1;
+        return HttpResponse.json(
+          {
+            key: `pets/photos/angle-${n}.jpg`,
+            url: `http://x/angle-${n}.jpg`,
+            thumb_key: `t-angle-${n}.jpg`,
+            thumb_url: `http://x/t-angle-${n}.jpg`,
+            pet_classes: ["dog"],
+            detected_classes: ["dog"],
+            max_confidence: 0.9,
+            breed: "",
+            breed_confidence: 0,
+            color: "",
+            color_confidence: 0,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const onUploaded = vi.fn();
+    renderWithProviders(<Harness spy={onUploaded} />);
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: {
+        files: [
+          new File(["a"], "front.jpg", { type: "image/jpeg" }),
+          new File(["b"], "side.jpg", { type: "image/jpeg" }),
+        ],
+      },
+    });
+    // Both photos upload sequentially; thumbnails appear under the cover frame.
+    expect(await screen.findByAltText("Uploaded photo 2")).toBeInTheDocument();
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(2));
+    expect(onUploaded).toHaveBeenNthCalledWith(1, expect.objectContaining({ key: "pets/photos/angle-1.jpg" }));
+    expect(onUploaded).toHaveBeenNthCalledWith(2, expect.objectContaining({ key: "pets/photos/angle-2.jpg" }));
+    expect(screen.getByAltText("Uploaded pet preview")).toBeInTheDocument(); // cover = first
+    expect(screen.getByText("2 photos")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add photo (2/4)" })).toBeEnabled();
+  });
+
+  it("removes a photo via its thumbnail button and promotes the next one to cover", async () => {
+    let n = 0;
+    mswServer.use(
+      http.post("*/api/pets/photos", () => {
+        n += 1;
+        return HttpResponse.json(
+          {
+            key: `pets/photos/angle-${n}.jpg`,
+            url: `http://x/angle-${n}.jpg`,
+            thumb_key: `t-angle-${n}.jpg`,
+            thumb_url: `http://x/t-angle-${n}.jpg`,
+            pet_classes: ["dog"],
+            detected_classes: ["dog"],
+            max_confidence: 0.9,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const onUploaded = vi.fn();
+    const onMakeCover = vi.fn();
+    renderWithProviders(<Harness spy={onUploaded} onMakeCover={onMakeCover} />);
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: {
+        files: [
+          new File(["a"], "front.jpg", { type: "image/jpeg" }),
+          new File(["b"], "side.jpg", { type: "image/jpeg" }),
+        ],
+      },
+    });
+    await screen.findByAltText("Uploaded photo 2");
+
+    // Tap the second thumbnail → it becomes the cover photo.
+    fireEvent.click(screen.getByRole("button", { name: "Make photo 2 the cover photo" }));
+    expect(onMakeCover).toHaveBeenCalledWith("pets/photos/angle-2.jpg");
+    expect(screen.getByRole("button", { name: "Cover photo" })).toHaveAttribute("aria-pressed", "true");
+
+    // Remove the second photo — the strip collapses back to the single photo.
+    fireEvent.click(screen.getByRole("button", { name: "Remove photo 2" }));
+    await waitFor(() => expect(screen.queryByText("2 photos")).not.toBeInTheDocument());
+    expect(screen.queryByAltText("Uploaded photo 2")).not.toBeInTheDocument();
+    expect(screen.getByAltText("Uploaded pet preview")).toBeInTheDocument();
+  });
+
+  it("caps a multi-pick at maxPhotos (4) — the 5th file is dropped and the button locks", async () => {
+    let n = 0;
+    mswServer.use(
+      http.post("*/api/pets/photos", () => {
+        n += 1;
+        return HttpResponse.json(
+          {
+            key: `pets/photos/angle-${n}.jpg`,
+            url: `http://x/angle-${n}.jpg`,
+            thumb_key: `t-angle-${n}.jpg`,
+            thumb_url: `http://x/t-angle-${n}.jpg`,
+            pet_classes: ["dog"],
+            detected_classes: ["dog"],
+            max_confidence: 0.9,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const onUploaded = vi.fn();
+    renderWithProviders(<Harness spy={onUploaded} />);
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: { files: [1, 2, 3, 4, 5].map((i) => new File([String(i)], `a${i}.jpg`, { type: "image/jpeg" })) },
+    });
+    expect(await screen.findByAltText("Uploaded photo 4")).toBeInTheDocument();
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(4)); // 5th file dropped
+    expect(screen.getByText("4 photos")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Photo limit reached" })).toBeDisabled();
   });
 
   it("uses the full-size drop zone and accepts a dragged photo", async () => {
     const onUploaded = vi.fn();
     renderWithProviders(<Harness spy={onUploaded} />);
-    const dropZone = screen.getByRole("button", { name: /Drop your pet’s photo here/ });
+    const dropZone = screen.getByRole("button", { name: /Drop your pet’s photos here/ });
     const frame = dropZone.closest(".photo-upload__frame");
     expect(frame).not.toBeNull();
 
@@ -119,7 +248,7 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
 
     try {
       const onUploaded = vi.fn();
-      renderWithProviders(<PhotoUpload onUploaded={onUploaded} uploaded={null} />);
+      renderWithProviders(<PhotoUpload onUploaded={onUploaded} onRemove={() => {}} onMakeCover={() => {}} uploaded={[]} />);
       uploadFile();
       await act(async () => Promise.resolve());
 

@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ImagePlus, LoaderCircle } from "lucide-react";
+import { Check, ImagePlus, LoaderCircle, X } from "lucide-react";
 import { useUploadPetPhoto, type PhotoUploadResult } from "@/features/pets/api";
 import { ApiError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 
 // Extend PhotoUploadResult locally for the local URL preview
-interface LocalPhotoUploadResult extends PhotoUploadResult {
+export interface LocalPhotoUploadResult extends PhotoUploadResult {
   localUrl?: string;
 }
 
 interface PhotoUploadProps {
+  /** Called once per accepted photo (several files can be picked at once). */
   onUploaded: (result: LocalPhotoUploadResult) => void;
-  uploaded: LocalPhotoUploadResult | null;
+  onRemove: (key: string) => void;
+  /** Promote a thumbnail to the cover photo (first position). */
+  onMakeCover: (key: string) => void;
+  uploaded: LocalPhotoUploadResult[];
+  maxPhotos?: number;
 }
+
+const DEFAULT_MAX_PHOTOS = 4;
 
 const UPLOAD_STAGES = [
   { id: "uploading", label: "Uploading photo", shortLabel: "Upload", detail: "Sending your photo over a secure connection" },
@@ -26,10 +33,15 @@ type UploadStage = (typeof UPLOAD_STAGES)[number]["id"];
 /**
  * Pet-photo upload with the YOLO-World gatekeeper UX: a non-pet photo gets a 422
  * "no pet detected" response — never a ban — and the user can pick another file.
+ * Several photos can be added at once (up to `maxPhotos`, e.g. different angles of
+ * the same pet); matching on the backend compares every photo pair, so extra
+ * angles of the same pet raise the chance of a lost/found match.
  */
-export function PhotoUpload({ onUploaded, uploaded }: PhotoUploadProps) {
+export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPhotos = DEFAULT_MAX_PHOTOS }: PhotoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingUrlRef = useRef<string | null>(null);
+  // Every object URL we created, so removed/unmounted previews can be revoked.
+  const urlRegistry = useRef(new Set<string>());
   const upload = useUploadPetPhoto();
   const [error, setError] = useState<ApiError | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
@@ -37,104 +49,123 @@ export function PhotoUpload({ onUploaded, uploaded }: PhotoUploadProps) {
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [stage, setStage] = useState<UploadStage>("uploading");
   const [uploadProgress, setUploadProgress] = useState(0);
-  const isPending = upload.isPending;
+  // True while a multi-file batch is being processed (keeps the overlay up
+  // between two sequential uploads).
+  const [batchPending, setBatchPending] = useState(false);
+  const busy = upload.isPending || batchPending;
 
-  // Effect to clean up local object URL when the component unmounts or uploaded changes
+  // Revoke object URLs that are no longer referenced by the uploaded list.
   useEffect(() => {
-    const localUrl = uploaded?.localUrl;
-    if (localUrl) {
-      return () => URL.revokeObjectURL(localUrl);
+    const live = new Set(uploaded.map((p) => p.localUrl).filter(Boolean) as string[]);
+    for (const url of urlRegistry.current) {
+      if (!live.has(url)) {
+        URL.revokeObjectURL(url);
+        urlRegistry.current.delete(url);
+      }
     }
-  }, [uploaded?.localUrl]);
+  }, [uploaded]);
 
   useEffect(() => () => {
     if (pendingUrlRef.current) URL.revokeObjectURL(pendingUrlRef.current);
+    for (const url of urlRegistry.current) URL.revokeObjectURL(url);
   }, []);
 
   // The endpoint is synchronous, so network progress is exact and the remaining
   // labels follow the server's scan → detect → save pipeline while it responds.
   useEffect(() => {
-    if (!isPending || (stage !== "scanning" && stage !== "detecting")) return;
+    if (!busy || (stage !== "scanning" && stage !== "detecting")) return;
     const nextStage: UploadStage = stage === "scanning" ? "detecting" : "saving";
     const timer = window.setTimeout(() => setStage(nextStage), stage === "scanning" ? 800 : 1000);
     return () => window.clearTimeout(timer);
-  }, [isPending, stage]);
+  }, [busy, stage]);
 
-  const pick = (file: File | undefined) => {
-    if (!file || isPending) return;
-    if (pendingUrlRef.current) URL.revokeObjectURL(pendingUrlRef.current);
-    const localUrl = URL.createObjectURL(file);
-    pendingUrlRef.current = localUrl;
+  const pick = async (files: File[]) => {
+    if (busy || files.length === 0) return;
+    const slots = Math.max(0, maxPhotos - uploaded.length);
+    const batch = files.slice(0, slots);
+    if (batch.length === 0) return;
+    setBatchPending(true);
+    try {
+      for (const file of batch) {
+        if (pendingUrlRef.current) URL.revokeObjectURL(pendingUrlRef.current);
+        const localUrl = URL.createObjectURL(file);
+        urlRegistry.current.add(localUrl);
+        pendingUrlRef.current = localUrl;
 
-    setError(null);
-    setImageFailed(false);
-    setPendingPreview(localUrl);
-    setStage("uploading");
-    setUploadProgress(0);
+        setError(null);
+        setImageFailed(false);
+        setPendingPreview(localUrl);
+        setStage("uploading");
+        setUploadProgress(0);
 
-    upload.mutate(
-      {
-        file,
-        onProgress: (percentage) => {
-          setUploadProgress(percentage);
-          if (percentage === 100) {
-            setStage((current) => current === "uploading" ? "scanning" : current);
-          }
-        },
-      },
-      {
-        onSuccess: (result) => {
+        try {
+          const result = await upload.mutateAsync({
+            file,
+            onProgress: (percentage) => {
+              setUploadProgress(percentage);
+              if (percentage === 100) {
+                setStage((current) => current === "uploading" ? "scanning" : current);
+              }
+            },
+          });
           // Ownership of the object URL passes to the controlled uploaded result.
           pendingUrlRef.current = null;
           onUploaded({ ...result, localUrl });
-        },
-        onError: (e) => {
+        } catch (e) {
           URL.revokeObjectURL(localUrl);
+          urlRegistry.current.delete(localUrl);
           if (pendingUrlRef.current === localUrl) pendingUrlRef.current = null;
           setPendingPreview(null);
           setError(e instanceof ApiError ? e : new ApiError(e as never));
-        },
-      },
-    );
+          // A rejected file in a multi-pick must not block the remaining ones.
+        }
+      }
+    } finally {
+      setPendingPreview(null);
+      setBatchPending(false);
+    }
   };
 
   const noPet = error?.status === 422 && error.code === "no_pet_detected";
-  const src = uploaded?.localUrl || uploaded?.thumb_url || uploaded?.url;
+  const cover = uploaded[0];
+  const src = cover?.localUrl || cover?.thumb_url || cover?.url;
   const currentStageIndex = UPLOAD_STAGES.findIndex((item) => item.id === stage);
   const currentStage = UPLOAD_STAGES[currentStageIndex];
+  const atLimit = uploaded.length >= maxPhotos;
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!isPending) e.dataTransfer.dropEffect = "copy";
+    if (!busy) e.dataTransfer.dropEffect = "copy";
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    if (!isPending) pick(e.dataTransfer.files?.[0]);
+    if (!busy) void pick(Array.from(e.dataTransfer.files ?? []));
   };
 
   return (
-    <div className="photo-upload" aria-busy={isPending}>
+    <div className="photo-upload" aria-busy={busy}>
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
+        multiple
         className="photo-upload__input"
         aria-label="Choose a pet photo"
         onChange={(e) => {
-          pick(e.target.files?.[0]);
+          void pick(Array.from(e.target.files ?? []));
           e.target.value = "";
         }}
       />
 
       <div
-        className={`photo-frame photo-upload__frame${isDragging ? " photo-upload__frame--dragging" : ""}${isPending ? " photo-upload__frame--pending" : ""}`}
+        className={`photo-frame photo-upload__frame${isDragging ? " photo-upload__frame--dragging" : ""}${busy ? " photo-upload__frame--pending" : ""}`}
         onDragEnter={(e) => {
           e.preventDefault();
-          if (!isPending) setIsDragging(true);
+          if (!busy) setIsDragging(true);
         }}
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragging(false);
@@ -142,7 +173,7 @@ export function PhotoUpload({ onUploaded, uploaded }: PhotoUploadProps) {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {isPending ? (
+        {busy ? (
           <div className="photo-upload__processing">
             {pendingPreview && <img className="photo-upload__preview" src={pendingPreview} alt="" aria-hidden="true" />}
             <div className="photo-upload__scrim" aria-hidden="true" />
@@ -195,12 +226,12 @@ export function PhotoUpload({ onUploaded, uploaded }: PhotoUploadProps) {
               </ol>
             </div>
           </div>
-        ) : uploaded && imageFailed ? (
+        ) : uploaded.length > 0 && imageFailed ? (
           <div className="photo-upload__message">
             <span>Could not load photo</span>
             <p className="t-small">Pick another photo below</p>
           </div>
-        ) : uploaded && src ? (
+        ) : uploaded.length > 0 && src ? (
           <img
             className="photo-upload__uploaded-image"
             src={src}
@@ -212,27 +243,57 @@ export function PhotoUpload({ onUploaded, uploaded }: PhotoUploadProps) {
             <span className="photo-upload__icon" aria-hidden="true">
               <ImagePlus size={30} strokeWidth={1.8} />
             </span>
-            <span className="photo-upload__empty-title">Drop your pet’s photo here</span>
+            <span className="photo-upload__empty-title">Drop your pet’s photos here</span>
             <span className="photo-upload__empty-action">or click to browse from your device</span>
-            <span className="photo-upload__empty-hint">Choose a clear, well-lit photo so people can recognise your pet.</span>
+            <span className="photo-upload__empty-hint">
+              Add up to {maxPhotos} clear, well-lit photos from different angles — the same pet from another
+              angle still matches lost/found reports.
+            </span>
           </button>
         )}
       </div>
 
+      {!busy && uploaded.length > 1 && (
+        <div className="photo-upload__thumbs" role="group" aria-label="Uploaded photos">
+          {uploaded.map((p, i) => (
+            <div key={p.key} className={`photo-upload__thumb${i === 0 ? " photo-upload__thumb--cover" : ""}`}>
+              <button
+                type="button"
+                className="photo-upload__thumb-btn"
+                aria-pressed={i === 0}
+                aria-label={i === 0 ? "Cover photo" : `Make photo ${i + 1} the cover photo`}
+                onClick={() => onMakeCover(p.key)}
+              >
+                <img src={p.localUrl || p.thumb_url || p.url} alt={`Uploaded photo ${i + 1}`} />
+              </button>
+              <button
+                type="button"
+                className="photo-upload__thumb-remove"
+                aria-label={`Remove photo ${i + 1}`}
+                onClick={() => onRemove(p.key)}
+              >
+                <X size={13} strokeWidth={2.5} aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="btn-row">
         <Button
           type="button"
-          variant={uploaded ? "secondary" : "primary"}
-          disabled={isPending}
+          variant={uploaded.length > 0 ? "secondary" : "primary"}
+          disabled={busy || atLimit}
           onClick={() => inputRef.current?.click()}
         >
-          {isPending ? "Processing…" : uploaded ? "Choose a different photo" : "Choose a photo"}
+          {busy ? "Processing…" : uploaded.length === 0 ? "Choose a photo" : atLimit ? "Photo limit reached" : `Add photo (${uploaded.length}/${maxPhotos})`}
         </Button>
-        {uploaded && !imageFailed && !isPending && (
+        {uploaded.length > 0 && !imageFailed && !busy && (
           <span className="badge badge--outreach">
-            {uploaded.pet_classes?.length ? `Detected: ${uploaded.pet_classes[0]} ✓` : "Pet detected ✓"}
+            {cover?.pet_classes?.length ? `Detected: ${cover.pet_classes[0]} ✓` : "Pet detected ✓"}
           </span>
         )}
+        {uploaded.length > 1 && <span className="badge badge--neutral">{uploaded.length} photos</span>}
       </div>
 
       {noPet && (

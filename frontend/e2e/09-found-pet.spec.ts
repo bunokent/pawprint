@@ -3,8 +3,8 @@ import { API, fixture, login } from "./helpers";
 
 /**
  * Journey 9 — found-pet posting mirrors the lost flow:
- * login → /builder?mode=found → photo gate → pet form (no name/tags — the owner
- * is unknown) → location/date/description (no reward) → publish → public
+ * login → /builder?mode=found → photo gate → pet form (no name/age/tags — the
+ * owner is unknown) → location/date/description (no reward) → publish → public
  * "Found pet" detail page + map endpoint includes it.
  */
 test("registered user publishes a found-pet flyer", async ({ page }) => {
@@ -14,16 +14,20 @@ test("registered user publishes a found-pet flyer", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Report a found pet" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Found pet" })).toHaveAttribute("aria-pressed", "true");
 
-  // Step 1 — photo gate.
+  // Step 1 — photo gate; the wizard stays on the photo step until Next.
   const upload = page.waitForResponse(
     (r) => r.url().endsWith("/api/pets/photos") && r.request().method() === "POST",
   );
   await page.setInputFiles("input[type=file]", fixture("dog.jpg"));
   expect((await upload).status()).toBe(201);
+  await expect(page.getByAltText("Uploaded pet preview")).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Describe the found pet" })).toBeVisible({ timeout: 60_000 });
 
-  // Step 2 — found pets are unnamed: no pet-name / personality-tag fields (lost & adoptable only).
+  // Step 2 — found pets are unnamed and ageless: no pet-name / pet-age /
+  // personality-tag fields (lost & adoptable only).
   await expect(page.locator("#pet-name")).toHaveCount(0);
+  await expect(page.locator("#pet-age")).toHaveCount(0);
   await expect(page.locator("#pet-tags")).toHaveCount(0);
   await expect(page.getByTestId("found-hint")).toBeVisible();
   // Species is read-only detected text; breed/color still describe the found pet.

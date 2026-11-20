@@ -8,7 +8,7 @@ import { ApiError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { FieldShell, Input, Textarea } from "@/components/ui/field";
 import { ErrorBox } from "@/components/ui/feedback";
-import { PhotoUpload } from "@/features/pets/components/PhotoUpload";
+import { PhotoUpload, type LocalPhotoUploadResult } from "@/features/pets/components/PhotoUpload";
 import { LocationPicker } from "@/components/maps/LocationPicker";
 import { useCreatePet, HIGH_CONFIDENCE, type Pet, type PhotoUploadResult } from "@/features/pets/api";
 import { useCreateFlyer, type Flyer, type Mode } from "@/features/flyers/api";
@@ -30,17 +30,11 @@ function detectedSpecies(detectedClasses: string[]): Species | null {
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** Prefill only confident detections — below the threshold the field stays blank. */
+/** Prefill only confident detections — below the threshold the field stays blank
+ *  and simply shows the "Not detected" placeholder. */
 function prefill(value: string | undefined, confidence: number | undefined): string {
   if (!value || (confidence ?? 0) < HIGH_CONFIDENCE) return "";
   return value;
-}
-
-function confidenceBadge(confidence: number | undefined): { label: string; tone: string } | null {
-  if (confidence === undefined) return null;
-  return confidence >= HIGH_CONFIDENCE
-    ? { label: "High confidence", tone: "badge--outreach" }
-    : { label: "Low confidence", tone: "badge--neutral" };
 }
 
 const petSchemaBase = z.object({
@@ -142,7 +136,9 @@ export function BuilderWizard() {
     const m = params.get("mode");
     return m === "outreach" || m === "found" ? m : "emergency";
   });
-  const [photo, setPhoto] = useState<PhotoUploadResult | null>(null);
+  // All uploaded angles of the pet — the first is the cover photo; matching on the
+  // backend compares every photo pair, so extra angles raise the chance of a hit.
+  const [photos, setPhotos] = useState<LocalPhotoUploadResult[]>([]);
   const [pet, setPet] = useState<Pet | null>(null);
 
   if (checked && !user) {
@@ -189,16 +185,24 @@ export function BuilderWizard() {
           <StepPhotoMode
             mode={mode}
             setMode={setMode}
-            photo={photo}
-            onUploaded={(r) => {
-              setPhoto(r);
-              setStep(1);
-            }}
+            photos={photos}
+            onUploaded={(r) =>
+              setPhotos((prev) =>
+                prev.some((p) => p.key === r.key) ? prev.map((p) => (p.key === r.key ? r : p)) : [...prev, r],
+              )
+            }
+            onRemove={(key) => setPhotos((prev) => prev.filter((p) => p.key !== key))}
+            onMakeCover={(key) =>
+              setPhotos((prev) => {
+                const target = prev.find((p) => p.key === key);
+                return target ? [target, ...prev.filter((p) => p.key !== key)] : prev;
+              })
+            }
             onNext={() => setStep(1)}
           />
         )}
-        {step === 1 && photo && <StepPet photo={photo} mode={mode} onDone={(p) => { setPet(p); setStep(2); }} onBack={() => setStep(0)} />}
-        {step === 2 && photo && pet && user && <StepFlyer pet={pet} photo={photo} mode={mode} userEmail={user.email} onBack={() => setStep(1)} />}
+        {step === 1 && photos.length > 0 && <StepPet photos={photos} mode={mode} onDone={(p) => { setPet(p); setStep(2); }} onBack={() => setStep(0)} />}
+        {step === 2 && photos.length > 0 && pet && user && <StepFlyer pet={pet} photo={photos[0]} mode={mode} userEmail={user.email} onBack={() => setStep(1)} />}
       </div>
     </section>
   );
@@ -207,14 +211,18 @@ export function BuilderWizard() {
 function StepPhotoMode({
   mode,
   setMode,
-  photo,
+  photos,
   onUploaded,
+  onRemove,
+  onMakeCover,
   onNext,
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
-  photo: PhotoUploadResult | null;
-  onUploaded: (r: PhotoUploadResult) => void;
+  photos: LocalPhotoUploadResult[];
+  onUploaded: (r: LocalPhotoUploadResult) => void;
+  onRemove: (key: string) => void;
+  onMakeCover: (key: string) => void;
   onNext: () => void;
 }) {
   return (
@@ -254,11 +262,16 @@ function StepPhotoMode({
       </p>
       <FieldShell
         label="Pet photo"
-        hint="Every photo is checked by our pet detector before upload — a non-pet photo is simply rejected, never penalised."
+        hint={`Every photo is checked by our pet detector before upload — a non-pet photo is simply rejected, never penalised. Add up to 4 photos from different angles: lost/found matching compares every photo pair, so the same pet from another angle still matches.`}
       >
-        <PhotoUpload onUploaded={onUploaded} uploaded={photo} />
+        <PhotoUpload
+          onUploaded={onUploaded}
+          onRemove={onRemove}
+          onMakeCover={onMakeCover}
+          uploaded={photos}
+        />
       </FieldShell>
-      {photo && (
+      {photos.length > 0 && (
         <div className="btn-row">
           <Button type="button" onClick={onNext}>
             Next
@@ -270,18 +283,20 @@ function StepPhotoMode({
 }
 
 function StepPet({
-  photo,
+  photos,
   mode,
   onDone,
   onBack,
 }: {
-  photo: PhotoUploadResult;
+  photos: LocalPhotoUploadResult[];
   mode: Mode;
   onDone: (pet: Pet) => void;
   onBack: () => void;
 }) {
   const createPet = useCreatePet();
-  // Prefer the CLIP-refined species names; fall back to raw YOLO-World labels.
+  // Detection runs on the latest uploaded photo (the cover is photos[0]);
+  // prefer the CLIP-refined species names; fall back to raw YOLO-World labels.
+  const photo = photos[photos.length - 1];
   const detectedLabels = photo.pet_classes?.length ? photo.pet_classes : photo.detected_classes;
   const speciesText = detectedLabels.length > 0 ? detectedLabels.map(capitalize).join(", ") : "Not detected";
   const autoSpecies = (detectedSpecies(detectedLabels) ?? "dog") as Species;
@@ -301,20 +316,20 @@ function StepPet({
     form.setValue("color", prefill(photo.color, photo.color_confidence));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photo.key]);
-  const breedBadge = confidenceBadge(photo.breed_confidence);
-  const colorBadge = confidenceBadge(photo.color_confidence);
   const showAutofillTip = Boolean(photo.breed || photo.color);
   const [state, submit, pending] = useActionState(async (_prev: StepState, values: PetValues): Promise<StepState> => {
     try {
       const pet = await createPet.mutateAsync({
-        // Found pets are unnamed — the finder doesn't know the owner's pet.
+        // Found pets are unnamed — the finder doesn't know the owner's pet — and
+        // carry no age either (the finder can't know it).
         name: mode === "found" ? "" : (values.name ?? "").trim(),
         species: autoSpecies,
         breed: values.breed || undefined,
         color: values.color || undefined,
-        age: values.age ? Number(values.age) : null,
+        age: mode === "found" ? null : values.age ? Number(values.age) : null,
         temperament_tags: parseTags(values.temperament_tags ?? ""),
-        photo_path: photo.key,
+        photo_path: photos[0].key,
+        photo_paths: photos.map((p) => p.key),
         status: mode === "emergency" ? "lost" : mode === "found" ? "found" : "adoptable",
       });
       onDone(pet);
@@ -346,22 +361,18 @@ function StepPet({
               {speciesText}
             </p>
           </FieldShell>
-          <FieldShell label="Age (years)" htmlFor="pet-age" error={form.formState.errors.age?.message}>
-            <Input id="pet-age" inputMode="numeric" aria-invalid={Boolean(form.formState.errors.age)} {...form.register("age")} />
-          </FieldShell>
+          {mode !== "found" && (
+            <FieldShell label="Age (years)" htmlFor="pet-age" error={form.formState.errors.age?.message}>
+              <Input id="pet-age" inputMode="numeric" aria-invalid={Boolean(form.formState.errors.age)} {...form.register("age")} />
+            </FieldShell>
+          )}
         </div>
         <div className="split-2" style={{ gap: 16 }}>
           <FieldShell label="Breed" htmlFor="pet-breed" error={form.formState.errors.breed?.message}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <Input id="pet-breed" autoComplete="off" placeholder="Not detected" aria-invalid={Boolean(form.formState.errors.breed)} {...form.register("breed")} />
-              {breedBadge && <span className={`badge ${breedBadge.tone}`}>{breedBadge.label}</span>}
-            </div>
+            <Input id="pet-breed" autoComplete="off" placeholder="Not detected" aria-invalid={Boolean(form.formState.errors.breed)} {...form.register("breed")} />
           </FieldShell>
           <FieldShell label="Color" htmlFor="pet-color" error={form.formState.errors.color?.message}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <Input id="pet-color" autoComplete="off" placeholder="Not detected" aria-invalid={Boolean(form.formState.errors.color)} {...form.register("color")} />
-              {colorBadge && <span className={`badge ${colorBadge.tone}`}>{colorBadge.label}</span>}
-            </div>
+            <Input id="pet-color" autoComplete="off" placeholder="Not detected" aria-invalid={Boolean(form.formState.errors.color)} {...form.register("color")} />
           </FieldShell>
         </div>
         {showAutofillTip && (
