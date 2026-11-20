@@ -5,7 +5,8 @@ import pytest
 from apps.flyers.factories import FlyerFactory
 from apps.flyers.models import Flyer
 from apps.notifications.models import Notification
-from apps.pets.factories import PetFactory
+from apps.pets.factories import PetFactory, PetPhotoFactory
+from apps.pets.models import PetPhoto
 from apps.vision.models import PetMatch
 from apps.vision.services import PetMatchService, cosine_similarity
 
@@ -144,6 +145,84 @@ def test_match_flyer_skips_unreadable_photos_but_still_matches(settings, monkeyp
     assert Notification.objects.filter(kind=Notification.Kind.MATCH_FOUND).count() == 1
 
 
+def test_pet_embeddings_prefers_pet_photo_rows_over_pet_embedding():
+    """With PetPhoto rows present, matching uses one embedding per photo (angle)."""
+    pet = PetFactory(photo_embedding=EMB_A)  # legacy cover embedding
+    PetPhotoFactory(pet=pet, photo_embedding=EMB_A_CLOSE)
+    PetPhotoFactory(pet=pet, photo_embedding=EMB_OTHER)
+
+    embeddings = PetMatchService.pet_embeddings(pet)
+
+    assert embeddings == [EMB_A_CLOSE, EMB_OTHER]
+
+
+def test_pet_embeddings_falls_back_to_legacy_pet_embedding():
+    """Pets without PetPhoto rows (legacy data) still match via Pet.photo_embedding."""
+    pet = PetFactory(photo_embedding=EMB_A)
+    assert PetMatchService.pet_embeddings(pet) == [EMB_A]
+    # PetPhoto rows that cannot be embedded (no cache under TESTING) fall back too.
+    PetPhotoFactory(pet=pet, photo_path="pets/photos/gone.jpg")
+    assert PetMatchService.pet_embeddings(pet) == [EMB_A]
+
+
+def test_match_flyer_matches_same_pet_across_different_angles():
+    """The reference case: one pet, several angle photos — the BEST cross-photo
+    pair decides, so a found photo that matches only one of the lost pet's angles
+    still produces a match (and notifications)."""
+    lost_pet = PetFactory(photo_embedding=EMB_OTHER)  # cover angle is dissimilar…
+    PetPhotoFactory(pet=lost_pet, photo_embedding=EMB_OTHER)
+    PetPhotoFactory(pet=lost_pet, photo_embedding=EMB_A)  # …but this angle matches
+    FlyerFactory(mode=Flyer.Mode.EMERGENCY, pet=lost_pet, location_lat=14.5, location_lng=121.0)
+    # Found pet photographed from yet another angle — similar to EMB_A only.
+    found_flyer = FlyerFactory(mode=Flyer.Mode.FOUND, pet=PetFactory(photo_embedding=EMB_A_CLOSE))
+
+    matches = PetMatchService.match_flyer(str(found_flyer.pk))
+
+    assert len(matches) == 1
+    assert matches[0].score == pytest.approx(0.99, abs=0.01)
+    assert set(Notification.objects.values_list("kind", flat=True)) == {
+        Notification.Kind.MATCH_FOUND,
+        Notification.Kind.MATCH_LOST,
+    }
+
+
+def test_match_flyer_ignores_pairs_where_no_photo_pair_is_similar():
+    """Multi-photo only helps when at least ONE pair clears the threshold."""
+    lost_pet = PetFactory()
+    PetPhotoFactory(pet=lost_pet, photo_embedding=EMB_A)
+    PetPhotoFactory(pet=lost_pet, photo_embedding=EMB_A_CLOSE)
+    FlyerFactory(mode=Flyer.Mode.EMERGENCY, pet=lost_pet)
+    # Found pet has two angles too — both dissimilar to every lost angle.
+    found_pet = PetFactory()
+    PetPhotoFactory(pet=found_pet, photo_embedding=EMB_OTHER)
+    PetPhotoFactory(pet=found_pet, photo_embedding=[0.0, 0.0, 1.0, 0.0])
+    found_flyer = FlyerFactory(mode=Flyer.Mode.FOUND, pet=found_pet)
+
+    assert PetMatchService.match_flyer(str(found_flyer.pk)) == []
+    assert PetMatch.objects.count() == 0
+
+
+def test_match_flyer_skips_embedless_counterparts_and_updates_score_on_rematch():
+    # A counterpart with no photo/embedding at all is skipped (line: continue).
+    FlyerFactory(mode=Flyer.Mode.EMERGENCY, pet=PetFactory())
+    lost_flyer = FlyerFactory(mode=Flyer.Mode.EMERGENCY, pet=PetFactory(photo_embedding=EMB_A))
+    found_pet = PetFactory(photo_embedding=EMB_A_CLOSE)
+    found_flyer = FlyerFactory(mode=Flyer.Mode.FOUND, pet=found_pet)
+
+    matches = PetMatchService.match_flyer(str(found_flyer.pk))
+    assert len(matches) == 1
+    assert matches[0].lost_flyer == lost_flyer
+
+    # Re-matching the same pair with a better-scoring photo updates the stored
+    # score but does NOT re-notify (the PetMatch row already exists).
+    found_pet.photo_embedding = EMB_A
+    found_pet.save(update_fields=["photo_embedding"])
+    matches = PetMatchService.match_flyer(str(found_flyer.pk))
+    assert len(matches) == 1
+    assert PetMatch.objects.get().score == pytest.approx(1.0)
+    assert Notification.objects.count() == 2
+
+
 def test_backfill_matches_command_creates_matches_for_existing_flyers():
     from django.core.management import call_command
 
@@ -167,9 +246,58 @@ def test_create_pet_caches_photo_embedding_when_photo_attached(settings, monkeyp
     from apps.users.factories import UserFactory
 
     settings.TESTING = False
-    monkeypatch.setattr("apps.common.storage.read_bytes", lambda key: b"raw-bytes")
+    reads: list[str] = []
+
+    def _read(key):
+        reads.append(key)
+        return b"raw-bytes"
+
+    monkeypatch.setattr("apps.common.storage.read_bytes", _read)
     monkeypatch.setattr("apps.vision.services.load_image", lambda raw: object())
     monkeypatch.setattr("apps.vision.services.clip_image_embedding", lambda img: EMB_A)
 
     pet = PetService.create_pet(UserFactory(), name="Rex", photo_path="pets/photos/x.jpg")
     assert pet.photo_embedding == EMB_A
+    # A PetPhoto row is created for the cover photo and reuses its embedding
+    # (storage is read once, not once per row).
+    assert PetPhoto.objects.filter(pet=pet).count() == 1
+    assert PetPhoto.objects.get(pet=pet).photo_embedding == EMB_A
+    assert reads == ["pets/photos/x.jpg"]
+
+
+def test_create_pet_stores_every_angle_as_a_petphoto(settings, monkeypatch):
+    """photo_paths: each angle gets its own PetPhoto row + cached embedding."""
+    from apps.pets.services import MAX_PET_PHOTOS, PetService
+    from apps.users.factories import UserFactory
+
+    settings.TESTING = False
+    monkeypatch.setattr("apps.common.storage.read_bytes", lambda key: b"raw-bytes")
+    monkeypatch.setattr("apps.vision.services.load_image", lambda raw: object())
+    monkeypatch.setattr("apps.vision.services.clip_image_embedding", lambda img: EMB_A_CLOSE)
+
+    pet = PetService.create_pet(
+        UserFactory(),
+        name="Gab",
+        photo_paths=["pets/photos/front.jpg", "pets/photos/side.jpg", "pets/photos/back.jpg"],
+    )
+
+    assert pet.photo_path == "pets/photos/front.jpg"  # first photo is the cover
+    photos = list(PetPhoto.objects.filter(pet=pet).order_by("created_at"))
+    assert [p.photo_path for p in photos] == [
+        "pets/photos/front.jpg",
+        "pets/photos/side.jpg",
+        "pets/photos/back.jpg",
+    ]
+    assert all(p.photo_embedding == EMB_A_CLOSE for p in photos)
+    # photo_path (legacy single field) is merged ahead of photo_paths and deduped.
+    pet2 = PetService.create_pet(
+        UserFactory(),
+        photo_path="pets/photos/cover.jpg",
+        photo_paths=["pets/photos/cover.jpg", "pets/photos/extra.jpg"],
+    )
+    assert PetPhoto.objects.filter(pet=pet2).count() == 2
+    # …and capped at MAX_PET_PHOTOS.
+    pet3 = PetService.create_pet(
+        UserFactory(), photo_paths=[f"pets/photos/p{i}.jpg" for i in range(MAX_PET_PHOTOS + 3)]
+    )
+    assert PetPhoto.objects.filter(pet=pet3).count() == MAX_PET_PHOTOS

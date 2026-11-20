@@ -535,9 +535,11 @@ class PetAttributeService:
 
 # ---------------------------------------------------------------------------
 # Photo embeddings + lost/found matching — the same CLIP encoder, used
-# image-to-image: cosine similarity between a found photo and each active lost
-# photo decides "possible match" (notifications + map halo). Embeddings are
-# cached on Pet.photo_embedding.
+# image-to-image: the BEST cosine similarity over every cross-photo pair
+# (found photo × lost photo) decides "possible match" (notifications + map
+# halo), so the same pet shown from different angles still matches — not just
+# literally the same picture. Embeddings are cached per photo on
+# PetPhoto.photo_embedding (legacy single-photo pets: Pet.photo_embedding).
 # ---------------------------------------------------------------------------
 
 
@@ -567,8 +569,8 @@ class PetMatchService:
     """Compares a flyer's pet photo against the opposite mode's active flyers."""
 
     @staticmethod
-    def ensure_embedding(pet) -> list[float] | None:  # noqa: ANN001, ANN202
-        """Return the pet's CLIP embedding, computing + caching it from the stored photo.
+    def ensure_embedding(photo) -> list[float] | None:  # noqa: ANN001, ANN202
+        """Return the CLIP embedding of a Pet or PetPhoto, computing + caching it.
 
         Under PAWPRINT_TESTING the storage/CLIP path is skipped (tests set
         photo_embedding explicitly) so the suite stays hermetic and fast.
@@ -576,28 +578,51 @@ class PetMatchService:
         model failure) is logged and treated as "no embedding" — one broken
         photo must never abort matching for every other lost/found pair.
         """
-        if pet.photo_embedding:
-            return pet.photo_embedding
-        if not pet.photo_path or settings.TESTING:
+        if photo.photo_embedding:
+            return photo.photo_embedding
+        if not photo.photo_path or settings.TESTING:
             return None
         from apps.common import storage
 
         try:
-            raw = storage.read_bytes(pet.photo_path)
+            raw = storage.read_bytes(photo.photo_path)
             embedding = clip_image_embedding(load_image(raw))
-            pet.photo_embedding = embedding
-            pet.save(update_fields=["photo_embedding"])
+            photo.photo_embedding = embedding
+            photo.save(update_fields=["photo_embedding"])
         except Exception:  # noqa: BLE001 — resilience over strictness here
-            logger.exception("ensure_embedding failed for pet %s (photo %s)", pet.pk, pet.photo_path)
+            logger.exception(
+                "ensure_embedding failed for %s %s (photo %s)",
+                type(photo).__name__, photo.pk, photo.photo_path,
+            )
             return None
         return embedding
 
     @staticmethod
+    def pet_embeddings(pet) -> list[list[float]]:  # noqa: ANN001, ANN202
+        """All photo embeddings of a pet — one per PetPhoto row (each angle of the
+        pet), falling back to the legacy single Pet.photo_embedding for pets that
+        predate PetPhoto rows. Callers should prefetch ``pet__photos``.
+        """
+        embeddings: list[list[float]] = []
+        for photo in pet.photos.all():
+            embedding = PetMatchService.ensure_embedding(photo)
+            if embedding:
+                embeddings.append(embedding)
+        if not embeddings:
+            embedding = PetMatchService.ensure_embedding(pet)
+            if embedding:
+                embeddings.append(embedding)
+        return embeddings
+
+    @staticmethod
     def match_flyer(flyer_id: str) -> list:  # noqa: ANN401
-        """Match one flyer's pet photo against active flyers of the opposite mode.
+        """Match one flyer's pet photos against active flyers of the opposite mode.
 
         Creates PetMatch rows (and notifications, once per pair) for every pair
-        whose embedding cosine similarity >= PET_MATCH_SIMILARITY_THRESHOLD.
+        whose BEST cross-photo cosine similarity (any photo of one pet × any
+        photo of the other) is >= PET_MATCH_SIMILARITY_THRESHOLD. The max-over-
+        pairs score is what makes the same pet photographed from different
+        angles match, not just identical pictures.
         """
         import uuid as _uuid
 
@@ -606,24 +631,33 @@ class PetMatchService:
 
         from .models import PetMatch
 
-        flyer = Flyer.objects.select_related("pet").filter(pk=_uuid.UUID(str(flyer_id))).first()
+        flyer = (
+            Flyer.objects.select_related("pet")
+            .prefetch_related("pet__photos")
+            .filter(pk=_uuid.UUID(str(flyer_id)))
+            .first()
+        )
         if flyer is None or flyer.mode not in (Flyer.Mode.EMERGENCY, Flyer.Mode.FOUND):
             return []
-        embedding = PetMatchService.ensure_embedding(flyer.pet)
-        if not embedding:
+        embeddings = PetMatchService.pet_embeddings(flyer.pet)
+        if not embeddings:
             return []
         counterpart_mode = Flyer.Mode.FOUND if flyer.mode == Flyer.Mode.EMERGENCY else Flyer.Mode.EMERGENCY
         counterparts = (
             Flyer.objects.select_related("pet", "pet__owner", "creator")
+            .prefetch_related("pet__photos")
             .filter(status=Flyer.Status.ACTIVE, mode=counterpart_mode)
             .exclude(pet_id=flyer.pet_id)
         )
         matches = []
         for other in counterparts:
-            other_embedding = PetMatchService.ensure_embedding(other.pet)
-            if not other_embedding:
+            other_embeddings = PetMatchService.pet_embeddings(other.pet)
+            if not other_embeddings:
                 continue
-            score = cosine_similarity(embedding, other_embedding)
+            score = max(
+                (cosine_similarity(a, b) for a in embeddings for b in other_embeddings),
+                default=0.0,
+            )
             if score < settings.PET_MATCH_SIMILARITY_THRESHOLD:
                 continue
             lost, found = (other, flyer) if flyer.mode == Flyer.Mode.FOUND else (flyer, other)

@@ -65,3 +65,26 @@ class Pet(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.species})"
+
+
+class PetPhoto(models.Model):
+    """One photo of a pet — a pet can carry several (e.g. different angles of the
+    same dog). Each photo gets its own cached CLIP embedding; lost/found matching
+    takes the best cosine similarity over every cross-photo pair, so the same pet
+    photographed from different angles still matches (see PetMatchService).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    pet = models.ForeignKey(Pet, on_delete=models.CASCADE, related_name="photos")
+    photo_path = models.CharField(max_length=512)
+    # CLIP ViT-B/32 image embedding of THIS photo (list of 512 floats), cached at
+    # match time — one entry per photo, not just the cover photo.
+    photo_embedding = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "pets_petphoto"
+        indexes = [Index(fields=["pet", "created_at"], name="petphoto_pet_created_idx")]
+
+    def __str__(self) -> str:
+        return f"photo {self.photo_path} of pet {self.pet_id}"

@@ -1200,6 +1200,12 @@ components:
         photo_path:
           type: string
           maxLength: 512
+        photo_paths:
+          type: array
+          items:
+            type: string
+            maxLength: 512
+          maxItems: 6
         status:
           allOf:
           - $ref: '#/components/schemas/StatusF90Enum'

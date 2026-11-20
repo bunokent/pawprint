@@ -113,6 +113,46 @@ def test_create_pet_with_found_status(auth_client, user):
     assert resp.json()["status"] == "found"
 
 
+def test_create_pet_with_photo_paths_stores_every_angle(auth_client, user):
+    """Multi-angle upload: each photo becomes a PetPhoto row; the first is the cover."""
+    from apps.pets.models import PetPhoto
+
+    resp = auth_client.post(
+        "/api/pets",
+        {
+            "species": "dog",
+            "status": "found",
+            "photo_paths": ["pets/photos/front.jpg", "pets/photos/side.jpg", "pets/photos/back.jpg"],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["photo_path"] == "pets/photos/front.jpg"  # cover = first photo
+    photos = PetPhoto.objects.filter(pet_id=body["id"]).order_by("created_at")
+    assert [p.photo_path for p in photos] == [
+        "pets/photos/front.jpg",
+        "pets/photos/side.jpg",
+        "pets/photos/back.jpg",
+    ]
+    # Legacy single photo_path still works and merges with photo_paths.
+    resp = auth_client.post(
+        "/api/pets",
+        {"species": "dog", "photo_path": "pets/photos/a.jpg", "photo_paths": ["pets/photos/b.jpg"]},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.json()["photo_path"] == "pets/photos/a.jpg"
+    assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 2
+    # More than 6 photos are rejected.
+    resp = auth_client.post(
+        "/api/pets",
+        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(7)]},
+        format="json",
+    )
+    assert resp.status_code == 400
+
+
 def test_create_found_pet_without_name(auth_client, user):
     """Found-pet reports have no name — the finder doesn't know the owner's pet."""
     resp = auth_client.post(

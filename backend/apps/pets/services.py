@@ -11,7 +11,10 @@ from apps.common import storage
 from apps.common.exceptions import NoPetDetectedError
 from apps.vision.services import PetAttributeService, PetDetectionService, load_image
 
-from .models import Pet
+from .models import Pet, PetPhoto
+
+# A pet can carry up to this many photos (different angles of the same pet).
+MAX_PET_PHOTOS = 6
 
 
 @dataclass(frozen=True)
@@ -37,19 +40,30 @@ class PetService:
     def create_pet(owner, *, name: str = "", species: str = "dog", breed: str = "", color: str = "",
                    age: int | None = None, temperament_tags: list[str] | None = None,
                    health_tags: list[str] | None = None, photo_path: str = "",
+                   photo_paths: list[str] | None = None,
                    status: str = Pet.Status.ADOPTABLE) -> Pet:
+        # Cover photo first, then any extra angles — deduped, capped at MAX_PET_PHOTOS.
+        paths = list(dict.fromkeys(p for p in [photo_path, *(photo_paths or [])] if p))[:MAX_PET_PHOTOS]
         pet = Pet.objects.create(
             owner=owner, name=name, species=species, breed=breed, color=color, age=age,
             temperament_tags=temperament_tags or [], health_tags=health_tags or [],
-            photo_path=photo_path, status=status,
+            photo_path=paths[0] if paths else "", status=status,
         )
-        if pet.photo_path:
-            # Cache the CLIP photo embedding now, so lost/found matching never has
-            # to re-download the photo mid-task (no-op under PAWPRINT_TESTING, and
-            # never raises — see PetMatchService.ensure_embedding).
+        if paths:
+            # Cache the CLIP embedding of every photo now, so lost/found matching
+            # never has to re-download photos mid-task (no-op under
+            # PAWPRINT_TESTING, and never raises — see PetMatchService.ensure_embedding).
             from apps.vision.services import PetMatchService
 
-            PetMatchService.ensure_embedding(pet)
+            primary_embedding = PetMatchService.ensure_embedding(pet)
+            for index, path in enumerate(paths):
+                photo = PetPhoto.objects.create(pet=pet, photo_path=path)
+                if index == 0 and primary_embedding:
+                    # Reuse the cover photo's embedding instead of re-reading storage.
+                    photo.photo_embedding = primary_embedding
+                    photo.save(update_fields=["photo_embedding"])
+                else:
+                    PetMatchService.ensure_embedding(photo)
         return pet
 
 
