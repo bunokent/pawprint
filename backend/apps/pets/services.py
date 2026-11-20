@@ -38,11 +38,19 @@ class PetService:
                    age: int | None = None, temperament_tags: list[str] | None = None,
                    health_tags: list[str] | None = None, photo_path: str = "",
                    status: str = Pet.Status.ADOPTABLE) -> Pet:
-        return Pet.objects.create(
+        pet = Pet.objects.create(
             owner=owner, name=name, species=species, breed=breed, color=color, age=age,
             temperament_tags=temperament_tags or [], health_tags=health_tags or [],
             photo_path=photo_path, status=status,
         )
+        if pet.photo_path:
+            # Cache the CLIP photo embedding now, so lost/found matching never has
+            # to re-download the photo mid-task (no-op under PAWPRINT_TESTING, and
+            # never raises — see PetMatchService.ensure_embedding).
+            from apps.vision.services import PetMatchService
+
+            PetMatchService.ensure_embedding(pet)
+        return pet
 
 
 class PetPhotoService:

@@ -50,6 +50,9 @@ class NotificationService:
     def notify_match(match) -> None:
         """Alert both sides of a PetMatch: the lost pet's owner + the finder."""
         lost, found = match.lost_flyer, match.found_flyer
+        # Found pets are often unnamed — fall back to a readable label.
+        lost_name = lost.pet.name or "your lost pet"
+        found_name = found.pet.name or "a found pet"
         score_pct = f"{match.score:.0%}"
         notified = set()
         for recipient in (lost.creator, lost.pet.owner):
@@ -59,9 +62,9 @@ class NotificationService:
             NotificationService.create(
                 recipient,
                 kind=Notification.Kind.MATCH_FOUND,
-                title=f"Possible match: {found.pet.name} was found",
+                title=f"Possible match: {found_name} was found",
                 body=(
-                    f"A found pet photo matches your lost pet {lost.pet.name} "
+                    f"A found pet photo matches your lost pet {lost_name} "
                     f"(match confidence {score_pct}). See the found report."
                 ),
                 link=f"/flyers/{found.pk}",
@@ -70,9 +73,9 @@ class NotificationService:
             NotificationService.create(
                 found.creator,
                 kind=Notification.Kind.MATCH_LOST,
-                title=f"Your found {found.pet.name} may match a lost report",
+                title="Your found pet may match a lost report",
                 body=(
-                    f"Your found pet photo matches a lost report for {lost.pet.name} "
+                    f"Your found pet photo matches a lost report for {lost_name} "
                     f"(match confidence {score_pct}). See the lost flyer."
                 ),
                 link=f"/flyers/{lost.pk}",

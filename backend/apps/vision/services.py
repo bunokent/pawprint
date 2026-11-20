@@ -572,6 +572,9 @@ class PetMatchService:
 
         Under PAWPRINT_TESTING the storage/CLIP path is skipped (tests set
         photo_embedding explicitly) so the suite stays hermetic and fast.
+        A photo that cannot be read or embedded (missing object, network error,
+        model failure) is logged and treated as "no embedding" — one broken
+        photo must never abort matching for every other lost/found pair.
         """
         if pet.photo_embedding:
             return pet.photo_embedding
@@ -579,10 +582,14 @@ class PetMatchService:
             return None
         from apps.common import storage
 
-        raw = storage.read_bytes(pet.photo_path)
-        embedding = clip_image_embedding(load_image(raw))
-        pet.photo_embedding = embedding
-        pet.save(update_fields=["photo_embedding"])
+        try:
+            raw = storage.read_bytes(pet.photo_path)
+            embedding = clip_image_embedding(load_image(raw))
+            pet.photo_embedding = embedding
+            pet.save(update_fields=["photo_embedding"])
+        except Exception:  # noqa: BLE001 — resilience over strictness here
+            logger.exception("ensure_embedding failed for pet %s (photo %s)", pet.pk, pet.photo_path)
+            return None
         return embedding
 
     @staticmethod
@@ -630,3 +637,23 @@ class PetMatchService:
                 NotificationService.notify_match(match)
             matches.append(match)
         return matches
+
+    @staticmethod
+    def match_all_active_flyers() -> int:
+        """Re-run matching for every active lost/found flyer (backfill/maintenance).
+
+        Pairs are deduplicated by the PetMatch unique constraint and notified only
+        on first creation, so re-running is always safe. Returns the number of
+        flyer evaluations that produced at least one match.
+        """
+        from apps.flyers.models import Flyer
+
+        flyer_ids = (
+            Flyer.objects.filter(
+                status=Flyer.Status.ACTIVE,
+                mode__in=[Flyer.Mode.EMERGENCY, Flyer.Mode.FOUND],
+            )
+            .values_list("pk", flat=True)
+        )
+        matched = sum(1 for flyer_id in flyer_ids if PetMatchService.match_flyer(str(flyer_id)))
+        return matched
