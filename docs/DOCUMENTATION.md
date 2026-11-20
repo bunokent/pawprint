@@ -52,13 +52,19 @@ and Playwright E2E covers the 9 critical journeys end-to-end.
   picker and `/map`.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
   browser-side exports.
-- **Infra**: `docker-compose.yml` provides `postgres:16`, `redis:7`, `mailpit` (storage is
-  Cloudinary, so no MinIO service). Host-side `python manage.py ...` auto-loads the root
-  `.env` via python-dotenv (compose sets real env vars, which always win inside containers;
-  web/celery additionally pin the in-network `postgres:5432` via `environment:`). For tests
-  and Playwright E2E, `PAWPRINT_TESTING=1` (or running under pytest) switches to locmem
-  cache, in-memory channel layer, eager Celery, `memory://` broker and filesystem storage —
-  no Redis/Cloudinary needed.
+- **Infra**: `docker-compose.yml` runs the whole stack with one command —
+  `cp .env.example .env` (fill in secrets), then `docker compose up --build`:
+  `postgres:16` (:5433), `redis:7` (:6379), `mailpit` (:8025/:1025), **`web`** (Django,
+  auto-`migrate` on boot then `runserver` on :8000, healthchecked via `/api/health`),
+  **`celery`** (worker on flyers/webhooks/images/default) and **`frontend`** (Vite dev
+  server on :5173, `PAWPRINT_API_URL=http://web:8000` so `/api`, `/media`, `/ws` proxy to
+  the web container — open http://localhost:5173). Storage is Cloudinary, so no MinIO
+  service. Host-side `python manage.py ...` auto-loads the root `.env` via python-dotenv
+  (compose sets real env vars, which always win inside containers; web/celery additionally
+  pin the in-network `postgres:5432` via `environment:`). For tests and Playwright E2E,
+  `PAWPRINT_TESTING=1` (or running under pytest) switches to locmem cache, in-memory
+  channel layer, eager Celery, `memory://` broker and filesystem storage — no
+  Redis/Cloudinary needed.
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
   `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
   `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
@@ -692,8 +698,20 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   MSW Nominatim handlers; e2e ⑧ now taps a real pin on the live Leaflet map. Verified:
   **150 pytest passed @ 95.41%**, **112 Vitest @ 90.07/82.07/86.10/91.10** (rewards 100%),
   **10/10 Playwright** (9 journeys), `tsc -b` + `vite build` green.
+- **Phase 28** — One-command Docker stack (infra): `docker-compose.yml` now runs the
+  frontend too — new `frontend` service (new `frontend/Dockerfile`, `node:24-alpine`,
+  `npm ci`, Vite dev server published on **:5173** with `PAWPRINT_API_URL=http://web:8000`
+  so `/api` + `/media` + `/ws` proxy to the `web` container, source mounted for hot
+  reload), while `web` auto-runs `manage.py migrate --noinput` before `runserver :8000`
+  and gained a `/api/health` healthcheck; `celery` also migrates first and waits for a
+  healthy `web`; postgres/redis are waited on via `service_healthy`. So:
+  `cp .env.example .env` → `docker compose up --build` → open http://localhost:5173
+  (API :8000, mailpit :8025, postgres :5433, redis :6379) — nothing to run on the host.
+  Verified: `docker compose config` clean, `docker compose build frontend` green;
+  suites re-run unchanged (**150 pytest @ 95.41%**, **112 Vitest**, **10/10 Playwright**).
 
 **Final status:** backend **150 passed @ 95.41%** (100% services/drivers/vision/storage);
 frontend **112 vitest tests** @ 90.07/82.07/86.10/91.10 (rewards 100%) + **10 Playwright tests
 green** (9 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
-CI with 4 jobs (lint / backend-test / frontend-test / e2e); `npm run docs:pdf` regenerated.
+CI with 4 jobs (lint / backend-test / frontend-test / e2e); one-command Docker stack via
+`docker compose up --build`; `npm run docs:pdf` regenerated.
