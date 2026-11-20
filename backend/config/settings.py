@@ -1,7 +1,7 @@
 """PawPrint Django settings.
 
 Environment-driven with dev defaults. When running under pytest (or with
-PAWPRINT_TESTING=1, e.g. for Playwright E2E without docker) the settings switch to
+PAWPRINT_TESTING=1, e.g. for Playwright E2E) the settings switch to
 in-memory channel layer, eager Celery, local filesystem storage and locmem cache so the
 suite never needs Redis/Cloudinary.
 """
@@ -12,14 +12,13 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-except ImportError:  # pragma: no cover — image built before python-dotenv was a dep
+except ImportError:  # pragma: no cover — python-dotenv not installed
     load_dotenv = None  # type: ignore[assignment]
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Host-side convenience: `python manage.py ...` picks up the root .env automatically.
-# Inside docker compose the real env vars are already set, and load_dotenv does not
-# override existing variables, so the compose values always win there.
+# Real environment variables always win — load_dotenv never overrides existing vars.
 if load_dotenv is not None:
     load_dotenv(BASE_DIR.parent / ".env")
 
@@ -93,7 +92,7 @@ TEMPLATES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Database — PostgreSQL 16 (docker-compose) / local PG for tests
+# Database — local PostgreSQL cluster (127.0.0.1:5433 by default, see .env.example)
 # ---------------------------------------------------------------------------
 DATABASES = {
     "default": {

@@ -36,7 +36,8 @@ and Playwright E2E covers the 9 critical journeys end-to-end.
   Packaging: `pyproject.toml` declares an explicit setuptools build backend with
   `packages.find include = ["apps*", "config*"]` so `uv pip install .[dev]` succeeds on a
   full checkout (flat-layout auto-discovery otherwise aborts on `apps/`+`config/`+`templates/`;
-  the Dockerfile never hit this because it installs deps before `COPY . .`).
+  the old Dockerfile avoided this by installing deps before `COPY . .` — it was removed in
+  Phase 29).
 - **Frontend**: React 19 + TypeScript + Vite, React Router v7, TanStack Query v5, Axios,
   Zustand, React Hook Form + Zod, Shadcn/UI, Tailwind v4. React Compiler enabled.
 - **Storage**: Cloudinary (private delivery type, HMAC-signed URLs only) via the `cloudinary`
@@ -52,17 +53,19 @@ and Playwright E2E covers the 9 critical journeys end-to-end.
   picker and `/map`.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
   browser-side exports.
-- **Infra**: `docker-compose.yml` runs the whole stack with one command —
-  `cp .env.example .env` (fill in secrets), then `docker compose up --build`:
-  `postgres:16` (:5433), `redis:7` (:6379), `mailpit` (:8025/:1025), **`web`** (Django,
-  auto-`migrate` on boot then `runserver` on :8000, healthchecked via `/api/health`),
-  **`celery`** (worker on flyers/webhooks/images/default) and **`frontend`** (Vite dev
-  server on :5173, `PAWPRINT_API_URL=http://web:8000` so `/api`, `/media`, `/ws` proxy to
-  the web container — open http://localhost:5173). Storage is Cloudinary, so no MinIO
-  service. Host-side `python manage.py ...` auto-loads the root `.env` via python-dotenv
-  (compose sets real env vars, which always win inside containers; web/celery additionally
-  pin the in-network `postgres:5432` via `environment:`). For tests and Playwright E2E,
-  `PAWPRINT_TESTING=1` (or running under pytest) switches to locmem cache, in-memory
+- **Infra**: **no Docker** — dependencies run directly on the host (setup in
+  `.env.example`): a dedicated local PostgreSQL 16 cluster on **127.0.0.1:5433** (kept off
+  any system cluster on :5432 so tests never touch real data), a Redis-compatible server
+  (valkey, ships `redis-server`) on **127.0.0.1:6379**, and **mailpit** for dev email
+  (SMTP :1025, UI :8025). On the dev machine these run as systemd user services
+  (`pawprint-postgres`, `redis-pawprint`, `mailpit`) — no sudo needed. Run the app with
+  `cd backend && .venv/bin/python manage.py migrate && .venv/bin/python manage.py runserver 8000`
+  plus `celery -A config worker -Q flyers,webhooks,images,default -l info`, and
+  `cd frontend && npm run dev` → **http://localhost:5173** (Vite proxies `/api`, `/media`,
+  `/ws` to `PAWPRINT_API_URL`, default `http://127.0.0.1:8000`). Storage is Cloudinary, so
+  no local object storage is needed. Host-side `python manage.py ...` auto-loads the root
+  `.env` via python-dotenv (real env vars always win over it). For tests and Playwright
+  E2E, `PAWPRINT_TESTING=1` (or running under pytest) switches to locmem cache, in-memory
   channel layer, eager Celery, `memory://` broker and filesystem storage — no
   Redis/Cloudinary needed.
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
@@ -709,9 +712,23 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   (API :8000, mailpit :8025, postgres :5433, redis :6379) — nothing to run on the host.
   Verified: `docker compose config` clean, `docker compose build frontend` green;
   suites re-run unchanged (**150 pytest @ 95.41%**, **112 Vitest**, **10/10 Playwright**).
+  *(Superseded by Phase 29 — the Docker stack was removed in favour of host-installed
+  services.)*
+- **Phase 29** — Docker removed; dependencies installed directly on the system. Deleted
+  `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`,
+  `frontend/.dockerignore` (and the built `pawprint-*` images). The stack now runs on
+  host services: PostgreSQL cluster on 127.0.0.1:5433, valkey (redis-compatible, binaries
+  in `~/.local/bin`) on 127.0.0.1:6379, mailpit on :1025/:8025 — all three as systemd
+  **user** services (`pawprint-postgres`, `redis-pawprint`, `mailpit`) so they start at
+  login without sudo. `.env.example` header now documents the one-time host setup and how
+  to run backend + celery + frontend directly; `settings.py` comments no longer reference
+  compose; §2 infra rewritten. Verified on the host: `redis-cli ping` → PONG, mailpit UI
+  :8025 → 200, `pg_isready` :5433, `manage.py runserver` + `/api/health` → 200; suites
+  re-run green (**150 pytest @ 95.41%**, **112 Vitest**, `tsc -b` clean).
 
 **Final status:** backend **150 passed @ 95.41%** (100% services/drivers/vision/storage);
 frontend **112 vitest tests** @ 90.07/82.07/86.10/91.10 (rewards 100%) + **10 Playwright tests
 green** (9 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
-CI with 4 jobs (lint / backend-test / frontend-test / e2e); one-command Docker stack via
-`docker compose up --build`; `npm run docs:pdf` regenerated.
+CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
+the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
+`npm run docs:pdf` regenerated.
