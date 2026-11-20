@@ -339,7 +339,26 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 .pp-pin:hover .pp-pin__ring { transform: scale(1.08); }
 .pp-pin__ring img,
 .pp-pin__ring .pp-pin__letter { display: block; width: 100%; height: 100%; }
-.pp-pin__ring img { object-fit: cover; }
+.pp-pin__ring img { object-fit: cover; object-position: center; }
+/* Leaflet's own marker CSS (`.leaflet-container .leaflet-marker-pane img
+   { width: auto; max-width: none !important; }`, specificity 0,2,1) outranks the
+   plain selectors above, which left pin photos at their intrinsic aspect ratio
+   (e.g. 33x50 inside the 56px circle) instead of filling it. Scoping these
+   under .leaflet-container wins the cascade, so the photo is centred in the
+   circle pin for both lost and found markers. */
+.leaflet-container .leaflet-marker-pane .pp-pin__ring img,
+.leaflet-container .leaflet-marker-pane .pp-pin__ring .pp-pin__letter,
+.leaflet-container .leaflet-marker-pane .pp-stack__card img,
+.leaflet-container .leaflet-marker-pane .pp-stack__card .pp-pin__letter {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.leaflet-container .leaflet-marker-pane .pp-pin__ring img,
+.leaflet-container .leaflet-marker-pane .pp-stack__card img {
+  object-fit: cover;
+  object-position: center;
+}
 .pp-pin__letter {
   display: grid;
   place-items: center;
@@ -395,7 +414,7 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 }
 .pp-stack__card img,
 .pp-stack__card .pp-pin__letter { display: block; width: 100%; height: 100%; }
-.pp-stack__card img { object-fit: cover; }
+.pp-stack__card img { object-fit: cover; object-position: center; }
 .pp-stack__card .pp-pin__letter { font-size: 22px; display: grid; place-items: center; background: var(--color-muted); color: var(--color-paper); font-family: var(--font-display); font-weight: 700; }
 .pp-pin__count {
   position: absolute;

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { mswServer } from "@/test/setup";
@@ -197,6 +199,27 @@ describe("pin stacking", () => {
     expect(icon.opts.html).toContain("translate(14px, 14px)");
     expect(icon.opts.iconSize).toEqual([70, 70]);
     expect(icon.opts.className).toBe("pp-pin pp-stack-pin pp-stack-pin--match");
+  });
+
+  it("pin photos are centred in the circle: leaflet-scoped CSS beats Leaflet's `width:auto` marker rule", () => {
+    // Leaflet's own stylesheet sets `.leaflet-container .leaflet-marker-pane img
+    // { width: auto; max-width: none !important; }` (specificity 0,2,1), which
+    // outranked the plain `.pp-pin__ring img` rule and left pin photos at their
+    // intrinsic aspect ratio instead of filling the circle. The scoped override
+    // must keep width/height 100% + object-position center for pin and stack imgs.
+    const css = fs.readFileSync(path.resolve(__dirname, "../index.css"), "utf8");
+    const scoped = css.match(
+      /\.leaflet-container \.leaflet-marker-pane \.pp-pin__ring img[^{]*\{([^}]*)\}/,
+    );
+    expect(scoped, "leaflet-scoped pin img rule must exist").toBeTruthy();
+    expect(scoped![1]).toContain("width: 100%");
+    expect(scoped![1]).toContain("height: 100%");
+    const fit = css.match(
+      /\.leaflet-container \.leaflet-marker-pane \.pp-pin__ring img,\s*\.leaflet-container \.leaflet-marker-pane \.pp-stack__card img\s*\{([^}]*)\}/,
+    );
+    expect(fit, "scoped object-fit rule must exist").toBeTruthy();
+    expect(fit![1]).toContain("object-fit: cover");
+    expect(fit![1]).toContain("object-position: center");
   });
 });
 

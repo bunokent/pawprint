@@ -49,11 +49,14 @@ export function makeFakeLeaflet(state: FakeLeafletState): Record<string, unknown
         el,
         opts,
         removed: false,
+        panTos: [] as unknown[],
         on(name: string, cb: (e: unknown) => void) {
           (state.listeners[`map:${name}`] ??= []).push(cb);
           return m;
         },
-        panTo() {},
+        panTo(ll: unknown) {
+          m.panTos.push(normLatLng(ll));
+        },
         setView() {},
         fitBounds() {},
         remove() {

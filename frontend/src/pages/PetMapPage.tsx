@@ -79,7 +79,12 @@ function LeafletPins({ flyers }: { flyers: Flyer[] }) {
             ? `${g.items.length} pets at this spot — ${g.items.map((f) => petDisplayName(f.pet, f.mode)).join(", ")}`
             : `${petDisplayName(g.items[0].pet, g.items[0].mode)} — ${g.items[0].mode}`,
         }).addTo(map);
-        marker.on("click", () => setSelectedKey(g.key));
+        marker.on("click", () => {
+          setSelectedKey(g.key);
+          // Centre the tapped circle pin on the map (no-op when already in view
+          // is handled by Leaflet's pan animation; keeps edge pins visible).
+          map?.panTo([g.lat, g.lng]);
+        });
       }
       if (groups.length > 1) map.fitBounds(bounds, { padding: [40, 40] });
     } catch {

@@ -51,6 +51,8 @@ describe("PetMapPage", () => {
     // Click the found pin (second marker) → popup with details + Show Full Details link.
     const user = userEvent.setup();
     (state.listeners["marker:click"] ?? [])[1]({});
+    // Tapping a pin also centres it on the map (panTo with the pin's lat/lng).
+    expect(state.maps[0].panTos).toEqual([{ lat: mockFoundFlyer().location_lat, lng: mockFoundFlyer().location_lng }]);
     const popup = await screen.findByTestId("map-pin-popup");
     expect(popup).toHaveTextContent("Miso");
     expect(popup).toHaveTextContent("cat · Domestic shorthair · orange");
