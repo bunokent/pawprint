@@ -9,7 +9,7 @@ import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
 import { ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { RewardCheckoutModal } from "@/features/rewards/components/RewardCheckoutModal";
 import { QrImage } from "@/components/QrImage";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { formatDate, formatMoney, petDisplayName } from "@/lib/utils";
 
 export function FlyerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -139,7 +139,7 @@ export function FlyerDetailPage() {
                   {flyer.photo_url ? (
                     <img
                       src={flyer.photo_url}
-                      alt={`${flyer.pet.name} — ${emergency ? "lost pet" : found ? "found pet" : "adoptable pet"} photo`}
+                      alt={`${petDisplayName(flyer.pet, flyer.mode)} — ${emergency ? "lost pet" : found ? "found pet" : "adoptable pet"} photo`}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     />
                   ) : (
@@ -150,7 +150,7 @@ export function FlyerDetailPage() {
                 </div>
                 {qrTarget && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 150 }}>
-                    <QrImage value={qrTarget} size={150} alt={`QR code linking to ${flyer.pet.name}'s flyer`} />
+                    <QrImage value={qrTarget} size={150} alt={`QR code linking to ${petDisplayName(flyer.pet, flyer.mode)}'s flyer`} />
                     <p className="t-label" style={{ marginTop: 2, textAlign: "center" }}>Scan to open this flyer</p>
                   </div>
                 )}
@@ -163,7 +163,8 @@ export function FlyerDetailPage() {
                 <StatusBadge status={flyer.status} />
               </div>
               <h1 className="t-h1" style={{ color: accent, fontSize: "clamp(32px, 4.5vw, 48px)" }}>
-                {emergency ? "Lost pet" : found ? "Found pet" : "Up for adoption"}: {flyer.pet.name}
+                {emergency ? "Lost pet" : found ? "Found pet" : "Up for adoption"}
+                {flyer.pet.name?.trim() ? `: ${flyer.pet.name}` : ""}
               </h1>
               <p className="t-lead">
                 {flyer.pet.species}

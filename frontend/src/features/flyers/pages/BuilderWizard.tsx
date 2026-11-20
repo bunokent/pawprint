@@ -43,14 +43,26 @@ function confidenceBadge(confidence: number | undefined): { label: string; tone:
     : { label: "Low confidence", tone: "badge--neutral" };
 }
 
-const petSchema = z.object({
-  name: z.string().min(1, "Give the pet a name.").max(120),
+const petSchemaBase = z.object({
+  name: z.string().max(120).optional().or(z.literal("")),
   breed: z.string().max(120).optional().or(z.literal("")),
   color: z.string().max(120).optional().or(z.literal("")),
   age: z.string().regex(/^\d{1,2}$/, "Age in years (up to 2 digits).").optional().or(z.literal("")),
   temperament_tags: z.string().optional().or(z.literal("")),
 });
-type PetValues = z.infer<typeof petSchema>;
+type PetValues = z.infer<typeof petSchemaBase>;
+
+/**
+ * Pet form schema — a name is required for lost/adoptable pets, but a found-pet
+ * report has no name (the owner is unknown), so the field is hidden there.
+ */
+function petSchemaFor(mode: Mode) {
+  return petSchemaBase.superRefine((v, ctx) => {
+    if (mode !== "found" && !v.name?.trim()) {
+      ctx.addIssue({ code: "custom", path: ["name"], message: "Give the pet a name." });
+    }
+  });
+}
 
 const flyerSchema = z
   .object({
@@ -169,7 +181,7 @@ export function BuilderWizard() {
         </div>
         <h1 className="t-h1" data-enter="2" style={{ fontSize: "clamp(28px, 4vw, 42px)", marginBottom: 32 }}>
           {step === 0 && (mode === "emergency" ? "Report a lost pet" : mode === "found" ? "Report a found pet" : "Post an adoptable pet")}
-          {step === 1 && "Tell us about the pet"}
+          {step === 1 && (mode === "found" ? "Describe the found pet" : "Tell us about the pet")}
           {step === 2 && (mode === "emergency" ? "Flyer details & reward" : mode === "found" ? "Found-pet details" : "Flyer details")}
         </h1>
 
@@ -274,7 +286,7 @@ function StepPet({
   const speciesText = detectedLabels.length > 0 ? detectedLabels.map(capitalize).join(", ") : "Not detected";
   const autoSpecies = (detectedSpecies(detectedLabels) ?? "dog") as Species;
   const form = useForm<PetValues>({
-    resolver: zodResolver(petSchema),
+    resolver: zodResolver(petSchemaFor(mode)),
     defaultValues: {
       name: "",
       breed: prefill(photo.breed, photo.breed_confidence),
@@ -295,7 +307,8 @@ function StepPet({
   const [state, submit, pending] = useActionState(async (_prev: StepState, values: PetValues): Promise<StepState> => {
     try {
       const pet = await createPet.mutateAsync({
-        name: values.name.trim(),
+        // Found pets are unnamed — the finder doesn't know the owner's pet.
+        name: mode === "found" ? "" : (values.name ?? "").trim(),
         species: autoSpecies,
         breed: values.breed || undefined,
         color: values.color || undefined,
@@ -314,15 +327,19 @@ function StepPet({
   return (
     <div className="card" style={{ padding: 28 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span className="t-label" style={{ color: "var(--color-muted)" }}>Tell us about the pet</span>
+        <span className="t-label" style={{ color: "var(--color-muted)" }}>
+          {mode === "found" ? "Describe the found pet" : "Tell us about the pet"}
+        </span>
         <Button type="button" variant="secondary" onClick={onBack}>
           ← Back
         </Button>
       </div>
       <form onSubmit={form.handleSubmit((v) => startTransition(() => submit(v)))} style={{ display: "flex", flexDirection: "column", gap: 16 }} noValidate>
-        <FieldShell label="Pet name" htmlFor="pet-name" error={form.formState.errors.name?.message}>
-          <Input id="pet-name" autoComplete="off" aria-invalid={Boolean(form.formState.errors.name)} {...form.register("name")} />
-        </FieldShell>
+        {mode !== "found" && (
+          <FieldShell label="Pet name" htmlFor="pet-name" error={form.formState.errors.name?.message}>
+            <Input id="pet-name" autoComplete="off" aria-invalid={Boolean(form.formState.errors.name)} {...form.register("name")} />
+          </FieldShell>
+        )}
         <div className="split-2" style={{ gap: 16 }}>
           <FieldShell label="Species" htmlFor="pet-species" hint="Auto detected: change photo to redetect">
             <p id="pet-species" data-testid="species-value" className="t-body" style={{ fontWeight: 600, padding: "10px 0" }}>
@@ -352,14 +369,21 @@ function StepPet({
             Auto-detected — change if not correct. Detection is not 100% accurate.
           </p>
         )}
-        <FieldShell
-          label="Personality tags"
-          htmlFor="pet-tags"
-          hint="Comma-separated, e.g. friendly, good with kids, house-trained"
-          error={form.formState.errors.temperament_tags?.message}
-        >
-          <Input id="pet-tags" autoComplete="off" {...form.register("temperament_tags")} />
-        </FieldShell>
+        {mode !== "found" && (
+          <FieldShell
+            label="Personality tags"
+            htmlFor="pet-tags"
+            hint="Comma-separated, e.g. friendly, good with kids, house-trained"
+            error={form.formState.errors.temperament_tags?.message}
+          >
+            <Input id="pet-tags" autoComplete="off" {...form.register("temperament_tags")} />
+          </FieldShell>
+        )}
+        {mode === "found" && (
+          <p className="t-small" data-testid="found-hint" style={{ color: "var(--color-muted)" }}>
+            No name needed — describe the pet in the next step instead.
+          </p>
+        )}
         {state.error && <ErrorBox message={state.error} />}
         <div className="btn-row">
           <Button type="submit" disabled={pending}>

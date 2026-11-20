@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import type { Flyer } from "@/features/flyers/api";
 import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/utils";
+import { formatDate, petDisplayName } from "@/lib/utils";
 
 export function FlyerCard({ flyer }: { flyer: Flyer }) {
   const emergency = flyer.mode === "emergency";
@@ -15,7 +15,7 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
     >
       <div className="photo-frame" style={{ aspectRatio: "4 / 3", background: "var(--color-surface)" }}>
         {flyer.photo_url ? (
-          <img src={flyer.photo_url} alt={flyer.pet.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+          <img src={flyer.photo_url} alt={petDisplayName(flyer.pet, flyer.mode)} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
         ) : (
           <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--color-muted)" }}>
             No photo yet
@@ -31,7 +31,7 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
           <StatusBadge status={flyer.status} />
         </div>
         <h3 className="t-h3" style={{ color: accent }}>
-          {flyer.pet.name}
+          {petDisplayName(flyer.pet, flyer.mode)}
         </h3>
         <p className="t-small" style={{ color: "var(--color-muted)" }}>
           {flyer.pet.species} · {flyer.pet.breed || "mixed"} · {flyer.pet.color || "—"}

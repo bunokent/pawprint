@@ -836,7 +836,7 @@ export interface components {
         Pet: {
             /** Format: uuid */
             readonly id: string;
-            name: string;
+            name?: string;
             species?: components["schemas"]["SpeciesEnum"];
             breed?: string;
             color?: string;
@@ -850,6 +850,7 @@ export interface components {
             readonly created_at: string;
         };
         PetCreate: {
+            /** @default  */
             name: string;
             /** @default dog */
             species: components["schemas"]["SpeciesEnum"];
@@ -1744,7 +1745,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["PetCreate"];
                 "application/x-www-form-urlencoded": components["schemas"]["PetCreate"];
@@ -1769,7 +1770,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["PetCreate"];
                 "application/x-www-form-urlencoded": components["schemas"]["PetCreate"];

@@ -8,12 +8,15 @@ import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
   dropPinIcon,
+  groupPins,
+  haversineMeters,
   OSM_ATTRIBUTION,
   OSM_TILE_URL,
   petPinIcon,
   pinRingColor,
   reverseGeocode,
   searchAddress,
+  stackPinIcon,
 } from "@/lib/maps";
 
 const state = vi.hoisted(() => ({
@@ -91,23 +94,27 @@ describe("pin icons", () => {
     expect(found.opts.html).toContain("border-color:#2e9e63");
   });
 
-  it("petPinIcon adds the match halo classes when the pin has a vision match", () => {
+  it("petPinIcon adds the match halo class on the marker when the pin has a vision match", () => {
     const matched = petPinIcon(mockFoundFlyer({ match: { flyer_id: "x", mode: "emergency", pet_name: "Bento", score: 0.9 } })) as unknown as {
       opts: { className: string; html: string };
     };
+    // The halo lives on the marker element (the ring clips its own content to a circle).
     expect(matched.opts.className).toBe("pp-pin pp-pin--match");
-    expect(matched.opts.html).toContain("pp-pin__ring--match");
+    expect(matched.opts.html).toContain("pp-pin__ring");
     expect(matched.opts.html).toContain("border-color:#2e9e63");
     // Unmatched pins stay plain.
     const plain = petPinIcon(mockFlyer()) as unknown as typeof matched;
     expect(plain.opts.className).toBe("pp-pin");
-    expect(plain.opts.html).not.toContain("pp-pin__ring--match");
+    expect(plain.opts.html).toContain("pp-pin__ring");
   });
 
-  it("petPinIcon falls back to the pet initial and escapes HTML in attributes", () => {
+  it("petPinIcon falls back to the pet initial, 'Found pet' for unnamed found pets, and escapes HTML", () => {
     const icon = petPinIcon({ mode: "found", photo_url: "", pet: { name: "Miso" } }) as unknown as { opts: { html: string } };
     expect(icon.opts.html).toContain("pp-pin__letter");
     expect(icon.opts.html).toContain(">M</span>");
+    const unnamed = petPinIcon({ mode: "found", photo_url: "", pet: { name: "" } }) as unknown as { opts: { html: string } };
+    expect(unnamed.opts.html).toContain('data-pet-name="Found pet"');
+    expect(unnamed.opts.html).toContain(">F</span>");
     const evil = petPinIcon({ mode: "emergency", photo_url: 'http://x/y".jpg', pet: { name: "A" } }) as unknown as { opts: { html: string } };
     expect(evil.opts.html).toContain('src="http://x/y&quot;.jpg"');
   });
@@ -116,6 +123,80 @@ describe("pin icons", () => {
     const icon = dropPinIcon() as unknown as { opts: { className: string; html: string } };
     expect(icon.opts.className).toBe("pp-drop-pin");
     expect(icon.opts.html).toContain("pp-drop-pin__dot");
+  });
+});
+
+describe("pin stacking", () => {
+  const at = (lat: number, lng: number, created_at: string) => ({ location_lat: lat, location_lng: lng, created_at });
+
+  it("haversineMeters measures real distances", () => {
+    expect(haversineMeters(14.5995, 120.9842, 14.5995, 120.9842)).toBe(0);
+    // ~111 m per 0.001° of latitude.
+    expect(haversineMeters(14.5995, 120.9842, 14.6005, 120.9842)).toBeGreaterThan(100);
+    expect(haversineMeters(14.5995, 120.9842, 14.6005, 120.9842)).toBeLessThan(125);
+  });
+
+  it("groupPins stacks pins at the same spot and nearby pins (≤30 m) into one group", () => {
+    const groups = groupPins([
+      at(14.5995, 120.9842, "2026-11-01T00:00:00Z"),
+      at(14.5995, 120.9842, "2026-11-05T00:00:00Z"), // exact same spot
+      at(14.59955, 120.98422, "2026-11-03T00:00:00Z"), // ~6 m away
+      at(14.62, 121.02, "2026-11-02T00:00:00Z"), // far away
+      { location_lat: null, location_lng: null, created_at: "2026-11-04T00:00:00Z" }, // no coords — skipped
+    ]);
+    expect(groups).toHaveLength(2);
+    const stack = groups.find((g) => g.items.length === 3)!;
+    expect(stack.items.map((i) => i.created_at)).toEqual([
+      "2026-11-05T00:00:00Z", // newest on top of the deck
+      "2026-11-03T00:00:00Z",
+      "2026-11-01T00:00:00Z", // oldest peeking at the back
+    ]);
+    expect(groups.find((g) => g.items.length === 1)!.items[0].created_at).toBe("2026-11-02T00:00:00Z");
+  });
+
+  it("groupPins keeps distant pins separate", () => {
+    const groups = groupPins([at(14.5995, 120.9842, "2026-11-01T00:00:00Z"), at(14.61, 120.99, "2026-11-02T00:00:00Z")]);
+    expect(groups).toHaveLength(2);
+    expect(groups.every((g) => g.items.length === 1)).toBe(true);
+  });
+
+  it("stackPinIcon renders a card deck: top pin + count badge + peeking back cards with their mode rings", () => {
+    const spot = { location_lat: 14.5995, location_lng: 120.9842 };
+    const lost = mockFlyer({ ...spot, created_at: "2026-11-01T00:00:00Z" }); // red ring, oldest → back card
+    const found = mockFoundFlyer({ ...spot, created_at: "2026-11-05T00:00:00Z" }); // green ring, newest → top
+    const group = groupPins([lost, found])[0];
+    const icon = stackPinIcon(group) as unknown as { opts: { className: string; html: string; iconSize: number[]; iconAnchor: number[] } };
+    expect(icon.opts.className).toBe("pp-pin pp-stack-pin");
+    expect(icon.opts.html).toContain('data-stack-count="2"');
+    expect(icon.opts.html).toContain("×2");
+    // Top card is the newest flyer with its own ring colour and stays a circle (data-stack-top).
+    expect(icon.opts.html).toContain('data-stack-top="true"');
+    expect(icon.opts.html).toContain('data-pet-name="Miso"');
+    expect(icon.opts.html).toContain("border-color:#2e9e63");
+    // The oldest peeks out behind as a back card with the lost (red) ring.
+    expect(icon.opts.html).toContain("pp-stack__card");
+    expect(icon.opts.html).toContain("border-color:#b3261e");
+    expect(icon.opts.html).toContain("translate(7px, 7px)");
+    // Icon is larger than one pin to fit the offset back card, anchored at the top card's centre.
+    expect(icon.opts.iconSize).toEqual([63, 63]);
+    expect(icon.opts.iconAnchor).toEqual([28, 28]);
+  });
+
+  it("stackPinIcon shows at most two back cards and adds the match halo class when any card matches", () => {
+    const spot = { location_lat: 14.5995, location_lng: 120.9842 };
+    const items = [
+      mockFlyer({ ...spot, created_at: "2026-11-01T00:00:00Z", id: "a" }),
+      mockFoundFlyer({ ...spot, created_at: "2026-11-02T00:00:00Z", id: "b" }),
+      mockFlyer({ ...spot, created_at: "2026-11-03T00:00:00Z", id: "c" }),
+      mockFoundFlyer({ ...spot, created_at: "2026-11-04T00:00:00Z", id: "d", match: { flyer_id: "x", mode: "emergency", pet_name: "Bento", score: 0.9 } }),
+    ];
+    const group = groupPins(items)[0];
+    const icon = stackPinIcon(group) as unknown as { opts: { className: string; html: string; iconSize: number[] } };
+    expect(icon.opts.html).toContain('data-stack-count="4"');
+    expect(icon.opts.html.match(/pp-stack__card/g)).toHaveLength(2);
+    expect(icon.opts.html).toContain("translate(14px, 14px)");
+    expect(icon.opts.iconSize).toEqual([70, 70]);
+    expect(icon.opts.className).toBe("pp-pin pp-stack-pin pp-stack-pin--match");
   });
 });
 

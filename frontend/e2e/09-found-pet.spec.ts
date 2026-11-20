@@ -3,8 +3,9 @@ import { API, fixture, login } from "./helpers";
 
 /**
  * Journey 9 — found-pet posting mirrors the lost flow:
- * login → /builder?mode=found → photo gate → pet form → location/date/description
- * (no reward) → publish → public "Found pet" detail page + map endpoint includes it.
+ * login → /builder?mode=found → photo gate → pet form (no name/tags — the owner
+ * is unknown) → location/date/description (no reward) → publish → public
+ * "Found pet" detail page + map endpoint includes it.
  */
 test("registered user publishes a found-pet flyer", async ({ page }) => {
   await login(page);
@@ -19,10 +20,13 @@ test("registered user publishes a found-pet flyer", async ({ page }) => {
   );
   await page.setInputFiles("input[type=file]", fixture("dog.jpg"));
   expect((await upload).status()).toBe(201);
-  await expect(page.getByRole("heading", { name: "Tell us about the pet" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Describe the found pet" })).toBeVisible({ timeout: 60_000 });
 
-  // Step 2 — pet details; species is read-only detected text.
-  await page.locator("#pet-name").fill("Found Dog E2E");
+  // Step 2 — found pets are unnamed: no pet-name / personality-tag fields (lost & adoptable only).
+  await expect(page.locator("#pet-name")).toHaveCount(0);
+  await expect(page.locator("#pet-tags")).toHaveCount(0);
+  await expect(page.getByTestId("found-hint")).toBeVisible();
+  // Species is read-only detected text; breed/color still describe the found pet.
   await expect(page.locator("#pet-species")).toHaveText("Dog");
   await page.locator("#pet-breed").fill("Aspin");
   await page.locator("#pet-color").fill("brown");
@@ -38,7 +42,8 @@ test("registered user publishes a found-pet flyer", async ({ page }) => {
   await page.getByRole("button", { name: "Publish flyer" }).click();
 
   await page.waitForURL(/\/flyers\/[0-9a-f-]{36}$/, { timeout: 60_000 });
-  await expect(page.getByRole("heading", { name: "Found pet: Found Dog E2E" })).toBeVisible();
+  // Unnamed found pet → heading is just "Found pet" (no ": name").
+  await expect(page.getByRole("heading", { name: "Found pet" })).toBeVisible();
   await expect(page.getByText("Found at")).toBeVisible();
   await expect(page.getByText(/University Ave, Diliman/)).toBeVisible();
   await expect(page.getByText("Description")).toBeVisible();
@@ -52,6 +57,7 @@ test("registered user publishes a found-pet flyer", async ({ page }) => {
   const flyer = await resp.json();
   expect(flyer.mode).toBe("found");
   expect(flyer.pet.status).toBe("found");
+  expect(flyer.pet.name).toBe(""); // found pets are created without a name
   expect(flyer.last_seen_location).toBe("University Ave, Diliman");
   expect(flyer.reward_enabled).toBe(false);
 

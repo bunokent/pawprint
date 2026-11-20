@@ -26,7 +26,7 @@ breed/color (prefilled in the builder only when confidence ≥ 0.80). Non-animal
 rejected with a friendly 422 — no strikes, no bans.
 The web app (`frontend/`, React 19 + TS + Vite) implements the full product in the browser —
 including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo pins) —
-and Playwright E2E covers the 9 critical journeys end-to-end.
+and Playwright E2E covers the 10 critical journeys end-to-end.
 
 ## 2. Architecture & Stack
 
@@ -200,6 +200,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   same sheet.
 - **Found mode**: `Flyer.Mode.FOUND` + `Pet.Status.FOUND` mirror the lost flow without a
   reward; the A4 emergency template is mode-aware (FOUND PET header, "Found at", description).
+  Found pets are **unnamed** (`Pet.name` blank — the finder doesn't know the owner's pet; the
+  builder hides the name/tags fields in found mode and the UI falls back to "Found pet").
   Flyers can carry a map pin (`location_lat`/`location_lng`, indexed via
   `flyer_status_location_idx`); `GET /api/flyers/map` (public) returns active lost/found
   flyers that have one — the pins behind `/map`. `seed_demo` seeds Bruno (lost, pinned) and
@@ -379,8 +381,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `npm run test:coverage` → **90.07% stmts / 82.07% branches / 86.10% funcs / 91.10% lines**
   (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
   `npx tsc -b --noEmit` clean; `npm run build` green.
-- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **9 journeys /
-  10 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
+- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **10 journeys /
+  11 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
   :9100), the Django backend on :8010 with `PAWPRINT_TESTING=1` (eager Celery, locmem, local
   PG :5433; filesystem `/media/` is served explicitly under TESTING so signed URLs load),
   and the Vite dev server on :5173 proxying to :8010. Journeys: ① guest browse →
@@ -393,9 +395,12 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   avatar upload + display name/phone save → header avatar, profile restored afterwards,
   ⑧ guest pet map (Leaflet/OSM map — `/api/flyers/map` pins seeded Bruno lost + Miso found
   with coords; tap Bruno's photo pin → popup card → open his flyer → "View on map" link
-  back), ⑨ found-pet flow
-  (`/builder?mode=found` → publish → "Found pet" detail, mode `found`, no reward; guests get
-  the register prompt).
+  back), ⑧b same-spot stacking (a second flyer pinned at Bruno's exact coords stacks into a
+  ×N card deck — newest on top with the green/red ring, oldest peeking behind — and tapping
+  the stack opens a popup listing every stacked flyer; the test cleans up after itself),
+  ⑨ found-pet flow
+  (`/builder?mode=found` → no pet-name/tags fields → publish → unnamed "Found pet" detail,
+  mode `found`, no reward; guests get the register prompt).
 - Static analysis: `mypy apps`, `ruff check .`, `npm run lint` (tsc), `npm run build`
   (0 TS errors). All of the above run in GitHub Actions (`.github/workflows/ci.yml`):
   `backend-lint` (ruff + mypy, no DB), `backend-test` (pytest + coverage against a
@@ -760,11 +765,34 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   regenerated + `npm run typegen`; e2e ⑧ asserts the red/green ring colours on the live
   map. Verified: **162 pytest passed @ 94.17%**, **118 Vitest @ 89.61/82.23/85.75/90.45**,
   **10/10 Playwright** (9 journeys), `ruff` + `mypy` clean, `tsc -b` + `vite build` green.
+- **Phase 31** — Circular pins restored, same-spot stacking, unnamed found pets.
+  Frontend map (`src/lib/maps.ts`, `PetMapPage.tsx`, `index.css`): the photo pin is a
+  perfect circle again (`overflow: hidden` on `.pp-pin__ring` clips photo/initial; the
+  amber match halo moved to the marker element `.pp-pin--match::after` so it isn't
+  clipped). Pins within ~30 m of each other (`groupPins` + `haversineMeters`, greedy
+  clustering) render as a **card deck** (`stackPinIcon`): the newest flyer's circular
+  pin on top with a `×N` count badge (`data-stack-count`), up to two older cards peeking
+  out behind (offset 7 px), every card keeping its mode ring (red lost / green found);
+  tapping the stack opens a `StackPopup` listing all stacked flyers (thumb ring, badges,
+  "Open" link each). Single pins keep the old popup. Found-pet flow: the builder hides
+  **Pet name** and **Personality tags** in found mode (heading "Describe the found pet"),
+  the zod schema only requires a name for lost/adoptable, and the pet is created with
+  `name: ""`. Backend: `Pet.name` is now `blank=True, default=""` (migration
+  `pets/0005_alter_pet_name`), `PetCreateSerializer.name` optional/blank, A4 template
+  falls back to "FOUND PET"/"this pet" when unnamed. Display fallback
+  `petDisplayName()` ("Found pet") across `FlyerCard`, `FlyerDetailPage`, map popup/list
+  and pin initials. Tests: `groupPins`/`haversineMeters`/`stackPinIcon` unit tests,
+  map-page stack popup test, found-flow builder test (no name field, `name: ""`),
+  backend `test_create_found_pet_without_name`; e2e ⑧b posts an unnamed found flyer at
+  Bruno's exact coords and asserts the ×2 deck + stack popup (cleaned up afterwards),
+  e2e ⑨ updated for the nameless found flow. `schema.yml` regenerated + `npm run typegen`.
+  Verified: **163 pytest passed @ 94.22%**, **124 Vitest @ 89.91/82.62/86.17/90.68**,
+  **11/11 Playwright** (10 journeys), `ruff` + `mypy` clean, `tsc -b` + `vite build` green.
 
-**Final status:** backend **162 passed @ 94.17%** (100% flyers/services, notifications
+**Final status:** backend **163 passed @ 94.22%** (100% flyers/services, notifications
 selectors/serializers/views);
-frontend **118 vitest tests** @ 89.61/82.23/85.75/90.45 + **10 Playwright tests
-green** (9 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
+frontend **124 vitest tests** @ 89.91/82.62/86.17/90.68 + **11 Playwright tests
+green** (10 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
 `npm run docs:pdf` regenerated.

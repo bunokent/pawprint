@@ -319,7 +319,8 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 .leaflet-container { z-index: 0; background: var(--color-surface); font: inherit; }
 
 /* Circular photo pin with a status ring — red = lost, green = found.
-   The ring colour is set inline (border-color / --pin-glow) per pin. */
+   The ring colour is set inline (border-color / --pin-glow) per pin.
+   `overflow: hidden` clips the photo/letter to a perfect circle. */
 .pp-pin__ring {
   position: relative;
   display: block;
@@ -329,6 +330,7 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
   border-radius: 50%;
   border: 3px solid var(--color-emergency);
   background: #fff;
+  overflow: hidden;
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--pin-glow, #b3261e) 22%, transparent),
     0 4px 14px rgb(28 20 16 / 0.32);
@@ -336,7 +338,7 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 }
 .pp-pin:hover .pp-pin__ring { transform: scale(1.08); }
 .pp-pin__ring img,
-.pp-pin__ring .pp-pin__letter { display: block; width: 100%; height: 100%; border-radius: 50%; }
+.pp-pin__ring .pp-pin__letter { display: block; width: 100%; height: 100%; }
 .pp-pin__ring img { object-fit: cover; }
 .pp-pin__letter {
   display: grid;
@@ -347,22 +349,72 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
   font-size: 22px;
   font-weight: 700;
 }
-/* Vision-matched pins (lost <-> found photo match) get a pulsing amber halo. */
-.pp-pin__ring--match::after {
+/* Vision-matched pins (lost <-> found photo match) get a pulsing amber halo.
+   The halo lives on the marker element (positioned by Leaflet), not on the
+   ring, so the ring's `overflow: hidden` circle clip stays intact. */
+.pp-pin--match::after,
+.pp-stack-pin--match::after {
   content: "";
   position: absolute;
-  inset: -8px;
   border-radius: 50%;
   border: 3px solid var(--color-amber);
   pointer-events: none;
   animation: pp-halo 1.8s ease-out infinite;
 }
+.pp-pin--match::after { inset: -8px; }
+.pp-stack-pin--match::after { left: -8px; top: -8px; width: 56px; height: 56px; }
 @keyframes pp-halo {
   0% { transform: scale(0.82); opacity: 0.95; }
   100% { transform: scale(1.28); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pp-pin__ring--match::after { animation: none; opacity: 0.7; }
+  .pp-pin--match::after,
+  .pp-stack-pin--match::after { animation: none; opacity: 0.7; }
+}
+
+/* Stacked pins: pins at the same spot (or within ~30 m) render as a deck of
+   circular cards — the newest on top with a ×N badge, the oldest peeking out
+   behind it. Every card keeps its own mode ring colour (red lost / green found). */
+.pp-stack { position: relative; width: 100%; height: 100%; }
+.pp-stack__top { position: absolute; left: 0; top: 0; width: 56px; height: 56px; }
+.pp-stack__top .pp-pin__ring { position: absolute; inset: 0; }
+.pp-stack__card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 56px;
+  height: 56px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 3px solid var(--color-emergency);
+  background: #fff;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--pin-glow, #b3261e) 22%, transparent),
+    0 4px 14px rgb(28 20 16 / 0.32);
+}
+.pp-stack__card img,
+.pp-stack__card .pp-pin__letter { display: block; width: 100%; height: 100%; }
+.pp-stack__card img { object-fit: cover; }
+.pp-stack__card .pp-pin__letter { font-size: 22px; display: grid; place-items: center; background: var(--color-muted); color: var(--color-paper); font-family: var(--font-display); font-weight: 700; }
+.pp-pin__count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 3;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 21px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgb(28 20 16 / 0.35);
 }
 
 /* Draggable crimson teardrop pin on the location picker. */

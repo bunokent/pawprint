@@ -416,7 +416,9 @@ describe("BuilderWizard", () => {
         createdFlyers.push(body);
         return HttpResponse.json(mockFoundFlyer({ id: "88888888-8888-8888-8888-888888888888", ...(body as Partial<Flyer>) }), { status: 201 });
       }),
-      http.get("*/api/flyers/:id", ({ params }) => HttpResponse.json(mockFoundFlyer({ id: String(params.id) }))),
+      http.get("*/api/flyers/:id", ({ params }) =>
+        HttpResponse.json(mockFoundFlyer({ id: String(params.id), pet: mockPet({ name: "", status: "found" }) })),
+      ),
     );
     renderWithProviders(<BuilderWizard />, {
       route: "/builder?mode=found",
@@ -430,12 +432,15 @@ describe("BuilderWizard", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "miso.jpg", { type: "image/jpeg" })] },
     });
-    await screen.findByRole("heading", { name: "Tell us about the pet" });
+    await screen.findByRole("heading", { name: "Describe the found pet" });
 
-    // Step 2 — pet is created with status "found".
-    await user.type(screen.getByLabelText("Pet name"), "Miso");
+    // Step 2 — found mode hides the lost/adoptable-only fields (name, personality tags).
+    expect(screen.queryByLabelText("Pet name")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Personality tags")).not.toBeInTheDocument();
+    expect(screen.getByTestId("found-hint")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    await waitFor(() => expect(createdPets[0]).toMatchObject({ name: "Miso", status: "found" }));
+    // The pet is created unnamed with status "found".
+    await waitFor(() => expect(createdPets[0]).toMatchObject({ name: "", status: "found" }));
 
     // Step 3 — found fields: location picker (fallback input without a Maps key), date, description. No reward toggle.
     expect(await screen.findByRole("heading", { name: "Found-pet details" })).toBeInTheDocument();
@@ -456,8 +461,9 @@ describe("BuilderWizard", () => {
       location_lat: null,
       location_lng: null,
     });
-    // Lands on the found flyer's public detail page.
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Found pet: Miso");
+    // Lands on the found flyer's public detail page (unnamed → just "Found pet").
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Found pet");
+    expect(screen.getByRole("heading", { level: 1 })).not.toHaveTextContent(":");
   });
 
   it("surfaces the 422 gatekeeper error inside the wizard", async () => {

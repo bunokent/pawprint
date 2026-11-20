@@ -11,6 +11,8 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+import { petDisplayName } from "@/lib/utils";
+
 /** Default map centre — Manila, where PawPrint operates. */
 export const DEFAULT_CENTER: L.LatLngExpression = [14.5995, 120.9842];
 export const DEFAULT_ZOOM = 12;
@@ -105,23 +107,117 @@ export interface PinLike {
 
 const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
+/** Pin label — found pets may have no name yet. */
+const pinName = (pin: PinLike): string => petDisplayName(pin.pet, pin.mode);
+
+const pinInner = (pin: PinLike): string =>
+  pin.photo_url
+    ? `<img src="${esc(pin.photo_url)}" alt="${esc(pinName(pin))}" />`
+    : `<span class="pp-pin__letter">${esc(pinName(pin).charAt(0).toUpperCase())}</span>`;
+
 /**
- * Circular photo pin: the pet photo clipped to a circle with a status ring
- * (red lost / green found) plus a soft glow; without a photo, the pet's initial
- * on a muted disc. Pins with a vision match get an amber pulsing halo
- * (`pp-pin--match`). Rendered as a Leaflet `divIcon`, so it works without canvas.
+ * Circular photo pin: the pet photo clipped to a circle (`overflow: hidden` on
+ * the ring) with a status ring (red lost / green found) plus a soft glow;
+ * without a photo, the pet's initial on a muted disc. Pins with a vision match
+ * get an amber pulsing halo on the marker itself (`pp-pin--match`, so the ring
+ * clip stays intact). Rendered as a Leaflet `divIcon`, so it works without canvas.
  */
 export function petPinIcon(pin: PinLike, size = PIN_SIZE): L.DivIcon {
   const ring = pinRingColor(pin.mode);
   const matched = Boolean(pin.match);
-  const name = pin.pet.name ?? "";
-  const inner = pin.photo_url
-    ? `<img src="${esc(pin.photo_url)}" alt="${esc(name)}" />`
-    : `<span class="pp-pin__letter">${esc(name.trim().charAt(0).toUpperCase() || "?")}</span>`;
   return L.divIcon({
     className: matched ? "pp-pin pp-pin--match" : "pp-pin",
-    html: `<span class="pp-pin__ring${matched ? " pp-pin__ring--match" : ""}" data-pet-name="${esc(name)}" style="border-color:${ring};--pin-glow:${ring}">${inner}</span>`,
+    html: `<span class="pp-pin__ring" data-pet-name="${esc(pinName(pin))}" style="border-color:${ring};--pin-glow:${ring}">${pinInner(pin)}</span>`,
     iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stacking — pins at the same spot (or within ~30 m) are drawn as a deck of */
+/* circular cards: the newest on top with a count badge, the oldest peeking */
+/* out behind it. Tapping the stack opens a popup listing every stacked flyer. */
+/* ------------------------------------------------------------------------ */
+
+/** A cluster of pins that share (nearly) the same coordinates. */
+export interface PinGroup<T> {
+  key: string;
+  lat: number;
+  lng: number;
+  /** Newest first — items[0] is the top card of the stack. */
+  items: T[];
+}
+
+/** Great-circle distance in metres (haversine). */
+export function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6_371_000;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const la1 = (aLat * Math.PI) / 180;
+  const la2 = (bLat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Greedy proximity clustering: pins within `maxMeters` of an existing group
+ * join it (same spot or nearby), otherwise they start a new group. Groups are
+ * returned oldest-first internally, then each group's items are reversed so the
+ * newest flyer is the visible top card and the oldest peek out at the back.
+ */
+export function groupPins<T extends { location_lat?: number | null; location_lng?: number | null; created_at?: string }>(
+  items: T[],
+  maxMeters = 30,
+): Array<PinGroup<T>> {
+  const withCoords = items.filter(
+    (i): i is T & { location_lat: number; location_lng: number } => i.location_lat != null && i.location_lng != null,
+  );
+  const sorted = [...withCoords].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
+  const groups: Array<PinGroup<T>> = [];
+  for (const item of sorted) {
+    let group = groups.find((g) => haversineMeters(g.lat, g.lng, item.location_lat, item.location_lng) <= maxMeters);
+    if (!group) {
+      group = { key: `${item.location_lat.toFixed(6)},${item.location_lng.toFixed(6)}`, lat: item.location_lat, lng: item.location_lng, items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
+  for (const g of groups) g.items.reverse();
+  return groups;
+}
+
+/** Offset between stacked cards, in px. */
+export const STACK_STEP = 7;
+
+/**
+ * Stack pin for a group of 2+ pins at the same spot: up to two back cards
+ * (the oldest) peek out bottom-right, the newest flyer's circular pin sits on
+ * top with a `×N` count badge. Every card keeps its own mode ring colour
+ * (red lost / green found). The icon is anchored at the top card's centre.
+ */
+export function stackPinIcon<T extends PinLike>(group: PinGroup<T>, size = PIN_SIZE): L.DivIcon {
+  const top = group.items[0];
+  const backs = group.items.slice(1, 3);
+  const matched = group.items.some((i) => i.match);
+  const offset = backs.length * STACK_STEP;
+  const backHtml = backs
+    .map((b, i) => {
+      const rb = pinRingColor(b.mode);
+      return `<span class="pp-stack__card" style="transform:translate(${(i + 1) * STACK_STEP}px, ${(i + 1) * STACK_STEP}px);border-color:${rb};--pin-glow:${rb}">${pinInner(b)}</span>`;
+    })
+    .join("");
+  const ring = pinRingColor(top.mode);
+  const html =
+    `<div class="pp-stack">${backHtml}` +
+    `<span class="pp-stack__top">` +
+    `<span class="pp-pin__ring" data-pet-name="${esc(pinName(top))}" data-stack-top="true" style="border-color:${ring};--pin-glow:${ring}">${pinInner(top)}</span>` +
+    `<span class="pp-pin__count" data-stack-count="${group.items.length}">×${group.items.length}</span>` +
+    `</span></div>`;
+  return L.divIcon({
+    className: matched ? "pp-pin pp-stack-pin pp-stack-pin--match" : "pp-pin pp-stack-pin",
+    html,
+    iconSize: [size + offset, size + offset],
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -size / 2],
   });

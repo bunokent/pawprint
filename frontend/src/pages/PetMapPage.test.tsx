@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PetMapPage } from "@/pages/PetMapPage";
 import { mswServer } from "@/test/setup";
 import { renderWithProviders } from "@/test/utils";
-import { mockFlyer, mockFoundFlyer } from "@/test/handlers";
+import { mockFlyer, mockFoundFlyer, mockPet } from "@/test/handlers";
 import { petPinIcon, pinRingColor } from "@/lib/maps";
 
 const state = vi.hoisted(() => ({
@@ -84,14 +84,13 @@ describe("PetMapPage", () => {
   it("marks vision-matched pins with the amber halo and shows a match banner in the popup", async () => {
     const lost = mockFlyer();
     const found = mockFoundFlyer({
-      match: { flyer_id: lost.id, mode: "emergency", pet_name: lost.pet.name, score: 0.92 },
+      match: { flyer_id: lost.id, mode: "emergency", pet_name: lost.pet.name ?? "Bento", score: 0.92 },
     });
     mswServer.use(http.get("*/api/flyers/map", () => HttpResponse.json([lost, found])));
     renderWithProviders(<PetMapPage />, { route: "/map" });
     await waitFor(() => expect(state.markers).toHaveLength(2));
-    // The matched pin gets the halo class; the unmatched one does not.
+    // The matched pin gets the halo class on the marker; the unmatched one does not.
     expect(state.markers[1].opts.icon.opts.className).toContain("pp-pin--match");
-    expect(state.markers[1].opts.icon.opts.html).toContain("pp-pin__ring--match");
     expect(state.markers[0].opts.icon.opts.className).not.toContain("pp-pin--match");
     // Legend shows the "Possible match" badge.
     expect(screen.getByText(/Possible match/)).toBeInTheDocument();
@@ -102,6 +101,37 @@ describe("PetMapPage", () => {
     expect(banner).toHaveTextContent("Possible photo match with Bento (92%)");
     expect(banner.querySelector("a")).toHaveAttribute("href", `/flyers/${lost.id}`);
     expect(popup).toHaveTextContent("Miso");
+  });
+
+  it("stacks pins at the same spot into one deck pin with a ×N badge; tapping it lists every stacked flyer", async () => {
+    const spot = { location_lat: 14.5995, location_lng: 120.9842 };
+    const lost = mockFlyer({ ...spot, created_at: "2026-11-10T00:00:00Z" }); // oldest → peeks behind
+    const found = mockFoundFlyer({ ...spot, created_at: "2026-11-12T00:00:00Z", pet: mockPet({ name: "", status: "found" }) }); // newest → top card
+    mswServer.use(http.get("*/api/flyers/map", () => HttpResponse.json([lost, found])));
+    renderWithProviders(<PetMapPage />, { route: "/map" });
+
+    // One marker only, rendered as a stack with a count badge.
+    await waitFor(() => expect(state.markers).toHaveLength(1));
+    const icon = state.markers[0].opts.icon.opts;
+    expect(icon.className).toContain("pp-stack-pin");
+    expect(icon.html).toContain('data-stack-count="2"');
+    // Top card keeps the found (green) ring; the back card keeps the lost (red) ring.
+    expect(icon.html).toContain('data-stack-top="true"');
+    expect(icon.html).toContain('data-pet-name="Found pet"');
+    expect(icon.html).toContain("border-color:#2e9e63");
+    expect(icon.html).toContain("pp-stack__card");
+    expect(icon.html).toContain("border-color:#b3261e");
+
+    // Tap the stack → popup lists both stacked flyers with links.
+    (state.listeners["marker:click"] ?? [])[0]({});
+    const popup = await screen.findByTestId("map-pin-popup");
+    expect(within(popup).getByTestId("stack-count-badge")).toHaveTextContent("×2");
+    const cards = popup.querySelectorAll('[data-testid="stack-card"]');
+    expect(cards).toHaveLength(2);
+    expect(popup).toHaveTextContent("Found pet"); // unnamed found pet fallback
+    expect(popup).toHaveTextContent("Bento");
+    const openLinks = popup.querySelectorAll('a[href^="/flyers/"]');
+    expect([...openLinks].map((a) => a.getAttribute("href"))).toEqual([`/flyers/${found.id}`, `/flyers/${lost.id}`]);
   });
 
   it("navigates to the flyer page from a pin (list fallback)", async () => {
