@@ -29,6 +29,10 @@
   --color-terracotta-deep: #8a4a2b;
   --color-cream: #f6f1e7;
 
+  /* found = green (map pins, badges, buttons) */
+  --color-found: #2e9e63;
+  --color-found-deep: #1f7a4b;
+
   --radius-lg: 20px;
   --radius-md: 12px;
   --radius-sm: 8px;
@@ -79,8 +83,8 @@ body {
 .btn--emergency:hover { background: var(--color-emergency-deep); box-shadow: var(--shadow-lift); }
 .btn--sage { background: var(--color-sage); color: #fff; }
 .btn--sage:hover { background: var(--color-sage-deep); box-shadow: var(--shadow-lift); }
-.btn--found { background: var(--color-terracotta); color: #fff; }
-.btn--found:hover { background: #b25a38; box-shadow: var(--shadow-lift); }
+.btn--found { background: var(--color-found); color: #fff; }
+.btn--found:hover { background: var(--color-found-deep); box-shadow: var(--shadow-lift); }
 .btn--secondary { background: transparent; color: var(--color-ink); border-color: var(--color-line); }
 .btn--secondary:hover { border-color: var(--color-ink); }
 .btn[disabled] { opacity: 0.55; cursor: not-allowed; transform: none; }
@@ -102,7 +106,8 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
   border-radius: 999px; font: 600 13px/1 var(--font-sans);
 }
 .badge--emergency { background: rgb(179 38 30 / 0.1); color: var(--color-emergency-deep); }
-.badge--found { background: rgb(201 111 74 / 0.16); color: #8a4a2b; }
+.badge--found { background: rgb(46 158 99 / 0.14); color: var(--color-found-deep); }
+.badge--match { background: rgb(255 179 0 / 0.2); color: #7a5200; }
 .badge--outreach { background: rgb(47 111 94 / 0.12); color: var(--color-sage-deep); }
 .badge--reward { background: var(--color-amber); color: #2b1a00; }
 .badge--neutral { background: var(--color-surface); color: var(--color-muted); }
@@ -313,31 +318,51 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 /* Keep Leaflet panes/controls under the sticky nav (z-index 40). */
 .leaflet-container { z-index: 0; background: var(--color-surface); font: inherit; }
 
-/* Circular photo pin with a status ring — crimson = lost, terracotta = found. */
+/* Circular photo pin with a status ring — red = lost, green = found.
+   The ring colour is set inline (border-color / --pin-glow) per pin. */
 .pp-pin__ring {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
   box-sizing: border-box;
   border-radius: 50%;
   border: 3px solid var(--color-emergency);
-  overflow: hidden;
   background: #fff;
-  box-shadow: 0 2px 10px rgb(28 20 16 / 0.28);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--pin-glow, #b3261e) 22%, transparent),
+    0 4px 14px rgb(28 20 16 / 0.32);
   transition: transform 150ms ease;
 }
 .pp-pin:hover .pp-pin__ring { transform: scale(1.08); }
-.pp-pin__ring img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pp-pin__ring img,
+.pp-pin__ring .pp-pin__letter { display: block; width: 100%; height: 100%; border-radius: 50%; }
+.pp-pin__ring img { object-fit: cover; }
 .pp-pin__letter {
   display: grid;
   place-items: center;
-  width: 100%;
-  height: 100%;
   background: var(--color-muted);
   color: var(--color-paper);
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
+}
+/* Vision-matched pins (lost <-> found photo match) get a pulsing amber halo. */
+.pp-pin__ring--match::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 3px solid var(--color-amber);
+  pointer-events: none;
+  animation: pp-halo 1.8s ease-out infinite;
+}
+@keyframes pp-halo {
+  0% { transform: scale(0.82); opacity: 0.95; }
+  100% { transform: scale(1.28); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pp-pin__ring--match::after { animation: none; opacity: 0.7; }
 }
 
 /* Draggable crimson teardrop pin on the location picker. */

@@ -72,8 +72,8 @@ describe("createDropMarker", () => {
 });
 
 describe("pin icons", () => {
-  it("pinRingColor: terracotta for found, crimson for anything else", () => {
-    expect(pinRingColor("found")).toBe("#c96f4a");
+  it("pinRingColor: green for found, red for anything else", () => {
+    expect(pinRingColor("found")).toBe("#2e9e63");
     expect(pinRingColor("emergency")).toBe("#b3261e");
     expect(pinRingColor(undefined)).toBe("#b3261e");
     expect(pinRingColor(null)).toBe("#b3261e");
@@ -88,7 +88,20 @@ describe("pin icons", () => {
     expect(icon.opts.html).toContain('data-pet-name="Bento"');
     expect(icon.opts.iconSize).toEqual([56, 56]);
     const found = petPinIcon(mockFoundFlyer()) as unknown as typeof icon;
-    expect(found.opts.html).toContain("border-color:#c96f4a");
+    expect(found.opts.html).toContain("border-color:#2e9e63");
+  });
+
+  it("petPinIcon adds the match halo classes when the pin has a vision match", () => {
+    const matched = petPinIcon(mockFoundFlyer({ match: { flyer_id: "x", mode: "emergency", pet_name: "Bento", score: 0.9 } })) as unknown as {
+      opts: { className: string; html: string };
+    };
+    expect(matched.opts.className).toBe("pp-pin pp-pin--match");
+    expect(matched.opts.html).toContain("pp-pin__ring--match");
+    expect(matched.opts.html).toContain("border-color:#2e9e63");
+    // Unmatched pins stay plain.
+    const plain = petPinIcon(mockFlyer()) as unknown as typeof matched;
+    expect(plain.opts.className).toBe("pp-pin");
+    expect(plain.opts.html).not.toContain("pp-pin__ring--match");
   });
 
   it("petPinIcon falls back to the pet initial and escapes HTML in attributes", () => {

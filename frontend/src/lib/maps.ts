@@ -76,8 +76,8 @@ export async function reverseGeocode(lat: number, lng: number, signal?: AbortSig
   }
 }
 
-/** Pin ring colours from the design system: crimson = lost, terracotta = found. */
-export const PIN_RING = { lost: "#b3261e", found: "#c96f4a" } as const;
+/** Pin ring colours from the design system: red = lost, green = found. */
+export const PIN_RING = { lost: "#b3261e", found: "#2e9e63" } as const;
 
 /** Ring colour for a flyer mode — anything not "found" is treated as lost. */
 export function pinRingColor(mode: string | null | undefined): string {
@@ -87,29 +87,40 @@ export function pinRingColor(mode: string | null | undefined): string {
 /** Photo-pin diameter in px (ring + circular photo). */
 export const PIN_SIZE = 56;
 
+/** Vision-match counterpart reported by the map endpoint. */
+export interface PinMatch {
+  flyer_id: string;
+  mode: string;
+  pet_name: string;
+  score: number;
+}
+
 /** Minimal shape needed to build a photo pin (a Flyer is assignable to this). */
 export interface PinLike {
   mode?: string | null;
   photo_url?: string | null;
   pet: { name?: string | null };
+  match?: PinMatch | null;
 }
 
 const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
 /**
- * Circular photo pin: the pet photo clipped to a circle with a status-coloured
- * ring (crimson lost / terracotta found); without a photo, the pet's initial on
- * a muted disc. Rendered as a Leaflet `divIcon`, so it works without canvas.
+ * Circular photo pin: the pet photo clipped to a circle with a status ring
+ * (red lost / green found) plus a soft glow; without a photo, the pet's initial
+ * on a muted disc. Pins with a vision match get an amber pulsing halo
+ * (`pp-pin--match`). Rendered as a Leaflet `divIcon`, so it works without canvas.
  */
 export function petPinIcon(pin: PinLike, size = PIN_SIZE): L.DivIcon {
   const ring = pinRingColor(pin.mode);
+  const matched = Boolean(pin.match);
   const name = pin.pet.name ?? "";
   const inner = pin.photo_url
     ? `<img src="${esc(pin.photo_url)}" alt="${esc(name)}" />`
     : `<span class="pp-pin__letter">${esc(name.trim().charAt(0).toUpperCase() || "?")}</span>`;
   return L.divIcon({
-    className: "pp-pin",
-    html: `<span class="pp-pin__ring" data-pet-name="${esc(name)}" style="border-color:${ring}">${inner}</span>`,
+    className: matched ? "pp-pin pp-pin--match" : "pp-pin",
+    html: `<span class="pp-pin__ring${matched ? " pp-pin__ring--match" : ""}" data-pet-name="${esc(name)}" style="border-color:${ring};--pin-glow:${ring}">${inner}</span>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -size / 2],

@@ -42,10 +42,10 @@ describe("PetMapPage", () => {
     await waitFor(() => expect((state.listeners["marker:click"] ?? []).length).toBe(2));
     expect(state.markers[0].latlng).toEqual({ lat: mockFlyer().location_lat, lng: mockFlyer().location_lng });
     expect(state.markers[1].latlng).toEqual({ lat: mockFoundFlyer().location_lat, lng: mockFoundFlyer().location_lng });
-    // Photo pins carry the status ring: crimson lost, terracotta found.
+    // Photo pins carry the status ring: red lost, green found.
     expect(state.markers[0].opts.icon.opts.html).toContain("border-color:#b3261e");
     expect(state.markers[0].opts.icon.opts.html).toContain('alt="Bento"');
-    expect(state.markers[1].opts.icon.opts.html).toContain("border-color:#c96f4a");
+    expect(state.markers[1].opts.icon.opts.html).toContain("border-color:#2e9e63");
     expect(state.markers[1].opts.icon.opts.html).toContain('alt="Miso"');
 
     // Click the found pin (second marker) → popup with details + Show Full Details link.
@@ -75,9 +75,33 @@ describe("PetMapPage", () => {
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute("href", `/flyers/${mockFlyer().id}`);
     expect(links[1]).toHaveAttribute("href", `/flyers/${mockFoundFlyer().id}`);
-    // Legend distinguishes lost vs found.
-    expect(screen.getByText("Lost")).toBeInTheDocument();
-    expect(screen.getByText("Found")).toBeInTheDocument();
+    // Legend distinguishes lost vs found pin colours.
+    const legend = screen.getByLabelText("Pin legend");
+    expect(legend).toHaveTextContent("Lost — red pin");
+    expect(legend).toHaveTextContent("Found — green pin");
+  });
+
+  it("marks vision-matched pins with the amber halo and shows a match banner in the popup", async () => {
+    const lost = mockFlyer();
+    const found = mockFoundFlyer({
+      match: { flyer_id: lost.id, mode: "emergency", pet_name: lost.pet.name, score: 0.92 },
+    });
+    mswServer.use(http.get("*/api/flyers/map", () => HttpResponse.json([lost, found])));
+    renderWithProviders(<PetMapPage />, { route: "/map" });
+    await waitFor(() => expect(state.markers).toHaveLength(2));
+    // The matched pin gets the halo class; the unmatched one does not.
+    expect(state.markers[1].opts.icon.opts.className).toContain("pp-pin--match");
+    expect(state.markers[1].opts.icon.opts.html).toContain("pp-pin__ring--match");
+    expect(state.markers[0].opts.icon.opts.className).not.toContain("pp-pin--match");
+    // Legend shows the "Possible match" badge.
+    expect(screen.getByText(/Possible match/)).toBeInTheDocument();
+    // Popup of the matched pin shows the banner linking to the counterpart flyer.
+    (state.listeners["marker:click"] ?? [])[1]({});
+    const popup = await screen.findByTestId("map-pin-popup");
+    const banner = await screen.findByTestId("pin-match-banner");
+    expect(banner).toHaveTextContent("Possible photo match with Bento (92%)");
+    expect(banner.querySelector("a")).toHaveAttribute("href", `/flyers/${lost.id}`);
+    expect(popup).toHaveTextContent("Miso");
   });
 
   it("navigates to the flyer page from a pin (list fallback)", async () => {
@@ -106,8 +130,8 @@ describe("PetMapPage", () => {
 });
 
 describe("pin helpers", () => {
-  it("uses terracotta for found pins and crimson for lost", () => {
-    expect(pinRingColor("found")).toBe("#c96f4a");
+  it("uses green for found pins and red for lost", () => {
+    expect(pinRingColor("found")).toBe("#2e9e63");
     expect(pinRingColor("emergency")).toBe("#b3261e");
     expect(pinRingColor(undefined)).toBe("#b3261e");
   });

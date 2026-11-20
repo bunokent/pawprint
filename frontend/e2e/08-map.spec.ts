@@ -33,11 +33,16 @@ test("guest browses the interactive pet map and opens a flyer from a pin", async
   // so the pins show the pet's initial — pinned via data-pet-name either way).
   const map = page.getByTestId("pet-map");
   await expect(map).toBeVisible();
-  await expect(map.locator('.pp-pin [data-pet-name="Bruno"]')).toBeVisible();
-  await expect(map.locator('.pp-pin [data-pet-name="Miso"]')).toBeVisible();
-  // Legend distinguishes lost vs found.
-  await expect(page.getByText("Lost", { exact: true })).toBeVisible();
-  await expect(page.getByText("Found", { exact: true })).toBeVisible();
+  const brunoPin = map.locator('.pp-pin [data-pet-name="Bruno"]');
+  const misoPin = map.locator('.pp-pin [data-pet-name="Miso"]');
+  await expect(brunoPin).toBeVisible();
+  await expect(misoPin).toBeVisible();
+  // Status ring colours: lost = red, found = green.
+  await expect(brunoPin).toHaveCSS("border-color", "rgb(179, 38, 30)"); // #b3261e
+  await expect(misoPin).toHaveCSS("border-color", "rgb(46, 158, 99)"); // #2e9e63
+  // Legend distinguishes lost vs found pin colours.
+  await expect(page.getByLabel("Pin legend")).toContainText("Lost — red pin");
+  await expect(page.getByLabel("Pin legend")).toContainText("Found — green pin");
 
   // Tap Bruno's pin → popup card → open the flyer.
   await map.locator('.pp-pin [data-pet-name="Bruno"]').click();

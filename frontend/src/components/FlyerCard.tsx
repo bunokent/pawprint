@@ -6,7 +6,7 @@ import { formatDate } from "@/lib/utils";
 export function FlyerCard({ flyer }: { flyer: Flyer }) {
   const emergency = flyer.mode === "emergency";
   const found = flyer.mode === "found";
-  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-terracotta-deep)" : "var(--color-sage-deep)";
+  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-found-deep)" : "var(--color-sage-deep)";
   return (
     <Link
       to={`/flyers/${flyer.id}`}

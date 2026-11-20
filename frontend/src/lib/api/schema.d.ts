@@ -485,6 +485,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/notifications — latest notifications + unread count (auth only). */
+        get: operations["notifications_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/notifications — latest notifications + unread count (auth only). */
+        get: operations["notifications_retrieve_2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/notifications/read — mark all (or the given ids) as read. */
+        post: operations["notifications_read_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notificationsread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/notifications/read — mark all (or the given ids) as read. */
+        post: operations["notificationsread_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pets": {
         parameters: {
             query?: never;
@@ -680,10 +748,20 @@ export interface components {
             readonly photo_url: string;
             readonly export_png_url: string;
             readonly export_pdf_url: string;
+            readonly match: components["schemas"]["FlyerMatch"] | null;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        /** @description Vision-match counterpart of a flyer pin (lost <-> found). */
+        FlyerMatch: {
+            /** Format: uuid */
+            flyer_id: string;
+            mode: string;
+            pet_name: string;
+            /** Format: double */
+            score: number;
         };
         /**
          * @description * `draft` - Draft
@@ -700,6 +778,13 @@ export interface components {
         GoogleUrl: {
             redirect_uri: string;
         };
+        /**
+         * @description * `match_found` - Possible match for your lost pet
+         *     * `match_lost` - Your found pet may be someone's lost pet
+         *     * `system` - System
+         * @enum {string}
+         */
+        KindEnum: "match_found" | "match_lost" | "system";
         Login: {
             /** Format: email */
             email: string;
@@ -712,6 +797,25 @@ export interface components {
          * @enum {string}
          */
         ModeEnum: "emergency" | "found" | "outreach";
+        Notification: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly kind: components["schemas"]["KindEnum"];
+            readonly title: string;
+            readonly body: string;
+            readonly link: string;
+            /** Format: date-time */
+            readonly read_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        NotificationList: {
+            results: components["schemas"]["Notification"][];
+            unread_count: number;
+        };
+        NotificationRead: {
+            ids?: string[];
+        };
         PaginatedFlyerList: {
             /**
              * Format: uri
@@ -1528,6 +1632,98 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    notifications_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+        };
+    };
+    notifications_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+        };
+    };
+    notifications_read_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NotificationRead"];
+                "application/x-www-form-urlencoded": components["schemas"]["NotificationRead"];
+                "multipart/form-data": components["schemas"]["NotificationRead"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    notificationsread_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NotificationRead"];
+                "application/x-www-form-urlencoded": components["schemas"]["NotificationRead"];
+                "multipart/form-data": components["schemas"]["NotificationRead"];
+            };
+        };
         responses: {
             200: {
                 headers: {

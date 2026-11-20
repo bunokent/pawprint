@@ -58,7 +58,7 @@ export function FlyerDetailPage() {
   const emergency = flyer.mode === "emergency";
   const found = flyer.mode === "found";
   const isOwner = Boolean(user && flyer.creator === user.id);
-  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-terracotta-deep)" : "var(--color-sage-deep)";
+  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-found-deep)" : "var(--color-sage-deep)";
   const canReward = flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0;
   const hasPin = flyer.location_lat != null && flyer.location_lng != null;
 

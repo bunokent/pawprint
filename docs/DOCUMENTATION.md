@@ -48,7 +48,12 @@ and Playwright E2E covers the 9 critical journeys end-to-end.
   (`pet_classes`), a separate `PetAttributeService` classifies breed (curated dog/cat breed
   lists; other species → empty) and color, with raw confidences returned on the upload response.
   Labels are grouped into domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird,
-  and fish categories. Maps: Leaflet 1.9 (npm dependency, no API key) over OpenStreetMap
+  and fish categories. The same CLIP encoder also produces a 512-dim image embedding per pet
+   photo (cached on `Pet.photo_embedding`), used to match found photos against lost ones —
+   cosine similarity ≥ `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80) creates a
+   `vision.PetMatch` and notifications to both sides (Phase 30). In-app notifications live
+   in `apps.notifications` (REST + per-user `ws/notifications/` push). Maps: Leaflet 1.9
+   (npm dependency, no API key) over OpenStreetMap
   tiles, with Nominatim geocoding (address search + reverse geocode), for the location
   picker and `/map`.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
@@ -133,7 +138,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `POST /api/auth/avatar` | Auth | Profile picture upload (10/min, no pet gate) |
 | `GET /api/auth/google/url` + `POST /api/auth/google/callback` | Guest | Google/Gmail OAuth 2.0 |
 | `GET /api/flyers` | Guest | Cursor-paginated gallery, FTS `?q=`, mode filter `?mode=` (`emergency|found|outreach`) |
-| `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` |
+| `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` + `match` (vision photo-match counterpart: `flyer_id`/`mode`/`pet_name`/`score`, or null) |
 | `GET /api/flyers/{id}` | Guest | Public flyer detail (QR scan landing) |
 | `POST /api/flyers/new` | Auth | Create flyer — `mode` incl. `found`, optional `location_lat`/`location_lng` pin (dispatches A4 asset generation) |
 | `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / delete own flyer |
@@ -144,6 +149,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `GET /api/rewards/{id}/status` | Auth (payer/creator) | Poll payment status |
 | `GET /api/rewards/mine` | Auth | Own reward history |
 | `POST /api/webhooks/stripe` / `POST /api/webhooks/paymongo` | Signature | Idempotent webhooks |
+| `GET /api/notifications` | Auth | Latest notifications + `unread_count` |
+| `POST /api/notifications/read` | Auth | Mark all (or given `ids`) notifications read |
 | `GET /api/health` | Public | Liveness probe |
 | `GET /api/schema` | Public | drf-spectacular OpenAPI schema |
 
@@ -179,6 +186,13 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `flyers`): renders the HTML flyer template with WeasyPrint to A4 PDF + Playwright A4@300dpi
   PNG, uploads to private Cloudinary, marks the flyer `active`, then broadcasts `flyer.generated`
   over Django Channels (`ws/flyers/`).
+- On create/update of a lost/found flyer, `FlyerService` also dispatches
+  `apps.vision.tasks.match_flyer` (queue `images`): the pet's CLIP photo embedding (cached on
+  `Pet.photo_embedding`) is cosine-compared against the opposite mode's active flyers; every
+  pair ≥ `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80) gets a unique `vision.PetMatch` row
+  plus `apps.notifications` alerts to both sides, pushed over `ws/notifications/`
+  (per-user group; ASGI wraps websockets in `AuthMiddlewareStack`). `GET /api/flyers/map`
+  annotates each pin with its `match` counterpart.
 - Flyer templates (`templates/flyers/{emergency,outreach}.html`) and the on-screen
   `.print-sheet` follow the `taste` skill print typography (`@page { size: A4; margin: 0 }`,
   `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
@@ -725,9 +739,31 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   compose; §2 infra rewritten. Verified on the host: `redis-cli ping` → PONG, mailpit UI
   :8025 → 200, `pg_isready` :5433, `manage.py runserver` + `/api/health` → 200; suites
   re-run green (**150 pytest @ 95.41%**, **112 Vitest**, `tsc -b` clean).
+- **Phase 30** — Lost/found photo matching + notifications + recoloured map pins.
+  Backend: new `apps.notifications` app (`Notification` model; `GET /api/notifications`
+  → `{results, unread_count}`, `POST /api/notifications/read`; per-user websocket
+  `ws/notifications/` — ASGI now wraps websockets in `AuthMiddlewareStack`);
+  `Pet.photo_embedding` JSONField (migration `pets/0004`); `vision.PetMatch` (unique
+  lost/found pair + score, migration `vision/0002`); `clip_image_embedding` /
+  `cosine_similarity` / `PetMatchService` in `apps/vision/services.py` + `match_flyer`
+  task (queue `images`) dispatched from `FlyerService.create_flyer`/`update_flyer` for
+  emergency/found flyers; threshold `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80);
+  `GET /api/flyers/map` annotates each pin with a `match` counterpart (one extra query;
+  map query ceiling 6→7). Tests: `tests/unit/test_vision_match.py`,
+  `tests/integration/test_notifications.py`, updated `test_flyer_map.py`. Frontend:
+  map pins are now **red = lost, green = found** (`PIN_RING`, new `--color-found` token;
+  `badge--found` / `btn--found` / card accents switched to green), matched pins get a
+  pulsing amber halo (`pp-pin--match`) plus a "Possible match" legend badge and popup
+  banner linking to the counterpart flyer; new `NotificationBell` in the AppShell nav
+  (unread badge, dropdown, mark-all-read; `ws/notifications/` push + 30 s polling) with
+  `features/notifications/api.ts`; MSW `mockNotification` + handlers; `schema.yml`
+  regenerated + `npm run typegen`; e2e ⑧ asserts the red/green ring colours on the live
+  map. Verified: **162 pytest passed @ 94.17%**, **118 Vitest @ 89.61/82.23/85.75/90.45**,
+  **10/10 Playwright** (9 journeys), `ruff` + `mypy` clean, `tsc -b` + `vite build` green.
 
-**Final status:** backend **150 passed @ 95.41%** (100% services/drivers/vision/storage);
-frontend **112 vitest tests** @ 90.07/82.07/86.10/91.10 (rewards 100%) + **10 Playwright tests
+**Final status:** backend **162 passed @ 94.17%** (100% flyers/services, notifications
+selectors/serializers/views);
+frontend **118 vitest tests** @ 89.61/82.23/85.75/90.45 + **10 Playwright tests
 green** (9 journeys); `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
