@@ -44,16 +44,20 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   SDK, wrapped in a Django `Storage` backend (`apps/common/cloudinary_storage.py`).
 - **Payments**: Stripe Python SDK (test mode) + PayMongo REST via httpx (GCash Checkout, QR Ph).
 - **AI Vision**: Ultralytics YOLO-World (`yolov8s-worldv2.pt`) with 66 configured animal labels as
-  the gate/boxer, plus CLIP ViT-B/32 zero-shot second stages: one names the actual species
-  (`pet_classes`), a separate `PetAttributeService` classifies breed (curated dog/cat breed
-  lists; other species → empty) and color, with raw confidences returned on the upload response.
-  Labels are grouped into domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird,
-  and fish categories. The same CLIP encoder also produces a 512-dim image embedding per pet
-   photo (cached per photo on `PetPhoto.photo_embedding`; legacy single-photo pets on
-   `Pet.photo_embedding`), used to match found photos against lost ones — the **best** cosine
-   similarity over every cross-photo pair ≥ `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80)
-   creates a `vision.PetMatch` and notifications to both sides, so the same pet photographed
-   from different angles still matches (Phase 33). In-app notifications live
+  the gate/boxer (its best animal `xyxy` box also drives the re-ID crop), plus CLIP ViT-B/32
+  zero-shot second stages: one names the actual species (`pet_classes`), a separate
+  `PetAttributeService` classifies breed (curated dog/cat breed lists; other species → empty)
+  and color, with raw confidences returned on the upload response. Labels are grouped into
+  domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird, and fish categories.
+  **Re-identification matching** uses MegaDescriptor (`BVRA/MegaDescriptor-L-384` or
+  `BVRA/MegaDescriptor-DINOv2-518` via timm) instead of full-frame CLIP: each of a report's up
+  to 4 photos gets its own L2-normalized embedding of the in-memory padded crop of its best
+  detection box (cached on `PetPhoto.photo_embedding` with an `embedding_model` tag; legacy
+  single-photo pets on `Pet.photo_embedding`), and a found report is matched against lost
+  reports of the same species by the **max** cosine similarity over every cross-photo pair ≥
+  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.60) — creating a `vision.PetMatch` (with the
+  winning image pair in `best_pair`) plus notifications to both sides, so the same pet
+  photographed from different angles still matches (Phases 33–34). In-app notifications live
    in `apps.notifications` (REST + per-user `ws/notifications/` push). Maps: Leaflet 1.9
    (npm dependency, no API key) over OpenStreetMap
   tiles, with Nominatim geocoding (address search + reverse geocode), for the location
@@ -110,9 +114,13 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `rewards`, `webhooks`, `v
   JSON (GIN indexes), `photo_path` (cover photo), `status` (`lost|found|adoptable|reunited|adopted`),
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
 - `pets.PetPhoto` — one photo per row: `pet` FK (`related_name="photos"`, cascade), `photo_path`,
-  `photo_embedding` (per-angle CLIP cache), index `(pet, created_at)` (migration `pets/0006`).
-  A pet carries up to 6 photos (different angles of the same pet); lost/found matching takes
-  the max cosine similarity over all cross-photo pairs (Phase 33).
+  `photo_embedding` (per-photo MegaDescriptor re-ID cache of the in-memory padded crop) +
+  `embedding_model` tag, index `(pet, created_at)` (migrations `pets/0006`, `pets/0007`).
+  A report carries up to **4** photos (different angles of the same pet, `MAX_PET_PHOTOS`);
+  lost/found matching takes the max cosine similarity over all cross-photo pairs
+  (Phases 33–34). The stored file is always the full, uncropped display image.
+- `vision.PetMatch` — unique lost/found pair + `score` (max cross-photo cosine similarity) +
+  `best_pair` (the winning `[lost_photo_index, found_photo_index]`; migration `vision/0003`).
 - `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
   fields, `location_lat`/`location_lng` floats (the map pin), contact fields, reward fields, QR
   target, export paths, `status` (`draft|generating|active|resolved`); indexes
@@ -193,24 +201,30 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   PNG, uploads to private Cloudinary, marks the flyer `active`, then broadcasts `flyer.generated`
   over Django Channels (`ws/flyers/`).
 - On create/update of a lost/found flyer, `FlyerService` also dispatches
-  `apps.vision.tasks.match_flyer` (queue `images`): **every** photo of the pet (`PetPhoto`
-  rows, `prefetch_related("pet__photos")`) is cosine-compared against every photo of the
-  opposite mode's active flyers, and the **best cross-photo pair** decides the score — so the
-  same pet shown from a different angle (front vs side vs back) still matches, not just
-  literally the same picture. Every pair whose max similarity ≥
-  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.80) gets a unique `vision.PetMatch` row
-  plus `apps.notifications` alerts to both sides, pushed over `ws/notifications/`
-  (per-user group; ASGI wraps websockets in `AuthMiddlewareStack`). `GET /api/flyers/map`
-  annotates each pin with its `match` counterpart.
-  - `PetCreateSerializer` accepts `photo_paths` (list, max 6; `photo_path` stays as the cover =
+  `apps.vision.tasks.match_flyer` (queue `images`): **every** photo of the pet (up to 4
+  `PetPhoto` rows, `prefetch_related("pet__photos")`) is cosine-compared against every photo of
+  the opposite mode's active **same-species** flyers (`pet__species` filter), and the **best
+  cross-photo pair** decides the score — so the same pet shown from a different angle
+  (front vs side vs back) still matches, not just literally the same picture. Embeddings are
+  MegaDescriptor re-ID vectors of each photo's in-memory padded detection crop (the stored
+  images stay uncropped). Every pair whose max similarity ≥
+  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.60, env-tunable) gets a unique `vision.PetMatch`
+  row (score + `best_pair`) plus `apps.notifications` alerts to both sides, pushed over
+  `ws/notifications/` (per-user group; ASGI wraps websockets in `AuthMiddlewareStack`).
+  `GET /api/flyers/map` annotates each pin with its `match` counterpart (incl. `best_pair`).
+  `PetMatchService.rank_candidates(flyer_id, top_k)` exposes the ranked same-species
+  candidates (max similarity + winning image pair + `is_match` flag) for debugging/tuning.
+  - `PetCreateSerializer` accepts `photo_paths` (list, max 4; `photo_path` stays as the cover =
     first photo), and `PetService.create_pet` creates one `PetPhoto` row per photo with an
-    eagerly cached CLIP embedding (the legacy `Pet.photo_embedding` is still cached as the
-    fallback for pets predating `PetPhoto`), so matching never depends on re-downloading photos
-    mid-task. `PetMatchService.ensure_embedding`
-    is fault-tolerant: a photo that cannot be read/embedded (missing object, storage or model
-    error) is logged and skipped — one broken photo never aborts matching for the other pairs,
-    and `manage.py backfill_matches` re-runs matching for all active lost/found flyers to repair
-    data created before a fix (idempotent: unique pair constraint, notify only on first create).
+    eagerly cached MegaDescriptor embedding tagged with `embedding_model` (the legacy
+    `Pet.photo_embedding` is still cached as the fallback for pets predating `PetPhoto`), so
+    matching never depends on re-downloading photos mid-task. A tag mismatch (e.g. legacy
+    CLIP vectors, or a model swap) with a stored photo forces a re-embed on the next run.
+    `PetMatchService.ensure_embedding` is fault-tolerant: a photo that cannot be
+    read/embedded (missing object, storage or model error) is logged and skipped — one broken
+    photo never aborts matching for the other pairs, and `manage.py backfill_matches` re-runs
+    matching for all active lost/found flyers to repair data created before a fix
+    (idempotent: unique pair constraint, notify only on first create).
 - Flyer templates (`templates/flyers/{emergency,outreach}.html`) and the on-screen
   `.print-sheet` follow the `taste` skill print typography (`@page { size: A4; margin: 0 }`,
   `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
@@ -225,7 +239,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   flyers that have one — the pins behind `/map`. `seed_demo` seeds Bruno (lost, pinned) and
   Miso (found, pinned).
 
-## 8. AI Pet Detection (YOLO-World gate + CLIP species naming)
+## 8. AI Pet Detection & Re-Identification (YOLO-World gate + CLIP naming + MegaDescriptor matching)
 
 - `PetDetectionService.validate_pet_image(image_bytes)` lazily loads one process-local,
   lock-protected `ultralytics.YOLOWorld(settings.YOLO_MODEL_PATH)` singleton
@@ -261,10 +275,33 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   the **0.80 prefill threshold is applied in the frontend** (`HIGH_CONFIDENCE` in
   `features/pets/api.ts`), so low-confidence results stay blank with a "Not detected"
   placeholder instead of guessing.
+- **Re-identification matching (MegaDescriptor, not full-frame CLIP)**: CLIP ViT-B/32 stays the
+  species-naming and breed/color stage only. For lost/found matching, each uploaded photo
+  (up to 4 per report) is processed as: YOLO-World predict → best accepted animal `xyxy` box
+  (`DetectionResult.best_box` / `PetDetectionService.best_animal_box`) → **in-memory** padded
+  crop (`padded_crop`, padding `PET_CROP_PADDING` = 0.20 of the box size per side, clamped to
+  bounds, full image when no box) → MegaDescriptor embedding via timm
+  (`timm.create_model("hf-hub:BVRA/MegaDescriptor-L-384", pretrained=True)` or
+  `"hf-hub:BVRA/MegaDescriptor-DINOv2-518"`, `MEGA_DESCRIPTOR_MODEL`), L2-normalized.
+  `MegaDescriptorService` is a lazily loaded, lock-protected singleton (model + eval transform
+  + device cached once per process). The crop never touches storage — the uploaded original is
+  stored and displayed full and uncropped. One embedding per photo is cached on
+  `PetPhoto.photo_embedding` (legacy: `Pet.photo_embedding`) with an `embedding_model` tag.
+- **Max-similarity multi-image scoring**: a found report (up to 4 embeddings) is compared with
+  each active lost report of the same species (up to 4 embeddings) by
+  `score_embedding_pairs` — the **max** cosine similarity over the full 4×4 cross-photo pair
+  product, also returning the winning pair indices. `PetMatchService.rank_candidates(flyer_id,
+  top_k)` ranks candidates (max similarity, best pair, `is_match` vs threshold);
+  `match_flyer` creates `PetMatch` rows (`score` + `best_pair`) ≥
+  `PET_MATCH_SIMILARITY_THRESHOLD` (default **0.60** — MegaDescriptor re-ID scores sit well
+  below CLIP full-frame scores, so the old 0.80 default was lowered; tune against real test
+  pairs via the env var) and notifies both sides. Same pet, different angle → still matches.
 - The YOLO loader falls back to `yolov8s-worldv2.pt` if a stale non-World `YOLO_MODEL_PATH` is
   configured, and raises a clear `RuntimeError` if the checkpoint does not contain a World head.
   Generated weights (`backend/yolov8s-worldv2.pt`, `/weights/`) are git-ignored; Ultralytics
-  downloads them on first lazy load.
+  downloads them on first lazy load. MegaDescriptor checkpoints are likewise git-ignored — timm
+  pulls `BVRA/MegaDescriptor-*` from the Hugging Face Hub on first lazy load
+  (`MEGA_DESCRIPTOR_MODEL`; device `MEGA_DESCRIPTOR_DEVICE` = cuda if available else cpu).
 - **Pass**: EXIF stripped via Pillow, thumbnail generated, upload to private Cloudinary
   (delivery type `private`), `PetDetectionLog(passed=True)`, signed preview URL returned.
 - **Fail**: bytes discarded before any storage write, `PetDetectionLog(passed=False)`,
@@ -374,7 +411,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 11. Testing & Coverage
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  → **176 passed, 94.80% total** (100% on all `services.py`, `drivers.py`,
+  → **200 passed, 95.31% total** (100% on all `services.py`, `drivers.py`,
   `apps/vision/services.py`, and the Cloudinary storage driver);
   `django_assert_max_num_queries` ceilings on list/detail endpoints; 429 tests for the
   `auth_write` (20/min) and `upload` (10/min) throttles; webhook idempotency tests (duplicate
@@ -383,11 +420,16 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `conf=0.20` asserted on the predictor call, EXIF-orientation/RGB normalization, stale-path
   fallback, non-World checkpoint rejection, rabbit/fox/frog/crocodile renaming from wrong raw
   labels, CLIP animal-gate fallback for YOLO misses, CLIP singleton/loader paths, ambiguous
-  multi-species handling); CLIP breed/color classifier tests (`PetAttributeService`: dog/cat
+  multi-species handling, `best_box` selection of the highest-confidence accepted animal);
+  CLIP breed/color classifier tests (`PetAttributeService`: dog/cat
   breed lists, other-species empty breed, color always classified, raw confidences on the
   upload response); found-mode + `location_lat`/`location_lng` + `GET /api/flyers/map`
-  integration tests; multi-angle matching tests (`PetPhoto` per-angle embeddings, max-over-pairs
-  scoring in `match_flyer`, `photo_paths` on `POST /api/pets` + PetPhoto rows); Cloudinary
+  integration tests; multi-angle MegaDescriptor matching tests (`tests/unit/test_megadescriptor.py`
+  + `test_vision_match.py`: padded-crop padding/clamping/full-image fallback, timm singleton
+  loader, L2-normalized embed, `embed_photo_bytes` crop pipeline, `score_embedding_pairs`
+  max + winning pair, `rank_candidates` same-species filter + `top_k` + `is_match`,
+  `PetMatch.best_pair`, `embedding_model` tag re-embed, configurable threshold, 4-photo cap,
+  `photo_paths` on `POST /api/pets` + PetPhoto rows); Cloudinary
   driver unit tests (SDK mocked, 100% on the driver);
   profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
@@ -867,9 +909,31 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `#pet-age` absence. Verified: **176 pytest passed @ 94.80%** (ruff + mypy clean),
   **129 Vitest** @ 89.35/82.39/84.47/90.51 (coverage exit 0; rewards 100%), `tsc -b` clean,
   **11/11 Playwright journeys** green.
+- **Phase 34** — MegaDescriptor re-ID matching replaces full-frame CLIP embeddings.
+  Motivation: CLIP full-frame vectors mostly compare scene/picture similarity; pet
+  re-identification needs the animal itself. Backend: `PetDetectionService` now also returns
+  `best_box` (highest-confidence accepted animal `xyxy`) and exposes `best_animal_box(image)`;
+  `padded_crop()` builds a generously padded crop (`PET_CROP_PADDING`=0.20 of the box per
+  side, clamped) **in memory only** — stored display images stay full and uncropped. New
+  `MegaDescriptorService`: lock-protected timm singleton
+  (`hf-hub:BVRA/MegaDescriptor-L-384`, swappable to `hf-hub:BVRA/MegaDescriptor-DINOv2-518`
+  via `MEGA_DESCRIPTOR_MODEL`), L2-normalized embeddings of the crop. `ensure_embedding`
+  caches one embedding per `PetPhoto` with an `embedding_model` tag (migrations `pets/0007`,
+  `vision/0003`; a tag mismatch with a stored photo re-embeds, so legacy CLIP rows migrate
+  on the next `backfill_matches`). Scoring is the max cosine similarity over the full
+  cross-photo pair product (`score_embedding_pairs`), same-species only (`pet__species`
+  filter); threshold `PET_MATCH_SIMILARITY_THRESHOLD` default lowered 0.80 → 0.60
+  (env-tunable). The winning image pair lands on `PetMatch.best_pair` and in the
+  `/api/flyers/map` `match` payload; `rank_candidates(flyer_id, top_k)` exposes ranked
+  candidates. Reports capped at 4 photos (`MAX_PET_PHOTOS`, serializer `max_length=4`,
+  matching the frontend cap). CLIP ViT-B/32 unchanged for `pet_classes` species naming and
+  `PetAttributeService` breed/color. `timm>=1.0` added; `schema.yml` + `schema.d.ts`
+  regenerated. Tests: new `test_megadescriptor.py` + updated `test_vision_match.py`,
+  `test_vision.py`, `test_flyer_map.py`. Verified: **200 pytest passed @ 95.31%** (100%
+  `apps/vision/services.py`; ruff + mypy clean), **129 Vitest** green, `tsc -b` clean.
 
-**Final status:** backend **176 passed @ 94.80%** (100% flyers/services, notifications
-selectors/serializers/views);
+**Final status:** backend **200 passed @ 95.31%** (100% on all services/drivers incl.
+`apps/vision/services.py`);
 frontend **129 vitest tests** @ 89.35/82.39/84.47/90.51 + Playwright journeys (11/11)
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
