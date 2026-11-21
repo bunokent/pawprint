@@ -972,6 +972,11 @@ components:
         score:
           type: number
           format: double
+        best_pair:
+          type: array
+          items:
+            type: integer
+          nullable: true
       required:
       - flyer_id
       - mode
@@ -1205,7 +1210,7 @@ components:
           items:
             type: string
             maxLength: 512
-          maxItems: 6
+          maxItems: 4
         status:
           allOf:
           - $ref: '#/components/schemas/StatusF90Enum'

@@ -122,6 +122,7 @@ class FlyerMapView(APIView):
                             "mode": other.mode,
                             "pet_name": other.pet.name,
                             "score": m.score,
+                            "best_pair": m.best_pair,
                         }
         return Response(FlyerSerializer(flyers, many=True, context={"matches": matches}).data)
 

@@ -21,11 +21,17 @@ def _img_bytes() -> bytes:
 
 
 class _FakeBoxes:
-    def __init__(self, cls_ids, confs):
+    def __init__(self, cls_ids, confs, xyxy=None):
         import numpy as np
 
         self.cls = np.array(cls_ids, dtype=float)
         self.conf = np.array(confs, dtype=float)
+        # xyxy pixel boxes (one per detection); defaults to a fixed box per row.
+        n = len(cls_ids)
+        self.xyxy = np.array(
+            xyxy if xyxy is not None else [(10.0 + i, 10.0, 30.0 + i, 30.0) for i in range(n)],
+            dtype=float,
+        )
 
 
 class _FakeResult:
@@ -34,12 +40,12 @@ class _FakeResult:
         self.boxes = boxes
 
 
-def _mock_model(monkeypatch, detections, label_overrides=None, *, clip_rank=None, clip_gate=False):
+def _mock_model(monkeypatch, detections, label_overrides=None, *, clip_rank=None, clip_gate=False, xyxy=None):
     """detections: list of (cls_id, conf); label_overrides maps ids to open-vocabulary labels."""
     names = {i: f"cls{i}" for i in range(80)}
     names.update({14: "bird", 15: "cat", 16: "dog", 17: "horse", 18: "sheep", 19: "cow", 0: "person"})
     names.update(label_overrides or {})
-    boxes = _FakeBoxes([c for c, _ in detections], [f for _, f in detections])
+    boxes = _FakeBoxes([c for c, _ in detections], [f for _, f in detections], xyxy=xyxy)
 
     class FakeModel:
         def __init__(self):
@@ -80,6 +86,54 @@ def test_detects_dog_passes(monkeypatch):
     assert result.pet_classes == ["dog"]
     assert "person" in result.detected_classes
     assert result.max_confidence == pytest.approx(0.92)
+
+
+def test_validate_returns_best_box_of_highest_confidence_animal(monkeypatch):
+    """best_box is the xyxy box of the strongest ACCEPTED animal detection (not a person's)."""
+    _mock_model(
+        monkeypatch,
+        [(0, 0.99), (16, 0.60), (15, 0.80)],  # person, dog, cat
+        xyxy=[(0.0, 0.0, 5.0, 5.0), (10.0, 10.0, 20.0, 20.0), (1.0, 1.0, 9.0, 9.0)],
+    )
+    result = PetDetectionService().validate_pet_image(_img_bytes())
+    assert result.passed is True
+    # cat @ 0.80 beats dog @ 0.60 — the cat box wins even though person @ 0.99 is highest overall.
+    assert result.best_box == (1.0, 1.0, 9.0, 9.0)
+
+
+def test_best_animal_box_ignores_subthreshold_and_non_animal_labels(monkeypatch, settings):
+    settings.YOLO_CONFIDENCE_THRESHOLD = 0.20
+    _mock_model(
+        monkeypatch,
+        [(0, 0.99), (16, 0.10)],  # person (not an animal), dog below threshold
+        xyxy=[(0.0, 0.0, 5.0, 5.0), (10.0, 10.0, 20.0, 20.0)],
+    )
+    from PIL import Image
+
+    assert PetDetectionService().best_animal_box(Image.new("RGB", (32, 32))) is None
+
+
+def test_validate_without_boxes_yields_none_best_box(monkeypatch):
+    class _NoXyxyBoxes:
+        import numpy as np
+
+        cls = np.array([16], dtype=float)
+        conf = np.array([0.9], dtype=float)
+        xyxy = None  # legacy/fake result without boxes
+
+    class _Result:
+        names = {16: "dog"}
+        boxes = _NoXyxyBoxes()
+
+    class FakeModel:
+        def predict(self, image, conf=None, verbose=False):
+            return [_Result()]
+
+    monkeypatch.setattr("apps.vision.services._get_model", lambda: FakeModel())
+    monkeypatch.setattr("apps.vision.services._refine_species", lambda image, accepted: list(accepted))
+    result = PetDetectionService().validate_pet_image(_img_bytes())
+    assert result.passed is True
+    assert result.best_box is None  # crop falls back to the full image
 
 
 def test_detects_cat_below_threshold_fails(monkeypatch, settings):

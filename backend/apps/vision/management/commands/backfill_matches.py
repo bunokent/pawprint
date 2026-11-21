@@ -1,9 +1,11 @@
 """backfill_matches — re-run lost/found photo matching for every active flyer.
 
 Repairs data created while the matcher was failing or before embeddings were
-cached: creates PetMatch rows and sends match notifications for every
-lost/found pair whose photos now compare >= PET_MATCH_SIMILARITY_THRESHOLD.
-Safe to re-run — pairs are unique and notified only once.
+cached (including legacy CLIP full-frame embeddings — an `embedding_model` tag
+mismatch forces a fresh MegaDescriptor embed): creates PetMatch rows and sends
+match notifications for every lost/found pair whose photos now compare >=
+PET_MATCH_SIMILARITY_THRESHOLD. Safe to re-run — pairs are unique and notified
+only once.
 """
 
 from __future__ import annotations

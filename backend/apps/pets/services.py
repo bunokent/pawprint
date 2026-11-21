@@ -13,8 +13,9 @@ from apps.vision.services import PetAttributeService, PetDetectionService, load_
 
 from .models import Pet, PetPhoto
 
-# A pet can carry up to this many photos (different angles of the same pet).
-MAX_PET_PHOTOS = 6
+# A lost/found report can carry up to this many photos (different angles of the
+# same pet) — the frontend PhotoUpload caps at the same number.
+MAX_PET_PHOTOS = 4
 
 
 @dataclass(frozen=True)
@@ -50,9 +51,11 @@ class PetService:
             photo_path=paths[0] if paths else "", status=status,
         )
         if paths:
-            # Cache the CLIP embedding of every photo now, so lost/found matching
-            # never has to re-download photos mid-task (no-op under
-            # PAWPRINT_TESTING, and never raises — see PetMatchService.ensure_embedding).
+            # Cache the MegaDescriptor re-ID embedding of every photo now (computed from
+            # the in-memory padded crop of the best detection box — the stored files stay
+            # full and uncropped), so lost/found matching never has to re-download photos
+            # mid-task (no-op under PAWPRINT_TESTING, and never raises — see
+            # PetMatchService.ensure_embedding).
             from apps.vision.services import PetMatchService
 
             primary_embedding = PetMatchService.ensure_embedding(pet)

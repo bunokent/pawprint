@@ -762,6 +762,7 @@ export interface components {
             pet_name: string;
             /** Format: double */
             score: number;
+            best_pair?: number[] | null;
         };
         /**
          * @description * `draft` - Draft

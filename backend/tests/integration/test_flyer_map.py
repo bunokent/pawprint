@@ -144,13 +144,21 @@ def test_create_pet_with_photo_paths_stores_every_angle(auth_client, user):
     assert resp.status_code == 201
     assert resp.json()["photo_path"] == "pets/photos/a.jpg"
     assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 2
-    # More than 6 photos are rejected.
+    # More than 4 photos are rejected (a report carries up to 4 images).
     resp = auth_client.post(
         "/api/pets",
-        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(7)]},
+        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(5)]},
         format="json",
     )
     assert resp.status_code == 400
+    # Exactly 4 photos are accepted.
+    resp = auth_client.post(
+        "/api/pets",
+        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(4)]},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 4
 
 
 def test_create_found_pet_without_name(auth_client, user):

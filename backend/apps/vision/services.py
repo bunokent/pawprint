@@ -20,7 +20,7 @@ from PIL import Image, ImageOps
 
 from apps.common.exceptions import NoPetDetectedError
 
-from .dto import AttributeDetection, DetectionResult
+from .dto import AttributeDetection, CandidateMatch, DetectionResult, PairScore
 
 if TYPE_CHECKING:
     from ultralytics import YOLOWorld
@@ -324,44 +324,97 @@ def _refine_species(image: Any, accepted_raw: list[str], clip_model: Any | None 
     return [rank[0][0]] if top_prob >= settings.YOLO_CONFIDENCE_THRESHOLD else []
 
 
+Box = tuple[float, float, float, float]  # xyxy pixel box
+
+
+def _run_detection(model: YOLOWorld, image: Image.Image) -> list[tuple[str, float, Box | None]]:
+    """One YOLO-World predict pass → [(label, confidence, xyxy box), ...] for every box."""
+    detections: list[tuple[str, float, Box | None]] = []
+    for result in model.predict(image, conf=settings.YOLO_CONFIDENCE_THRESHOLD, verbose=False):
+        if not hasattr(result, "names") or not hasattr(result, "boxes"):
+            continue
+        names = result.names
+        boxes = result.boxes
+        if boxes is None:
+            continue
+        xyxy = getattr(boxes, "xyxy", None)
+        for index, (cls_id, conf) in enumerate(zip(boxes.cls.tolist(), boxes.conf.tolist(), strict=True)):
+            label = str(names[int(cls_id)]).strip().lower()
+            box: Box | None = None
+            if xyxy is not None and index < len(xyxy):
+                x1, y1, x2, y2 = (float(v) for v in xyxy[index].tolist())  # type: ignore[index]
+                box = (x1, y1, x2, y2)
+            detections.append((label, float(conf), box))
+    return detections
+
+
+def padded_crop(
+    image: Image.Image,
+    box: Box | None,
+    padding: float,
+) -> Image.Image:
+    """In-memory crop of `box` (xyxy, absolute pixels) expanded by `padding` (a fraction of
+    the box size on every side), clamped to the image bounds. Falls back to the full image
+    when no box is given or the padded box degenerates — the stored display image is never
+    modified; this crop exists only for the re-identification embedding.
+    """
+    if box is None:
+        return image
+    width, height = image.size
+    x1, y1, x2, y2 = box
+    box_w = max(1.0, x2 - x1)
+    box_h = max(1.0, y2 - y1)
+    x1 = max(0.0, x1 - box_w * padding)
+    y1 = max(0.0, y1 - box_h * padding)
+    x2 = min(float(width), x2 + box_w * padding)
+    y2 = min(float(height), y2 + box_h * padding)
+    if x2 <= x1 or y2 <= y1:
+        return image
+    return image.crop((int(x1), int(y1), int(x2), int(y2)))
+
+
 class PetDetectionService:
     """Validates that an image contains an animal from the configured categories."""
+
+    def best_animal_box(self, image: Image.Image) -> Box | None:
+        """xyxy box of the highest-confidence accepted animal detection (None if no box)."""
+        best: Box | None = None
+        best_conf = 0.0
+        for label, confidence, box in _run_detection(_get_model(), image):
+            if box is None or label not in ANIMAL_CATEGORY_BY_LABEL:
+                continue
+            if confidence >= settings.YOLO_CONFIDENCE_THRESHOLD and confidence > best_conf:
+                best, best_conf = box, confidence
+        return best
 
     def validate_pet_image(self, image_bytes: bytes) -> DetectionResult:
         """Gate with YOLO-World and name the species with CLIP.
 
-        Returns pass/fail, refined `pet_classes`, and raw `detected_classes`. Raises
-        NoPetDetectedError when neither YOLO-World nor the CLIP animal gate finds an animal.
+        Returns pass/fail, refined `pet_classes`, raw `detected_classes`, and `best_box`
+        (the highest-confidence accepted animal's xyxy box, used for the in-memory
+        re-identification crop). Raises NoPetDetectedError when neither YOLO-World nor
+        the CLIP animal gate finds an animal.
         """
         model = _get_model()
         image = load_image(image_bytes)
-        results = model.predict(
-            image,
-            conf=settings.YOLO_CONFIDENCE_THRESHOLD,
-            verbose=False,
-        )
+        detections = _run_detection(model, image)
         detected_classes: list[str] = []
         accepted_raw: list[str] = []
         max_confidence = 0.0
-        for result in results:
-            if not hasattr(result, "names") or not hasattr(result, "boxes"):
-                continue
-            names = result.names
-            boxes = result.boxes
-            if boxes is None:
-                continue
-            for cls_id, conf in zip(boxes.cls.tolist(), boxes.conf.tolist(), strict=True):
-                label = str(names[int(cls_id)]).strip().lower()
-                confidence = float(conf)
-                max_confidence = max(max_confidence, confidence)
-                if label not in detected_classes:
-                    detected_classes.append(label)
-                if (
-                    label in ANIMAL_CATEGORY_BY_LABEL
-                    and confidence >= settings.YOLO_CONFIDENCE_THRESHOLD
-                    and label not in accepted_raw
-                ):
-                    accepted_raw.append(label)
+        best_box: Box | None = None
+        best_box_conf = 0.0
+        for label, confidence, box in detections:
+            max_confidence = max(max_confidence, confidence)
+            if label not in detected_classes:
+                detected_classes.append(label)
+            if (
+                label in ANIMAL_CATEGORY_BY_LABEL
+                and confidence >= settings.YOLO_CONFIDENCE_THRESHOLD
+                and label not in accepted_raw
+            ):
+                accepted_raw.append(label)
+                if box is not None and confidence > best_box_conf:
+                    best_box, best_box_conf = box, confidence
         if accepted_raw:
             # YOLO-World proved an animal is present; CLIP names the actual species.
             pet_classes = _refine_species(image, accepted_raw)
@@ -377,6 +430,7 @@ class PetDetectionService:
             pet_classes=pet_classes,
             detected_classes=detected_classes,
             max_confidence=max_confidence,
+            best_box=best_box,
         )
         if not passed:
             raise NoPetDetectedError(detected_labels=detected_classes)
@@ -534,23 +588,104 @@ class PetAttributeService:
 
 
 # ---------------------------------------------------------------------------
-# Photo embeddings + lost/found matching — the same CLIP encoder, used
-# image-to-image: the BEST cosine similarity over every cross-photo pair
-# (found photo × lost photo) decides "possible match" (notifications + map
-# halo), so the same pet shown from different angles still matches — not just
-# literally the same picture. Embeddings are cached per photo on
-# PetPhoto.photo_embedding (legacy single-photo pets: Pet.photo_embedding).
+# Pet re-identification embeddings + lost/found matching — MegaDescriptor.
+#
+# Matching no longer uses full-frame CLIP image embeddings. For every uploaded
+# photo (up to MAX_PET_PHOTOS per report) we take YOLO-World's best animal box,
+# build a generously padded crop IN MEMORY ONLY (the stored, uncropped original
+# stays the display image), and embed that crop with MegaDescriptor
+# (`BVRA/MegaDescriptor-L-384` or `BVRA/MegaDescriptor-DINOv2-518` via timm),
+# L2-normalized. One embedding is cached per PetPhoto row (legacy single-photo
+# pets: Pet.photo_embedding) together with the `embedding_model` tag, so a
+# model swap forces a clean re-embed. Scoring a found report against a lost
+# report is the MAX cosine similarity over every cross-photo embedding pair
+# (found photo × lost photo) — `score_embedding_pairs` — which also reports
+# the winning image pair. CLIP ViT-B/32 stays for species naming (`pet_classes`)
+# and `PetAttributeService` breed/color; it is no longer the matcher.
 # ---------------------------------------------------------------------------
 
+# Supported timm model ids for pet re-identification embeddings.
+MEGA_DESCRIPTOR_MODELS: tuple[str, ...] = (
+    "hf-hub:BVRA/MegaDescriptor-L-384",
+    "hf-hub:BVRA/MegaDescriptor-DINOv2-518",
+)
 
-def clip_image_embedding(image: Image.Image, clip_model: Any | None = None) -> list[float]:
-    """Normalized CLIP ViT-B/32 image embedding as a plain list of floats."""
+_MEGA_MODEL: Any | None = None
+_MEGA_TRANSFORM: Any | None = None
+_MEGA_DEVICE: Any | None = None
+_MEGA_LOCK = Lock()
+
+
+def mega_model_id() -> str:
+    """Short stable tag stored next to each embedding (`embedding_model` column).
+
+    A model swap (e.g. L-384 → DINOv2-518) changes the tag, so cached embeddings
+    from the old model are recomputed on the next match run instead of being
+    compared across incompatible vector spaces.
+    """
+    return settings.MEGA_DESCRIPTOR_MODEL.rsplit("/", 1)[-1]
+
+
+def _get_mega_model() -> tuple[Any, Any, Any]:
+    """Lazily load and cache the timm MegaDescriptor model, eval transform, device."""
+    global _MEGA_MODEL, _MEGA_TRANSFORM, _MEGA_DEVICE
+    if _MEGA_MODEL is None:
+        with _MEGA_LOCK:
+            if _MEGA_MODEL is None:
+                import timm
+                import torch
+                from timm.data import resolve_model_data_config
+                from timm.data.transforms_factory import create_transform
+
+                device = torch.device(
+                    settings.MEGA_DESCRIPTOR_DEVICE
+                    or ("cuda" if torch.cuda.is_available() else "cpu")
+                )
+                model = timm.create_model(settings.MEGA_DESCRIPTOR_MODEL, pretrained=True)
+                model.eval().to(device)
+                config = resolve_model_data_config(model)
+                transform = create_transform(**config, is_training=False)
+                _MEGA_MODEL, _MEGA_TRANSFORM, _MEGA_DEVICE = model, transform, device
+    return _MEGA_MODEL, _MEGA_TRANSFORM, _MEGA_DEVICE
+
+
+def megadescriptor_embedding(image: Image.Image) -> list[float]:
+    """L2-normalized MegaDescriptor embedding of an (already cropped) pet image."""
     import torch
 
-    model = clip_model or _get_clip_model()
+    model, transform, device = _get_mega_model()
     with torch.no_grad():
-        feat = _normalize_torch(model.encode_image(image)).squeeze(0)
+        tensor = transform(image.convert("RGB")).unsqueeze(0).to(device)
+        feat = model(tensor).squeeze(0).float()
+        feat = feat / feat.norm(p=2, dim=-1, keepdim=True)
     return [round(float(v), 6) for v in feat.tolist()]
+
+
+class MegaDescriptorService:
+    """Singleton wrapper around the timm MegaDescriptor re-ID model.
+
+    Embeds the in-memory padded crop of YOLO-World's best animal box — never the
+    stored display image — L2-normalized so cosine similarity is a plain dot product.
+    """
+
+    model_id = staticmethod(mega_model_id)
+
+    @staticmethod
+    def embed_crop(
+        image: Image.Image,
+        box: Box | None,
+        padding: float | None = None,
+    ) -> list[float]:
+        """Embed the padded in-memory crop of `box` (full image when no box)."""
+        crop = padded_crop(image, box, settings.PET_CROP_PADDING if padding is None else padding)
+        return megadescriptor_embedding(crop)
+
+    @staticmethod
+    def embed_photo_bytes(image_bytes: bytes) -> list[float]:
+        """Full pipeline for one stored photo: load → best animal box → padded crop → embed."""
+        image = load_image(image_bytes)
+        box = PetDetectionService().best_animal_box(image)
+        return MegaDescriptorService.embed_crop(image, box)
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -565,20 +700,46 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+def score_embedding_pairs(a_embeddings: list[list[float]], b_embeddings: list[list[float]]) -> PairScore:
+    """Max cosine similarity over every cross-photo pair (a × b) + the winning pair.
+
+    This max-over-pairs score is what makes the same pet photographed from
+    different angles match, not just literally the same picture.
+    """
+    best = PairScore(max_similarity=0.0)
+    for i, a in enumerate(a_embeddings):
+        for j, b in enumerate(b_embeddings):
+            similarity = cosine_similarity(a, b)
+            if similarity > best.max_similarity:
+                best = PairScore(max_similarity=similarity, best_a_index=i, best_b_index=j)
+    return best
+
+
 class PetMatchService:
-    """Compares a flyer's pet photo against the opposite mode's active flyers."""
+    """Compares a flyer's pet photos against the opposite mode's active flyers."""
 
     @staticmethod
     def ensure_embedding(photo) -> list[float] | None:  # noqa: ANN001, ANN202
-        """Return the CLIP embedding of a Pet or PetPhoto, computing + caching it.
+        """Return the MegaDescriptor embedding of a Pet or PetPhoto, computing + caching it.
 
-        Under PAWPRINT_TESTING the storage/CLIP path is skipped (tests set
-        photo_embedding explicitly) so the suite stays hermetic and fast.
-        A photo that cannot be read or embedded (missing object, network error,
-        model failure) is logged and treated as "no embedding" — one broken
-        photo must never abort matching for every other lost/found pair.
+        The embedding is computed from the in-memory padded crop of YOLO-World's best
+        animal box; the stored display image is never cropped or overwritten. Cached
+        embeddings carry `embedding_model`; in production a tag mismatch (model swap or
+        legacy CLIP vector) forces a recompute. Under PAWPRINT_TESTING the storage/model
+        path is skipped (tests set photo_embedding explicitly) so the suite stays hermetic
+        and fast. A photo that cannot be read or embedded (missing object, network error,
+        model failure) is logged and treated as "no embedding" — one broken photo must
+        never abort matching for every other lost/found pair.
         """
-        if photo.photo_embedding:
+        # Trust the cache when it is current, when testing, or when there is no stored
+        # photo to recompute from (best effort — never drop a photo that cannot be
+        # re-embedded). A tag mismatch WITH a stored photo falls through to a recompute.
+        cache_trusted = (
+            settings.TESTING
+            or not photo.photo_path
+            or getattr(photo, "embedding_model", "") == mega_model_id()
+        )
+        if photo.photo_embedding and cache_trusted:
             return photo.photo_embedding
         if not photo.photo_path or settings.TESTING:
             return None
@@ -586,9 +747,10 @@ class PetMatchService:
 
         try:
             raw = storage.read_bytes(photo.photo_path)
-            embedding = clip_image_embedding(load_image(raw))
+            embedding = MegaDescriptorService.embed_photo_bytes(raw)
             photo.photo_embedding = embedding
-            photo.save(update_fields=["photo_embedding"])
+            photo.embedding_model = mega_model_id()
+            photo.save(update_fields=["photo_embedding", "embedding_model"])
         except Exception:  # noqa: BLE001 — resilience over strictness here
             logger.exception(
                 "ensure_embedding failed for %s %s (photo %s)",
@@ -600,8 +762,9 @@ class PetMatchService:
     @staticmethod
     def pet_embeddings(pet) -> list[list[float]]:  # noqa: ANN001, ANN202
         """All photo embeddings of a pet — one per PetPhoto row (each angle of the
-        pet), falling back to the legacy single Pet.photo_embedding for pets that
-        predate PetPhoto rows. Callers should prefetch ``pet__photos``.
+        pet, up to MAX_PET_PHOTOS), falling back to the legacy single
+        Pet.photo_embedding for pets that predate PetPhoto rows. Callers should
+        prefetch ``pet__photos``.
         """
         embeddings: list[list[float]] = []
         for photo in pet.photos.all():
@@ -615,21 +778,17 @@ class PetMatchService:
         return embeddings
 
     @staticmethod
-    def match_flyer(flyer_id: str) -> list:  # noqa: ANN401
-        """Match one flyer's pet photos against active flyers of the opposite mode.
+    def rank_candidates(flyer_id: str, top_k: int | None = 10) -> list[CandidateMatch]:
+        """Rank the opposite mode's active, same-species flyers by max cross-photo similarity.
 
-        Creates PetMatch rows (and notifications, once per pair) for every pair
-        whose BEST cross-photo cosine similarity (any photo of one pet × any
-        photo of the other) is >= PET_MATCH_SIMILARITY_THRESHOLD. The max-over-
-        pairs score is what makes the same pet photographed from different
-        angles match, not just identical pictures.
+        Each candidate carries `max_similarity` (best image-pair cosine over up to 4 × 4
+        embeddings), the winning pair indices, and `is_match` against
+        PET_MATCH_SIMILARITY_THRESHOLD. `top_k` truncates the ranking (None = all);
+        candidates without any embedding are skipped.
         """
         import uuid as _uuid
 
         from apps.flyers.models import Flyer
-        from apps.notifications.services import NotificationService
-
-        from .models import PetMatch
 
         flyer = (
             Flyer.objects.select_related("pet")
@@ -646,27 +805,64 @@ class PetMatchService:
         counterparts = (
             Flyer.objects.select_related("pet", "pet__owner", "creator")
             .prefetch_related("pet__photos")
-            .filter(status=Flyer.Status.ACTIVE, mode=counterpart_mode)
+            .filter(status=Flyer.Status.ACTIVE, mode=counterpart_mode, pet__species=flyer.pet.species)
             .exclude(pet_id=flyer.pet_id)
         )
-        matches = []
+        threshold = settings.PET_MATCH_SIMILARITY_THRESHOLD
+        candidates: list[CandidateMatch] = []
         for other in counterparts:
             other_embeddings = PetMatchService.pet_embeddings(other.pet)
             if not other_embeddings:
                 continue
-            score = max(
-                (cosine_similarity(a, b) for a in embeddings for b in other_embeddings),
-                default=0.0,
+            pair = score_embedding_pairs(embeddings, other_embeddings)
+            candidates.append(
+                CandidateMatch(
+                    flyer_id=str(other.pk),
+                    mode=other.mode,
+                    max_similarity=pair.max_similarity,
+                    best_a_index=pair.best_a_index,
+                    best_b_index=pair.best_b_index,
+                    is_match=pair.max_similarity >= threshold,
+                )
             )
-            if score < settings.PET_MATCH_SIMILARITY_THRESHOLD:
+        candidates.sort(key=lambda c: c.max_similarity, reverse=True)
+        return candidates[:top_k] if top_k is not None else candidates
+
+    @staticmethod
+    def match_flyer(flyer_id: str) -> list:  # noqa: ANN401
+        """Match one flyer's pet photos against active same-species flyers of the opposite mode.
+
+        Creates PetMatch rows (and notifications, once per pair) for every candidate whose
+        BEST cross-photo MegaDescriptor cosine similarity (any photo of one pet × any photo
+        of the other) is >= PET_MATCH_SIMILARITY_THRESHOLD. The winning image pair is stored
+        on PetMatch.best_pair. The max-over-pairs score is what makes the same pet
+        photographed from different angles match, not just identical pictures.
+        """
+        import uuid as _uuid
+
+        from apps.flyers.models import Flyer
+        from apps.notifications.services import NotificationService
+
+        from .models import PetMatch
+
+        candidates = PetMatchService.rank_candidates(flyer_id, top_k=None)
+        flyer = Flyer.objects.filter(pk=_uuid.UUID(str(flyer_id))).first()
+        if flyer is None:
+            return []
+        matches = []
+        for candidate in candidates:
+            if not candidate.is_match:
                 continue
+            other = Flyer.objects.select_related("pet", "pet__owner", "creator").get(pk=candidate.flyer_id)
             lost, found = (other, flyer) if flyer.mode == Flyer.Mode.FOUND else (flyer, other)
+            best_pair = [candidate.best_a_index, candidate.best_b_index]
             match, created = PetMatch.objects.get_or_create(
-                lost_flyer=lost, found_flyer=found, defaults={"score": score}
+                lost_flyer=lost, found_flyer=found, defaults={"score": candidate.max_similarity, "best_pair": best_pair}
             )
-            if not created and match.score != score:
-                match.score = score
-                match.save(update_fields=["score"])
+            if not created and (match.score != candidate.max_similarity or match.best_pair != best_pair):
+                match.score = candidate.max_similarity
+                match.best_pair = best_pair
+                match.save(update_fields=["score", "best_pair"])
             if created:
                 NotificationService.notify_match(match)
             matches.append(match)

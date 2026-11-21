@@ -18,6 +18,8 @@ class FlyerMatchSerializer(serializers.Serializer):
     mode = serializers.CharField()
     pet_name = serializers.CharField()
     score = serializers.FloatField()
+    # [lost photo index, found photo index] of the image pair that produced `score`.
+    best_pair = serializers.ListField(child=serializers.IntegerField(), allow_null=True, required=False)
 
 
 class FlyerSerializer(serializers.ModelSerializer[Flyer]):

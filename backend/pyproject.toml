@@ -25,6 +25,7 @@ dependencies = [
     "stripe>=11.0",
     "httpx>=0.28",
     "ultralytics>=8.3",
+    "timm>=1.0",
     "weasyprint>=63.0",
 ]
 
