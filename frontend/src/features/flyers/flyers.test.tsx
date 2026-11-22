@@ -106,7 +106,7 @@ describe("FlyerDetailPage", () => {
     expect(await screen.findByRole("button", { name: "Delete flyer" })).toBeInTheDocument();
   });
 
-  it("requires a second click to delete", async () => {
+  it("asks in a dialog before deleting — cancel keeps the flyer, confirm deletes", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     const deleteCalls = vi.fn();
     mswServer.use(
@@ -115,16 +115,21 @@ describe("FlyerDetailPage", () => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
     renderDetail("33333333-3333-3333-3333-333333333333");
-    const btn = await screen.findByRole("button", { name: "Delete flyer" });
-    await user.click(btn);
+    await user.click(await screen.findByRole("button", { name: "Delete flyer" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Delete this flyer?");
+    expect(dialog).toHaveTextContent("This cannot be undone.");
     expect(deleteCalls).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Click again to delete/ })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Click again to delete/ }));
+    // Cancel closes the dialog without deleting.
+    await user.click(within(dialog).getByRole("button", { name: "Keep flyer" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(deleteCalls).not.toHaveBeenCalled();
+    // Reopen and confirm.
+    await user.click(screen.getByRole("button", { name: "Delete flyer" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Yes, delete flyer" }));
     await waitFor(() => expect(deleteCalls).toHaveBeenCalled());
-    vi.restoreAllMocks();
   });
 
   it("shows an error for a missing flyer", async () => {
@@ -654,7 +659,7 @@ describe("MyFlyersPage", () => {
     await waitFor(() => expect(patchCalls).toEqual([{ status: "resolved" }]));
   });
 
-  it("deletes a flyer after confirmation", async () => {
+  it("deletes a flyer after confirming in the dialog", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     const deleteCalls = vi.fn();
     mswServer.use(
@@ -663,12 +668,13 @@ describe("MyFlyersPage", () => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
     renderWithProviders(<MyFlyersPage />, { route: "/my-flyers", routes: [["/my-flyers", <MyFlyersPage />]] });
     await user.click((await screen.findAllByRole("button", { name: "Delete" }))[0]);
+    const dialog = await screen.findByRole("alertdialog");
+    expect(deleteCalls).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Yes, delete flyer" }));
     await waitFor(() => expect(deleteCalls).toHaveBeenCalled());
-    vi.restoreAllMocks();
   });
 
   it("shows an error when my flyers fail to load", async () => {

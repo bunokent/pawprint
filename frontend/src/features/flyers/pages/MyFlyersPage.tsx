@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { myFlyersQuery, useDeleteFlyer, useUpdateFlyer, type Flyer } from "@/features/flyers/api";
 import { myRewardsQuery } from "@/features/rewards/api";
 import { FlyerCard } from "@/components/FlyerCard";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState, ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { useAuth } from "@/stores/auth";
@@ -110,6 +111,7 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
   const deleteFlyer = useDeleteFlyer(flyer.id);
   const navigate = useNavigate();
   const canResolve = flyer.status === "active";
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -129,15 +131,23 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
           variant="secondary"
           style={{ height: 36, padding: "0 14px", fontSize: 14 }}
           disabled={deleteFlyer.isPending}
-          onClick={() => {
-            if (window.confirm("Delete this flyer? This cannot be undone.")) {
-              void deleteFlyer.mutateAsync().then(() => navigate("/my-flyers"));
-            }
-          }}
+          onClick={() => setConfirmOpen(true)}
         >
           Delete
         </Button>
       </div>
+      <ConfirmDeleteDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        confirming={deleteFlyer.isPending}
+        subject={flyer.pet.name?.trim() || undefined}
+        onConfirm={() => {
+          void deleteFlyer.mutateAsync().then(() => {
+            setConfirmOpen(false);
+            navigate("/my-flyers");
+          });
+        }}
+      />
     </div>
   );
 }

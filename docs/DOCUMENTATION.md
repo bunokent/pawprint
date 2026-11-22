@@ -77,7 +77,7 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
   `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
   `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 9
-  journeys against a `postgres:16` service on :5433, with migrate + `seed_demo` and cached
+  journeys against a `postgres:16` service on :5433, with migrate and cached
   YOLO-World weights). Coverage HTML/XML and Playwright reports upload as artifacts.
 
 ## 3. Access Model (Guest vs Registered — STRICT 2 Modes)
@@ -183,7 +183,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 7. Flyers, QR & A4 Export
 
 - `QrService` mints a QR code targeting the public flyer URL —
-  `qr_target_value = {FRONTEND_BASE_URL}/flyers/{id}` (set on create and by `seed_demo`), so a
+  `qr_target_value = {FRONTEND_BASE_URL}/flyers/{id}` (set on create), so a
   printed QR lands a scanner directly on the guest-accessible flyer page. The SPA renders the
   same target as an SVG data-URL QR (`QrImage`) on the detail page and inside the A4 export.
 - On create/update, `FlyerService` dispatches Celery task `generate_flyer_assets` (queue
@@ -205,8 +205,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   builder hides the name/tags fields in found mode and the UI falls back to "Found pet").
   Flyers can carry a map pin (`location_lat`/`location_lng`, indexed via
   `flyer_status_location_idx`); `GET /api/flyers/map` (public) returns active lost/found
-  flyers that have one — the pins behind `/map`. `seed_demo` seeds Bruno (lost, pinned) and
-  Miso (found, pinned).
+  flyers that have one — the pins behind `/map`.
 
 ## 8. AI Pet Detection (YOLO-World gate + CLIP species naming + attributes)
 
@@ -331,8 +330,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   species** — the species row is built from the distinct `pet.species` values saved in the DB
   for the mapped flyers, and the two filters combine, with a "No pets match these filters"
   empty state + Clear filters reset; if the map cannot be created it renders the
-  same pins as a list), `/flyers/:id` Public Flyer + QR + print/export + owner resolve/delete + reward
-  checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
+  same pins as a list), `/flyers/:id` Public Flyer + QR + print/export + owner resolve/delete
+  (delete opens the custom `ConfirmDeleteDialog` — `src/components/ui/confirm-dialog.tsx`,
+  an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`)
+  + reward checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
   urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
   the photo step stays open until **Next** so up to 4 angle photos can be added, and going
@@ -404,7 +405,9 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
   `factory-boy` factories.
-- Frontend: `npm run test:run` → **129 Vitest tests, 10 files** (RTL + MSW, jsdom), including
+- Frontend: `npm run test:run` → **134 Vitest tests, 11 files** (RTL + MSW, jsdom), including
+  the delete-confirmation dialog (`alertdialog` wiring, confirm / cancel / Escape /
+  backdrop-click, pending lock, focus moved to the safe action),
   drag-and-drop, multi-file photo picking (sequential uploads, thumbnail strip, remove /
   make-cover, 4-photo cap + "Photo limit reached" lock), real Axios upload-progress callbacks,
   all four live processing labels, the animated
@@ -421,7 +424,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   empty/error states, species filter pills derived from `pet.species` + mode×species
   combination + clear-filters reset), and `src/lib/maps.ts` helper tests (OSM tile layer,
   pin icons, Nominatim search/reverse incl. failure fallback);
-  `npm run test:coverage` → **89.85% stmts / 81.75% branches / 84.85% funcs / 91.20% lines**
+  `npm run test:coverage` → **88.99% stmts / 80.30% branches / 84.94% funcs / 90.26% lines**
   (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
   `npx tsc -b --noEmit` clean; `npm run build` green.
 - E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **10 journeys /
@@ -450,7 +453,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `backend-lint` (ruff + mypy, no DB), `backend-test` (pytest + coverage against a
   `postgres:16` service container, coverage artifacts uploaded), `frontend-test`
   (`npm ci` + tsc + vitest coverage thresholds + build), and `e2e` (Playwright with a
-  `postgres:16` service on :5433, migrate + seed_demo, cached YOLO-World weights,
+  `postgres:16` service on :5433, migrate, cached YOLO-World weights,
   Playwright report artifact). Runs on push/PR to `main` + manual dispatch.
 - Performance spot-check (Phase 7, local PG :5433): `EXPLAIN ANALYZE` on the public gallery
   query shows an index scan on `flyer_status_created_idx` + PK lookups for pet/owner/creator —
@@ -1090,9 +1093,45 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   the fallback renders, so screen readers treat it as decorative. Frontend: **129 passed**,
   all coverage thresholds met.
 
+- **Phase 44** — Remove all dummy/seed data. `seed_demo.py` deleted; the CI `e2e` job
+  no longer runs `manage.py seed_demo`. All 9 Playwright E2E journeys are now
+  self-contained: journeys 01, 06 and the gallery browse create their own emergency flyers
+  via the API and clean up with `deleteFlyer`; journey 02 registers a fresh account with
+  `registerUser` instead of relying on `mia@example.com / demo1234`; journey 05 creates its
+  own reward-enabled flyer; journey 07 logs in as a fresh user (no seeded profile to
+  restore); journey 08 creates its own pinned lost+found flyers with controlled coordinates
+  and cleans up in `finally` blocks. `helpers.ts` gains `registerUser`, `loginWith`,
+  `createTestFlyer` and `deleteFlyer` API helpers. The MSW login handler no longer matches
+  on a hardcoded demo password. Backend: **169 passed @ 97.16%** (deleting the 28-line
+  seed command lifted coverage from 95.67% to 97.16%). Frontend: **134 vitest tests** green.
+
+- **Phase 44** — Beautiful delete-confirmation dialog replaces the native
+  `window.confirm()` / two-click delete. New `ConfirmDeleteDialog`
+  (`frontend/src/components/ui/confirm-dialog.tsx`): warm paper card with crimson
+  trash-icon disc, Fraunces headline "Delete this flyer?", body naming the pet
+  ("**Bento**'s flyer will be permanently deleted — the photo, QR code and public link
+  will stop working."), crimson "This cannot be undone." warning, and pill actions
+  **Keep flyer** (secondary) / **Yes, delete flyer** (emergency) — stacked full-width
+  on phones. Scrim + blur backdrop, pop/fade entrance (disabled under
+  `prefers-reduced-motion`), `role="alertdialog"` with `aria-labelledby`/
+  `aria-describedby`, Escape + backdrop click cancel, Tab focus trap, focus moved to
+  the safe cancel action on open and restored on close, and both buttons lock with a
+  "Deleting…" label while the mutation is in flight. Styles live in
+  `index.css` (`.confirm-dialog*`). Wired into both delete sites: `MyFlyersPage`
+  (owner card "Delete" — was `window.confirm`) and `FlyerDetailPage` ("Delete flyer" —
+  was a two-click "Click again to delete"). Tests: new
+  `confirm-dialog.test.tsx` (5 tests: closed render, alertdialog wiring + confirm,
+  cancel/Escape/backdrop, pending lock, initial focus) + rewritten flyer tests
+  (detail page: dialog opens, cancel keeps the flyer, confirm deletes; my-flyers:
+  delete only after confirming in the dialog). Verified visually at 1440×900 and
+  390×844 (headless Chromium screenshots): desktop side-by-side pills, mobile
+  stacked full-width with the destructive action on top. **134 Vitest tests, 11
+  files** @ 88.99/80.30/84.94/90.26 (coverage exit 0, rewards 100%), `tsc -b` clean
+  on the touched files.
+
 **Final status:** backend **167 passed @ 95.67%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
-frontend **129 vitest tests** @ 89.85/81.75/84.85/91.20 + Playwright journeys
+frontend **134 vitest tests** @ 88.99/80.30/84.94/90.26 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;

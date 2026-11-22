@@ -5,6 +5,7 @@ import { Printer, Download, Coins, MapPin } from "lucide-react";
 import { flyerDetailQuery, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-dialog";
 import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
 import { ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { RewardCheckoutModal } from "@/features/rewards/components/RewardCheckoutModal";
@@ -19,7 +20,7 @@ export function FlyerDetailPage() {
   const updateFlyer = useUpdateFlyer(id ?? "");
   const deleteFlyer = useDeleteFlyer(id ?? "");
   const [rewardOpen, setRewardOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const flyer = query.data;
   const qrTarget = flyer?.qr_target_value ?? "";
@@ -115,15 +116,9 @@ export function FlyerDetailPage() {
               variant="secondary"
               style={{ height: 40 }}
               disabled={deleteFlyer.isPending}
-              onClick={() => {
-                if (!confirming) {
-                  setConfirming(true);
-                  return;
-                }
-                void deleteFlyer.mutateAsync().then(() => navigate("/my-flyers"));
-              }}
+              onClick={() => setConfirmOpen(true)}
             >
-              {confirming ? "Click again to delete" : "Delete flyer"}
+              Delete flyer
             </Button>
           )}
         </div>
@@ -212,6 +207,20 @@ export function FlyerDetailPage() {
       </div>
 
       <RewardCheckoutModal flyer={flyer} open={rewardOpen} onClose={() => setRewardOpen(false)} />
+      {isOwner && (
+        <ConfirmDeleteDialog
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          confirming={deleteFlyer.isPending}
+          subject={flyer.pet.name?.trim() || undefined}
+          onConfirm={() => {
+            void deleteFlyer.mutateAsync().then(() => {
+              setConfirmOpen(false);
+              navigate("/my-flyers");
+            });
+          }}
+        />
+      )}
     </section>
   );
 }
