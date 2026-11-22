@@ -136,17 +136,12 @@ export function FlyerDetailPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
                 <div className="photo-frame" style={{ aspectRatio: "4 / 3", borderRadius: 20, background: "var(--color-surface)", border: "1px solid var(--color-line)", flex: 1 }}>
-                  {flyer.photo_url ? (
-                    <img
-                      src={flyer.photo_url}
-                      alt={`${petDisplayName(flyer.pet, flyer.mode)} — ${emergency ? "lost pet" : found ? "found pet" : "adoptable pet"} photo`}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  ) : (
-                    <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--color-muted)" }}>
-                      No photo yet
-                    </div>
-                  )}
+                  <img
+                    src={flyer.photo_url || "/pet-fallback.webp"}
+                    alt={flyer.photo_url ? `${petDisplayName(flyer.pet, flyer.mode)} — ${emergency ? "lost pet" : found ? "found pet" : "adoptable pet"} photo` : ""}
+                    aria-hidden={!flyer.photo_url ? true : undefined}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
                 </div>
                 {qrTarget && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 150 }}>

@@ -1081,6 +1081,15 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `tests/unit/test_coverage_gaps.py` cover with-photo, no-photo-emergency and
   no-photo-outreach cases. Verified: **167 passed @ 95.67%**.
 
+- **Phase 43** — Frontend photo fallback: all UI locations that showed a blank beige box
+  or "No photo yet" text when a flyer had no pet photo now show a real photograph instead.
+  A warm 800×600 WebP (`public/pet-fallback.webp`, Unsplash — a golden retriever in soft
+  natural light) is served as a static asset. `FlyerCard`, `FlyerDetailPage`, and both
+  photo frames in `PetMapPage` (popup and pin-list card) each use
+  `src={flyer.photo_url || "/pet-fallback.webp"}` with `alt=""` and `aria-hidden` when
+  the fallback renders, so screen readers treat it as decorative. Frontend: **129 passed**,
+  all coverage thresholds met.
+
 **Final status:** backend **167 passed @ 95.67%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
 frontend **129 vitest tests** @ 89.85/81.75/84.85/91.20 + Playwright journeys
@@ -1090,4 +1099,6 @@ the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
 vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
 no notifications feature; `/map` has mode + DB-species filters;
 flyer templates always render a photo frame (SVG paw-print fallback when no photo);
+all UI photo frames show a real pet photograph fallback (`public/pet-fallback.webp`)
+instead of a blank box or "No photo yet" text;
 `npm run docs:pdf` regenerated.

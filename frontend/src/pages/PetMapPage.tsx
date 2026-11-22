@@ -379,11 +379,12 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
         overflow: "hidden",
       }}
     >
-      {flyer.photo_url && (
+      {(
         <div className="photo-frame" style={{ width: "100%", aspectRatio: "16 / 10", background: "var(--color-surface)", position: "relative" }}>
           <img
-            src={flyer.photo_url}
-            alt={displayName}
+            src={flyer.photo_url || "/pet-fallback.webp"}
+            alt={flyer.photo_url ? displayName : ""}
+            aria-hidden={!flyer.photo_url ? true : undefined}
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
           <button
@@ -476,18 +477,13 @@ function PinList({ flyers, note }: { flyers: Flyer[]; note?: string }) {
         {list.map((flyer) => (
           <div key={flyer.id} className="card flyer-card" style={{ display: "flex", flexDirection: "column" }}>
             <div className="photo-frame flyer-card__photo">
-              {flyer.photo_url ? (
-                <img
-                  src={flyer.photo_url}
-                  alt={petDisplayName(flyer.pet, flyer.mode)}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  loading="lazy"
-                />
-              ) : (
-                <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--color-muted)", background: "var(--color-surface)" }}>
-                  No photo yet
-                </div>
-              )}
+              <img
+                src={flyer.photo_url || "/pet-fallback.webp"}
+                alt={flyer.photo_url ? petDisplayName(flyer.pet, flyer.mode) : ""}
+                aria-hidden={!flyer.photo_url ? true : undefined}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                loading="lazy"
+              />
             </div>
             <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

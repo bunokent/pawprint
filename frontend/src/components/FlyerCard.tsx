@@ -33,32 +33,12 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
       }}
     >
       <div className="photo-frame flyer-card__photo">
-        {flyer.photo_url ? (
-          <img
-            src={flyer.photo_url}
-            alt={displayName}
-            loading="lazy"
-          />
-        ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              color: "var(--color-muted)",
-              background: "var(--color-surface)",
-              fontFamily: "var(--font-display)",
-              fontSize: 15,
-            }}
-          >
-            <span style={{ fontSize: 24, opacity: 0.6 }}>🐾</span>
-            <span>No photo yet</span>
-          </div>
-        )}
+        <img
+          src={flyer.photo_url || "/pet-fallback.webp"}
+          alt={flyer.photo_url ? displayName : ""}
+          loading="lazy"
+          aria-hidden={!flyer.photo_url ? true : undefined}
+        />
       </div>
 
       <div style={{ padding: "18px 18px 16px", display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
