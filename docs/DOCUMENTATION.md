@@ -983,6 +983,26 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
      - Clean handling of OAuth error query parameters.
   Verified: **132 vitest passed** (exit 0), `tsc -b` + `vite build` clean, backend **200 pytest passed @ 95.31%**.
 
+- **Phase 37** — Elevate FlyerCard & interactive pet map with editorial design ($design-taste-frontend).
+  Motivation: The flyer cards across the app (Home `/`, Gallery `/flyers`, My Flyers `/my-flyers`, and Wizard `/builder`) and the interactive pet map (`/map`) needed visual and UX elevation according to the `taste` skill (`design-taste-frontend` 2.5.1) and PawPrint 2-mode design guidelines. The map pins and popups needed tactile depth, distinct mode styling (Emergency crimson, Found green, Outreach sage), interactive filtering, real photo framing, and refined micro-interactions.
+  Implementation:
+  1. **FlyerCard Redesign** (`frontend/src/components/FlyerCard.tsx`):
+     - Added mode-tinted top accent bar (`3px solid ${modeColor}`) giving instant visual orientation.
+     - Upgraded pet photo frame with editorial 16:10 aspect ratio, smooth hover zoom (`1.04`), and subtle fallback paw mark.
+     - Layered badge hierarchy: mode tag, reward pill (`₱5,000`), status tag, and high-contrast match badge.
+     - Structured metadata with Lucide `MapPin` and `Calendar` icons for clear geographic and temporal hierarchy.
+     - Added an interactive footer with "View flyer" and animated stepping arrow indicator (`translateX(4px)` on card hover).
+  2. **Interactive Pet Map Elevation** (`frontend/src/pages/PetMapPage.tsx`):
+     - Interactive filter pills in the legend bar ("All pets", "Lost — red pin", "Found — green pin", "Possible match") with live pet counts, allowing instant one-tap filtering of mapped markers.
+     - Floating frosted glass status pill in the bottom-left of the map displaying active mapped pet counts and navigation tips.
+     - Re-styled `PinPopup` into an editorial leaflet popup card (`.map-popup-card`) featuring an edge-to-edge pet photo header (16:10), frosted-glass close button, Fraunces serif headline, mode badge, reward callout, location/date badges, possible match banner, and full-width "Show Full Details" CTA.
+     - Multi-pet clustered `StackPopup` upgraded with circular photo rings, clear row dividers, and quick-open actions.
+     - Resilient fallback `PinList` upgraded to match the grid aesthetic when WebGL / Leaflet tiles are loading.
+  3. **CSS Design Tokens & Motion** (`frontend/src/index.css`):
+     - Defined `.flyer-card`, `.flyer-card__photo`, `.flyer-card__arrow`, `.map-filter-btn`, `.map-filter-btn--active`, `.map-popup-card`, and `@keyframes map-popup-rise`.
+     - Added strict `@media (prefers-reduced-motion: reduce)` disabling transforms and transitions for accessible motion preferences.
+  Verified: **132 vitest tests passed** across all 11 suites, `tsc -b` and `vite build` clean, zero accessibility or navigation regressions.
+
 **Final status:** backend **200 passed @ 95.31%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
 frontend **132 vitest tests** @ 89.35/82.39/84.47/90.51 + Playwright journeys

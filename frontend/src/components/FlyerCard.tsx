@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { ArrowRight, Calendar, MapPin, Sparkles } from "lucide-react";
 import type { Flyer } from "@/features/flyers/api";
 import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
 import { formatDate, petDisplayName } from "@/lib/utils";
@@ -6,41 +7,144 @@ import { formatDate, petDisplayName } from "@/lib/utils";
 export function FlyerCard({ flyer }: { flyer: Flyer }) {
   const emergency = flyer.mode === "emergency";
   const found = flyer.mode === "found";
-  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-found-deep)" : "var(--color-sage-deep)";
+  const accent = emergency
+    ? "var(--color-emergency-deep)"
+    : found
+    ? "var(--color-found-deep)"
+    : "var(--color-sage-deep)";
+  const modeColor = emergency
+    ? "var(--color-emergency)"
+    : found
+    ? "var(--color-found)"
+    : "var(--color-sage)";
+
+  const displayName = petDisplayName(flyer.pet, flyer.mode);
+
   return (
     <Link
       to={`/flyers/${flyer.id}`}
-      className="card card--link"
-      style={{ display: "flex", flexDirection: "column", textDecoration: "none", color: "inherit" }}
+      className="card card--link flyer-card"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        textDecoration: "none",
+        color: "inherit",
+        borderTop: `3px solid ${modeColor}`,
+      }}
     >
-      <div className="photo-frame" style={{ aspectRatio: "4 / 3", background: "var(--color-surface)" }}>
+      <div className="photo-frame flyer-card__photo">
         {flyer.photo_url ? (
-          <img src={flyer.photo_url} alt={petDisplayName(flyer.pet, flyer.mode)} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+          <img
+            src={flyer.photo_url}
+            alt={displayName}
+            loading="lazy"
+          />
         ) : (
-          <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--color-muted)" }}>
-            No photo yet
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              color: "var(--color-muted)",
+              background: "var(--color-surface)",
+              fontFamily: "var(--font-display)",
+              fontSize: 15,
+            }}
+          >
+            <span style={{ fontSize: 24, opacity: 0.6 }}>🐾</span>
+            <span>No photo yet</span>
           </div>
         )}
       </div>
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+
+      <div style={{ padding: "18px 18px 16px", display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <ModeBadge mode={flyer.mode} />
           {flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0 && (
             <RewardBadge amount={flyer.reward_amount_cents ?? 0} currency={flyer.reward_currency ?? "PHP"} />
           )}
           <StatusBadge status={flyer.status} />
+          {flyer.match && (
+            <span className="badge badge--match" title={`Photo match confidence ${(flyer.match.score * 100).toFixed(0)}%`}>
+              <Sparkles size={11} /> Match
+            </span>
+          )}
         </div>
-        <h3 className="t-h3" style={{ color: accent }}>
-          {petDisplayName(flyer.pet, flyer.mode)}
+
+        <h3
+          className="t-h3"
+          style={{
+            color: accent,
+            margin: 0,
+            fontSize: "clamp(19px, 2.2vw, 22px)",
+            fontFamily: "var(--font-display)",
+            letterSpacing: "-0.01em",
+          }}
+        >
+          {displayName}
         </h3>
-        <p className="t-small" style={{ color: "var(--color-muted)" }}>
-          {flyer.pet.species} · {flyer.pet.breed || "mixed"} · {flyer.pet.color || "—"}
+
+        <p className="t-small" style={{ margin: 0, color: "var(--color-muted)", lineHeight: 1.45 }}>
+          {[flyer.pet.species, flyer.pet.breed || "mixed", flyer.pet.color || "—"].join(" · ")}
           {flyer.last_seen_location && emergency ? ` · last seen ${flyer.last_seen_location}` : ""}
           {flyer.last_seen_location && found ? ` · found at ${flyer.last_seen_location}` : ""}
         </p>
-        {flyer.last_seen_date && (emergency || found) && (
-          <p className="t-label">{emergency ? "Last seen" : "Found"} {formatDate(flyer.last_seen_date)}</p>
+
+        {flyer.last_seen_location && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              color: "var(--color-muted)",
+              fontSize: 13,
+            }}
+          >
+            <MapPin size={13} style={{ color: modeColor, flexShrink: 0 }} />
+            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {emergency ? "Last seen " : found ? "Found at " : ""}{flyer.last_seen_location}
+            </span>
+          </div>
         )}
+
+        {flyer.last_seen_date && (emergency || found) && (
+          <p
+            className="t-label"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              color: "var(--color-muted)",
+              margin: 0,
+            }}
+          >
+            <Calendar size={12} style={{ flexShrink: 0 }} />
+            <span>{emergency ? "Last seen" : "Found"} {formatDate(flyer.last_seen_date)}</span>
+          </p>
+        )}
+
+        <div
+          style={{
+            marginTop: "auto",
+            paddingTop: 12,
+            borderTop: "1px solid var(--color-line)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: 13,
+            fontWeight: 600,
+            color: accent,
+          }}
+        >
+          <span>View flyer</span>
+          <span className="flyer-card__arrow" aria-hidden="true">
+            <ArrowRight size={14} />
+          </span>
+        </div>
       </div>
     </Link>
   );

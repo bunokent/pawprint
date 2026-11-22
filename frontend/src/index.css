@@ -100,6 +100,51 @@ body {
 }
 a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
 
+/* Flyer Card — editorial rescue & adoption cards (taste skill) */
+.flyer-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-lg);
+  background: #fff;
+  border: 1px solid var(--color-line);
+  overflow: hidden;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms ease, border-color 200ms ease;
+}
+.flyer-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lift);
+  border-color: rgb(28 20 16 / 0.22);
+}
+.flyer-card:active {
+  transform: translateY(-1px) scale(0.99);
+}
+.flyer-card__photo {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.flyer-card__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.flyer-card:hover .flyer-card__photo img {
+  transform: scale(1.04);
+}
+.flyer-card__arrow {
+  display: inline-flex;
+  align-items: center;
+  transition: transform 180ms ease;
+}
+.flyer-card:hover .flyer-card__arrow {
+  transform: translateX(4px);
+}
+
 /* Badges */
 .badge {
   display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px;
@@ -111,6 +156,40 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 .badge--outreach { background: rgb(47 111 94 / 0.12); color: var(--color-sage-deep); }
 .badge--reward { background: var(--color-amber); color: #2b1a00; }
 .badge--neutral { background: var(--color-surface); color: var(--color-muted); }
+.badge--active {
+  box-shadow: 0 0 0 2px var(--color-ink);
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+/* Map page interactive elements */
+.map-filter-btn {
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+.map-filter-btn:hover {
+  transform: translateY(-1px);
+}
+.map-filter-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+.map-filter-btn--active {
+  box-shadow: 0 0 0 2px var(--color-ink);
+  font-weight: 700;
+}
+.map-popup-card {
+  animation: map-popup-rise 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes map-popup-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-popup-card { animation: none; }
+  .flyer-card__photo img { transition: none; }
+  .flyer-card { transition: none; }
+}
 
 /* Form fields */
 .field { display: flex; flex-direction: column; gap: 6px; }
