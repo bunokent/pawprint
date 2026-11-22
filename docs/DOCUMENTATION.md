@@ -44,20 +44,15 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   SDK, wrapped in a Django `Storage` backend (`apps/common/cloudinary_storage.py`).
 - **Payments**: Stripe Python SDK (test mode) + PayMongo REST via httpx (GCash Checkout, QR Ph).
 - **AI Vision**: Ultralytics YOLO-World (`yolov8s-worldv2.pt`) with 66 configured animal labels as
-  the gate/boxer (its best animal `xyxy` box also drives the re-ID crop), plus CLIP ViT-B/32
-  zero-shot second stages: one names the actual species (`pet_classes`), a separate
+  the gate/boxer (its best animal `xyxy` box also drives the in-memory species-classification
+  crop), plus CLIP ViT-B/32 zero-shot second stages: one names the actual species
+  (`pet_classes`, on the cropped animal with a contrastive confusable-group pass so a tabby
+  cat is not named "tiger"), a separate
   `PetAttributeService` classifies breed (curated dog/cat breed lists; other species → empty)
   and color, with raw confidences returned on the upload response. Labels are grouped into
   domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird, and fish categories.
-  **Re-identification matching** uses MegaDescriptor (`BVRA/MegaDescriptor-L-384` or
-  `BVRA/MegaDescriptor-DINOv2-518` via timm) instead of full-frame CLIP: each of a report's up
-  to 4 photos gets its own L2-normalized embedding of the in-memory padded crop of its best
-  detection box (cached on `PetPhoto.photo_embedding` with an `embedding_model` tag; legacy
-  single-photo pets on `Pet.photo_embedding`), and a found report is matched against lost
-  reports of the same species by the **max** cosine similarity over every cross-photo pair ≥
-  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.33) — creating a `vision.PetMatch` (with the
-  winning image pair in `best_pair`) plus notifications to both sides, so the same pet
-  photographed from different angles still matches (Phases 33–34). In-app notifications live
+  There is **no photo matching / re-identification** — lost and found reports never compare
+  photos. In-app notifications live
    in `apps.notifications` (REST + per-user `ws/notifications/` push). Maps: Leaflet 1.9
    (npm dependency, no API key) over OpenStreetMap
   tiles, with Nominatim geocoding (address search + reverse geocode), for the location
@@ -114,13 +109,9 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `rewards`, `webhooks`, `v
   JSON (GIN indexes), `photo_path` (cover photo), `status` (`lost|found|adoptable|reunited|adopted`),
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
 - `pets.PetPhoto` — one photo per row: `pet` FK (`related_name="photos"`, cascade), `photo_path`,
-  `photo_embedding` (per-photo MegaDescriptor re-ID cache of the in-memory padded crop) +
-  `embedding_model` tag, index `(pet, created_at)` (migrations `pets/0006`, `pets/0007`).
+  index `(pet, created_at)` (migration `pets/0006`).
   A report carries up to **4** photos (different angles of the same pet, `MAX_PET_PHOTOS`);
-  lost/found matching takes the max cosine similarity over all cross-photo pairs
-  (Phases 33–34). The stored file is always the full, uncropped display image.
-- `vision.PetMatch` — unique lost/found pair + `score` (max cross-photo cosine similarity) +
-  `best_pair` (the winning `[lost_photo_index, found_photo_index]`; migration `vision/0003`).
+  the first is the cover. The stored file is always the full, uncropped display image.
 - `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
   fields, `location_lat`/`location_lng` floats (the map pin), contact fields, reward fields, QR
   target, export paths, `status` (`draft|generating|active|resolved`); indexes
@@ -152,7 +143,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `POST /api/auth/avatar` | Auth | Profile picture upload (10/min, no pet gate) |
 | `GET /api/auth/google/url` + `POST /api/auth/google/callback` | Guest | Google/Gmail OAuth 2.0 |
 | `GET /api/flyers` | Guest | Cursor-paginated gallery, FTS `?q=`, mode filter `?mode=` (`emergency|found|outreach`) |
-| `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` + `match` (vision photo-match counterpart: `flyer_id`/`mode`/`pet_name`/`score`, or null) |
+| `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` |
 | `GET /api/flyers/{id}` | Guest | Public flyer detail (QR scan landing) |
 | `POST /api/flyers/new` | Auth | Create flyer — `mode` incl. `found`, optional `location_lat`/`location_lng` pin (dispatches A4 asset generation) |
 | `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / delete own flyer |
@@ -202,31 +193,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `flyers`): renders the HTML flyer template with WeasyPrint to A4 PDF + Playwright A4@300dpi
   PNG, uploads to private Cloudinary, marks the flyer `active`, then broadcasts `flyer.generated`
   over Django Channels (`ws/flyers/`).
-- On create/update of a lost/found flyer, `FlyerService` also dispatches
-  `apps.vision.tasks.match_flyer` (queue `images`): **every** photo of the pet (up to 4
-  `PetPhoto` rows, `prefetch_related("pet__photos")`) is cosine-compared against every photo of
-  the opposite mode's active **same-species** flyers (`pet__species` filter), and the **best
-  cross-photo pair** decides the score — so the same pet shown from a different angle
-  (front vs side vs back) still matches, not just literally the same picture. Embeddings are
-  MegaDescriptor re-ID vectors of each photo's in-memory padded detection crop (the stored
-  images stay uncropped). Every pair whose max similarity ≥
-  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.33, env-tunable) gets a unique `vision.PetMatch`
-  row (score + `best_pair`) plus `apps.notifications` alerts to both sides, pushed over
-  `ws/notifications/` (per-user group; ASGI wraps websockets in `AuthMiddlewareStack`).
-  `GET /api/flyers/map` annotates each pin with its `match` counterpart (incl. `best_pair`).
-  `PetMatchService.rank_candidates(flyer_id, top_k)` exposes the ranked same-species
-  candidates (max similarity + winning image pair + `is_match` flag) for debugging/tuning.
-  - `PetCreateSerializer` accepts `photo_paths` (list, max 4; `photo_path` stays as the cover =
-    first photo), and `PetService.create_pet` creates one `PetPhoto` row per photo with an
-    eagerly cached MegaDescriptor embedding tagged with `embedding_model` (the legacy
-    `Pet.photo_embedding` is still cached as the fallback for pets predating `PetPhoto`), so
-    matching never depends on re-downloading photos mid-task. A tag mismatch (e.g. legacy
-    CLIP vectors, or a model swap) with a stored photo forces a re-embed on the next run.
-    `PetMatchService.ensure_embedding` is fault-tolerant: a photo that cannot be
-    read/embedded (missing object, storage or model error) is logged and skipped — one broken
-    photo never aborts matching for the other pairs, and `manage.py backfill_matches` re-runs
-    matching for all active lost/found flyers to repair data created before a fix
-    (idempotent: unique pair constraint, notify only on first create).
+- `PetCreateSerializer` accepts `photo_paths` (list, max 4; `photo_path` stays as the cover =
+  first photo), and `PetService.create_pet` creates one `PetPhoto` row per photo. A report can
+  therefore show the same pet from up to 4 angles on its flyer; the stored files are always
+  the full, uncropped originals.
 - Flyer templates (`templates/flyers/{emergency,outreach}.html`) and the on-screen
   `.print-sheet` follow the `taste` skill print typography (`@page { size: A4; margin: 0 }`,
   `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
@@ -241,7 +211,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   flyers that have one — the pins behind `/map`. `seed_demo` seeds Bruno (lost, pinned) and
   Miso (found, pinned).
 
-## 8. AI Pet Detection & Re-Identification (YOLO-World gate + CLIP naming + MegaDescriptor matching)
+## 8. AI Pet Detection (YOLO-World gate + CLIP species naming + attributes)
 
 - `PetDetectionService.validate_pet_image(image_bytes)` lazily loads one process-local,
   lock-protected `ultralytics.YOLOWorld(settings.YOLO_MODEL_PATH)` singleton
@@ -259,16 +229,34 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   own predictor default is `0.25`, which would otherwise discard `0.20–0.25` detections such
   as small pets before PawPrint sees them. Uploaded images are EXIF-orientation-normalized and
   converted to RGB before inference so rotated phone photos are detected as displayed.
-- **Species naming**: YOLO-World alone can pass a clear animal under a nearby label (rabbit →
-  `cat`, crocodile → `bird`, fox → `dog`). After the YOLO-World gate proves an animal is present,
-  a second lazily loaded, lock-protected **CLIP ViT-B/32** zero-shot classifier (the same
-  `/weights/clip/ViT-B-32.pt` encoder YOLO-World uses for prompts) ranks fine-grained species
-  prompts over the whole photo. The refined animal names go into `pet_classes`
+- **Species naming (precise, three guards against lookalikes)**: YOLO-World alone can pass a
+  clear animal under a nearby label (rabbit → `cat`, crocodile → `bird`, fox → `dog`, tabby cat
+  → `tiger`/`hedgehog`). After the YOLO-World gate proves an animal is present, a second lazily
+  loaded, lock-protected **CLIP ViT-B/32** zero-shot classifier (the same
+  `/weights/clip/ViT-B-32.pt` encoder YOLO-World uses for prompts) names the species, with three
+  precision guards (Phase 38):
+  1. **Crop to the animal** — CLIP ranks the *in-memory padded crop* of YOLO-World's best
+     accepted animal box (`padded_crop`, `SPECIES_CROP_PADDING` = 0.25 of the box per side,
+     clamped to bounds, full image when no box), not the whole scene, so background clutter
+     (concrete, leaves, walls) cannot tip it toward wild lookalikes. The crop never touches
+     storage — the uploaded original is stored and displayed full and uncropped.
+  2. **Contrastive prompts** — `SPECIES_PROMPT_OVERRIDES` give confusable labels explicit
+     contrast descriptions ("a small domestic house cat … not a wild big cat" vs "a large wild
+     tiger with orange fur and black stripes, much bigger than a house cat").
+  3. **Confusable-group contrast pass** — when the top pick belongs to a `CONFUSABLE_GROUPS`
+     lookalike set (feline: cat/tiger/lion, canine: dog/wolf/fox, spiny: hedgehog/porcupine, …)
+     and a group rival is within `GROUP_RIVAL_MARGIN` (0.20) of it, a focused second CLIP pass
+     over just that group (`GROUP_CONTRAST_PROMPTS`: "small pet tabby cat on concrete" vs
+     "large wild tiger in the jungle") decides the single winner. Otherwise only labels within
+     `CLIP_SPECIES_RELATIVE_MARGIN` (0.9) of the top CLIP probability stay selected, so a
+     hedgehog at 0.16 no longer rides along with a cat at 0.40.
+  The refined animal names go into `pet_classes`
   (`fox`, `crocodile`, `frog`, `rabbit`, `dog`, …), while the raw YOLO-World labels stay in
   `detected_classes` for the API/audit trail. If YOLO-World finds nothing at `0.20` but CLIP's
   animal-vs-non-animal gate is confident (e.g. a crocodile close-up), the photo still passes and
   is named by CLIP; plain landscapes still 422. When CLIP is unsure it falls back to the raw
-  accepted YOLO labels.
+  accepted YOLO labels. Verified on 18 real photos of one tabby cat: all classify as
+  `['cat']` (raw labels like `bear`/`bird` stay in `detected_classes` only).
 - **Breed & color classification**: a separate CLIP zero-shot `PetAttributeService`
   (`apps/vision/services.py`) runs on the gated photo — breed over curated lists (dog breeds
   and cat breeds only; any other species yields an empty breed, never a guess) and color over
@@ -277,34 +265,12 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   the **0.80 prefill threshold is applied in the frontend** (`HIGH_CONFIDENCE` in
   `features/pets/api.ts`), so low-confidence results stay blank with a "Not detected"
   placeholder instead of guessing.
-- **Re-identification matching (MegaDescriptor, not full-frame CLIP)**: CLIP ViT-B/32 stays the
-  species-naming and breed/color stage only. For lost/found matching, each uploaded photo
-  (up to 4 per report) is processed as: YOLO-World predict → best accepted animal `xyxy` box
-  (`DetectionResult.best_box` / `PetDetectionService.best_animal_box`) → **in-memory** padded
-  crop (`padded_crop`, padding `PET_CROP_PADDING` = 0.20 of the box size per side, clamped to
-  bounds, full image when no box) → MegaDescriptor embedding via timm
-  (`timm.create_model("hf-hub:BVRA/MegaDescriptor-L-384", pretrained=True)` or
-  `"hf-hub:BVRA/MegaDescriptor-DINOv2-518"`, `MEGA_DESCRIPTOR_MODEL`), L2-normalized.
-  `MegaDescriptorService` is a lazily loaded, lock-protected singleton (model + eval transform
-  + device cached once per process). The crop never touches storage — the uploaded original is
-  stored and displayed full and uncropped. One embedding per photo is cached on
-  `PetPhoto.photo_embedding` (legacy: `Pet.photo_embedding`) with an `embedding_model` tag.
-- **Max-similarity multi-image scoring**: a found report (up to 4 embeddings) is compared with
-  each active lost report of the same species (up to 4 embeddings) by
-  `score_embedding_pairs` — the **max** cosine similarity over the full 4×4 cross-photo pair
-  product, also returning the winning pair indices. `PetMatchService.rank_candidates(flyer_id,
-  top_k)` ranks candidates (max similarity, best pair, `is_match` vs threshold);
-  `match_flyer` creates `PetMatch` rows (`score` + `best_pair`) ≥
-  `PET_MATCH_SIMILARITY_THRESHOLD` (default **0.33** — MegaDescriptor re-ID scores sit well
-  below CLIP full-frame scores, so the old 0.80 default was lowered; 0.33 is calibrated on
-  real photos (Phase 35), tune via the env var) and notifies both sides. Same pet,
-  different angle → still matches.
 - The YOLO loader falls back to `yolov8s-worldv2.pt` if a stale non-World `YOLO_MODEL_PATH` is
   configured, and raises a clear `RuntimeError` if the checkpoint does not contain a World head.
-  Generated weights (`backend/yolov8s-worldv2.pt`, `/weights/`) are git-ignored; Ultralytics
-  downloads them on first lazy load. MegaDescriptor checkpoints are likewise git-ignored — timm
-  pulls `BVRA/MegaDescriptor-*` from the Hugging Face Hub on first lazy load
-  (`MEGA_DESCRIPTOR_MODEL`; device `MEGA_DESCRIPTOR_DEVICE` = cuda if available else cpu).
+  Generated weights (`backend/yolov8s-worldv2.pt`, `/weights/clip/ViT-B-32.pt`) are git-ignored;
+  Ultralytics/CLIP load them on first lazy load. There is no other vision model and no
+  Hugging Face download: the lost/found photo-matching feature (MegaDescriptor re-ID via timm)
+  was removed in Phase 39.
 - **Pass**: EXIF stripped via Pillow, thumbnail generated, upload to private Cloudinary
   (delivery type `private`), `PetDetectionLog(passed=True)`, signed preview URL returned.
 - **Fail**: bytes discarded before any storage write, `PetDetectionLog(passed=False)`,
@@ -414,31 +380,31 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 11. Testing & Coverage
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  → **200 passed, 95.31% total** (100% on all `services.py`, `drivers.py`,
+  → **168 passed, 94.99% total** (100% on all `services.py`, `drivers.py`,
   `apps/vision/services.py`, and the Cloudinary storage driver);
-  `django_assert_max_num_queries` ceilings on list/detail endpoints; 429 tests for the
+  `django_assert_max_num_queries` ceilings on list/detail endpoints (map endpoint at 6);
+  429 tests for the
   `auth_write` (20/min) and `upload` (10/min) throttles; webhook idempotency tests (duplicate
   `(provider, event_id)` → single processing); 422-before-storage tests (non-animal bytes never
   reach Cloudinary); expanded YOLO-World + CLIP species tests (66 labels,
   `conf=0.20` asserted on the predictor call, EXIF-orientation/RGB normalization, stale-path
   fallback, non-World checkpoint rejection, rabbit/fox/frog/crocodile renaming from wrong raw
   labels, CLIP animal-gate fallback for YOLO misses, CLIP singleton/loader paths, ambiguous
-  multi-species handling, `best_box` selection of the highest-confidence accepted animal);
+  multi-species handling, `best_box` selection of the highest-confidence accepted animal,
+  padded-crop padding/clamping/full-image fallback, the confusable-group contrast pass
+  resolving tabby-cat-vs-tiger to `cat`, the 0.9 relative selection margin dropping distant
+  lookalikes, and the contrast pass not firing without a close rival);
   CLIP breed/color classifier tests (`PetAttributeService`: dog/cat
   breed lists, other-species empty breed, color always classified, raw confidences on the
   upload response); found-mode + `location_lat`/`location_lng` + `GET /api/flyers/map`
-  integration tests; multi-angle MegaDescriptor matching tests (`tests/unit/test_megadescriptor.py`
-  + `test_vision_match.py`: padded-crop padding/clamping/full-image fallback, timm singleton
-  loader, L2-normalized embed, `embed_photo_bytes` crop pipeline, `score_embedding_pairs`
-  max + winning pair, `rank_candidates` same-species filter + `top_k` + `is_match`,
-  `PetMatch.best_pair`, `embedding_model` tag re-embed, configurable threshold, 4-photo cap,
-  `photo_paths` on `POST /api/pets` + PetPhoto rows); Cloudinary
+  integration tests; `photo_paths` on `POST /api/pets` + PetPhoto rows (4-photo cap);
+  Cloudinary
   driver unit tests (SDK mocked, 100% on the driver);
   profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
   `factory-boy` factories.
-- Frontend: `npm run test:run` → **129 Vitest tests, 11 files** (RTL + MSW, jsdom), including
+- Frontend: `npm run test:run` → **131 Vitest tests, 11 files** (RTL + MSW, jsdom), including
   drag-and-drop, multi-file photo picking (sequential uploads, thumbnail strip, remove /
   make-cover, 4-photo cap + "Photo limit reached" lock), real Axios upload-progress callbacks,
   all four live processing labels, the animated
@@ -454,7 +420,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   map-init-failure fallback, the `/map` page (Leaflet photo pins + popup, pin-list fallback,
   empty/error states), and `src/lib/maps.ts` helper tests (OSM tile layer, pin icons,
   Nominatim search/reverse incl. failure fallback);
-  `npm run test:coverage` → **89.35% stmts / 82.39% branches / 84.47% funcs / 90.51% lines**
+  `npm run test:coverage` → **88.89% stmts / 81.31% branches / 83.67% funcs / 90.39% lines**
   (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
   `npx tsc -b --noEmit` clean; `npm run build` green.
 - E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **10 journeys /
@@ -822,6 +788,9 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   :8025 → 200, `pg_isready` :5433, `manage.py runserver` + `/api/health` → 200; suites
   re-run green (**150 pytest @ 95.41%**, **112 Vitest**, `tsc -b` clean).
 - **Phase 30** — Lost/found photo matching + notifications + recoloured map pins.
+  *(Phases 30–35 built the lost/found photo-matching feature (CLIP embeddings →
+  MegaDescriptor re-ID) — **superseded: the whole feature was removed in Phase 39**;
+  the entries below are kept as history.)*
   Backend: new `apps.notifications` app (`Notification` model; `GET /api/notifications`
   → `{results, unread_count}`, `POST /api/notifications/read`; per-user websocket
   `ws/notifications/` — ASGI now wraps websockets in `AuthMiddlewareStack`);
@@ -989,13 +958,13 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   1. **FlyerCard Redesign** (`frontend/src/components/FlyerCard.tsx`):
      - Added mode-tinted top accent bar (`3px solid ${modeColor}`) giving instant visual orientation.
      - Upgraded pet photo frame with editorial 16:10 aspect ratio, smooth hover zoom (`1.04`), and subtle fallback paw mark.
-     - Layered badge hierarchy: mode tag, reward pill (`₱5,000`), status tag, and high-contrast match badge.
+     - Layered badge hierarchy: mode tag, reward pill (`₱5,000`), status tag (the match badge added here was removed in Phase 39).
      - Structured metadata with Lucide `MapPin` and `Calendar` icons for clear geographic and temporal hierarchy.
      - Added an interactive footer with "View flyer" and animated stepping arrow indicator (`translateX(4px)` on card hover).
   2. **Interactive Pet Map Elevation** (`frontend/src/pages/PetMapPage.tsx`):
-     - Interactive filter pills in the legend bar ("All pets", "Lost — red pin", "Found — green pin", "Possible match") with live pet counts, allowing instant one-tap filtering of mapped markers.
+     - Interactive filter pills in the legend bar ("All pets", "Lost — red pin", "Found — green pin"; the "Possible match" pill was removed in Phase 39) with live pet counts, allowing instant one-tap filtering of mapped markers.
      - Floating frosted glass status pill in the bottom-left of the map displaying active mapped pet counts and navigation tips.
-     - Re-styled `PinPopup` into an editorial leaflet popup card (`.map-popup-card`) featuring an edge-to-edge pet photo header (16:10), frosted-glass close button, Fraunces serif headline, mode badge, reward callout, location/date badges, possible match banner, and full-width "Show Full Details" CTA.
+     - Re-styled `PinPopup` into an editorial leaflet popup card (`.map-popup-card`) featuring an edge-to-edge pet photo header (16:10), frosted-glass close button, Fraunces serif headline, mode badge, reward callout, location/date badges, and full-width "Show Full Details" CTA (the possible-match banner added here was removed in Phase 39).
      - Multi-pet clustered `StackPopup` upgraded with circular photo rings, clear row dividers, and quick-open actions.
      - Resilient fallback `PinList` upgraded to match the grid aesthetic when WebGL / Leaflet tiles are loading.
   3. **CSS Design Tokens & Motion** (`frontend/src/index.css`):
@@ -1003,10 +972,55 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
      - Added strict `@media (prefers-reduced-motion: reduce)` disabling transforms and transitions for accessible motion preferences.
   Verified: **132 vitest tests passed** across all 11 suites, `tsc -b` and `vite build` clean, zero accessibility or navigation regressions.
 
-**Final status:** backend **200 passed @ 95.31%** (100% on all services/drivers incl.
+- **Phase 38** — Precise species naming (tabby cat was detected as "tiger"/"hedgehog").
+  Motivation: YOLO-World open-vocabulary labels fired `tiger`/`hedgehog` ≥ 0.20 on a striped
+  house cat, and CLIP's species pass ranked the **full scene** with a loose 0.5 relative margin,
+  so `pet_classes` came back as `["tiger", "hedgehog"]`-style multi-label noise. Fix in
+  `apps/vision/services.py` (`validate_pet_image` / `_refine_species`): (1) CLIP now ranks the
+  **in-memory padded crop** of YOLO-World's best animal box (`padded_crop`,
+  `SPECIES_CROP_PADDING`=0.25, clamped; stored image untouched), (2) richer contrastive
+  `SPECIES_PROMPT_OVERRIDES` for confusable labels ("small domestic house cat, not a wild big
+  cat" vs "large wild tiger … much bigger than a house cat"), (3) selection margin tightened to
+  `CLIP_SPECIES_RELATIVE_MARGIN`=0.9 of the top probability, and (4) a **confusable-group
+  contrast pass**: when the top pick is in a `CONFUSABLE_GROUPS` lookalike set (feline
+  cat/tiger/lion, canine dog/wolf/fox, spiny, lagomorph, rodent, crocodilian, anuran) with a
+  group rival within `GROUP_RIVAL_MARGIN`=0.20, a focused CLIP pass over just that group's
+  `GROUP_CONTRAST_PROMPTS` decides the single winner. Verified on 18 real photos of one tabby
+  cat on mossy concrete: **all classify as `['cat']`** (raw `bear`/`bird` labels remain in
+  `detected_classes` only). Tests: crop-instead-of-full-image, relative-margin drop, contrast
+  pass resolving tiger→cat, no contrast without a close rival, group-contrast prompt ranking,
+  `padded_crop` clamp/fallback, `best_animal_box`. Verified: **168 pytest passed @ 94.99%**
+  (100% on `apps/vision/services.py`; ruff + mypy clean).
+
+- **Phase 39** — Removed the lost/found photo-matching feature entirely (supersedes
+  Phases 30–35). Backend: deleted `vision.PetMatch` (+migration `vision/0004`),
+  `PetMatchService`/`MegaDescriptorService` and all embedding helpers from
+  `apps/vision/services.py`, the `match_flyer` celery task, the `backfill_matches` command,
+  `photo_embedding`/`embedding_model` columns on `Pet` and `PetPhoto` (migration `pets/0008`),
+  the eager embedding cache in `PetService.create_pet`, the `match` dispatch in
+  `FlyerService.create_flyer`/`update_flyer`, the `match` annotation in `FlyerMapView`,
+  `FlyerMatchSerializer` + the `match` field on `FlyerSerializer`, the `MATCH_FOUND`/
+  `MATCH_LOST` notification kinds + `NotificationService.notify_match` (migration
+  `notifications/0002`; only `SYSTEM` remains), the `MEGA_DESCRIPTOR_*` /
+  `PET_CROP_PADDING` / `PET_MATCH_SIMILARITY_THRESHOLD` settings and the `timm>=1.0`
+  dependency (the Hugging Face `BVRA/MegaDescriptor-*` model is gone — no HF downloads for
+  matching anymore). Deleted tests `test_vision_match.py` + `test_megadescriptor.py`; updated
+  `test_vision.py`, `test_notifications.py`, `test_flyer_map.py` (map query ceiling 7→6).
+  `backend/schema.yml` regenerated. Frontend: removed `PinMatch`, the match halo classes
+  (`pp-pin--match` / `pp-stack-pin--match` + `pp-halo` keyframes), the "Possible match"
+  legend filter/badge, the popup match banner, the `FlyerCard` match badge, the
+  `badge--match` style, match copy in `PhotoUpload`/`BuilderWizard`/`pets/api.ts`, the
+  `match: null`/`kind: "match_found"` MSW fixtures and the empty-state copy; `schema.d.ts`
+  regenerated via `npm run typegen`; tests updated (`PetMapPage.test.tsx`, `maps.test.ts`,
+  `NotificationBell.test.tsx`). Verified: backend **168 passed @ 94.99%** (100% on all
+  services; ruff + mypy clean), frontend **131 Vitest tests** green (coverage exit 0;
+  rewards 100%), `tsc -b` clean.
+
+**Final status:** backend **168 passed @ 94.99%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
-frontend **132 vitest tests** @ 89.35/82.39/84.47/90.51 + Playwright journeys
+frontend **131 vitest tests** @ 88.89/81.31/83.67/90.39 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
+vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
 `npm run docs:pdf` regenerated.
