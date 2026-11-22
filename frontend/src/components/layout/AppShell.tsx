@@ -1,7 +1,6 @@
 import { Link, NavLink, Outlet } from "react-router";
 import { useAuth } from "@/stores/auth";
 import { Avatar } from "@/components/Avatar";
-import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { Button } from "@/components/ui/button";
 
 function PawMark() {
@@ -31,7 +30,6 @@ export function AppShell() {
             {user ? (
               <>
                 <NavLink className="nav-link" to="/builder">New flyer</NavLink>
-                <NotificationBell />
                 <NavLink
                   className="nav-link"
                   to="/settings"

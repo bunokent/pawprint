@@ -58,7 +58,6 @@ INSTALLED_APPS = [
     "apps.rewards",
     "apps.webhooks",
     "apps.vision",
-    "apps.notifications",
 ]
 
 MIDDLEWARE = [

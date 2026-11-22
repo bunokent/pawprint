@@ -19,8 +19,6 @@ urlpatterns = [
     path("api/rewards", include("apps.rewards.urls")),
     path("api/webhooks/", include("apps.webhooks.urls")),
     path("api/webhooks", include("apps.webhooks.urls")),
-    path("api/notifications/", include("apps.notifications.urls")),
-    path("api/notifications", include("apps.notifications.urls")),
     path("api/schema", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]

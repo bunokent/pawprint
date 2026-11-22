@@ -2,7 +2,6 @@
 
 import os
 
-from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 from django.core.asgi import get_asgi_application
 
@@ -15,8 +14,8 @@ from config.routing import websocket_urlpatterns  # noqa: E402
 application = ProtocolTypeRouter(
     {
         "http": django_asgi_app,
-        # AuthMiddlewareStack gives websocket consumers scope["user"] (session cookie),
-        # so ws/notifications/ can join a per-user group.
-        "websocket": AuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
+        # The only websocket route (ws/flyers/) is a public broadcast group,
+        # so no AuthMiddlewareStack is needed.
+        "websocket": URLRouter(websocket_urlpatterns),
     }
 )

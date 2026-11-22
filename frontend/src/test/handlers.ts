@@ -4,7 +4,6 @@ import type { components } from "@/lib/api/schema";
 type User = components["schemas"]["User"];
 type Pet = components["schemas"]["Pet"];
 type Flyer = components["schemas"]["Flyer"];
-type Notification = components["schemas"]["Notification"];
 type RewardInit = components["schemas"]["RewardInit"];
 type RewardStatus = components["schemas"]["RewardStatus"];
 
@@ -78,17 +77,6 @@ export const mockFoundFlyer = (overrides: Partial<Flyer> = {}): Flyer =>
     reward_amount_cents: 0,
     ...overrides,
   });
-
-export const mockNotification = (overrides: Partial<Notification> = {}): Notification => ({
-  id: "77777777-7777-7777-7777-777777777777",
-  kind: "system",
-  title: "Welcome to PawPrint",
-  body: "Your account is ready — post a lost-pet alert or browse the map.",
-  link: "/flyers/66666666-6666-6666-6666-666666666666",
-  read_at: null,
-  created_at: "2026-11-19T09:00:00Z",
-  ...overrides,
-});
 
 export const mockRewardInit = (overrides: Partial<RewardInit> = {}): RewardInit => ({
   transaction_id: "44444444-4444-4444-4444-444444444444",
@@ -247,15 +235,6 @@ export const handlers = [
       return HttpResponse.json(mockRewardInit({ transaction_id: txId, provider: "stripe", checkout_url: "https://checkout.stripe.com/test/pay/cs_test_123", qr_payload: "" }), { status: 201 });
     }
     return HttpResponse.json(mockRewardInit({ transaction_id: txId }), { status: 201 });
-  }),
-
-  http.get("*/api/notifications", () =>
-    HttpResponse.json({ results: [mockNotification()], unread_count: 1 }),
-  ),
-
-  http.post("*/api/notifications/read", async ({ request }) => {
-    const body = (await request.json()) as { ids?: string[] };
-    return HttpResponse.json({ marked_read: body.ids?.length ?? 1, unread_count: 0 });
   }),
 
   http.get("*/api/rewards/mine", () => HttpResponse.json([mockRewardStatus()])),
