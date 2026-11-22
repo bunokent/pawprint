@@ -20,7 +20,7 @@ def _mock_asset_rendering(monkeypatch):
 def test_map_endpoint_guest_allowed_with_query_ceiling(api_client, django_assert_max_num_queries):
     FlyerFactory(status=Flyer.Status.ACTIVE, mode=Flyer.Mode.EMERGENCY, location_lat=14.55, location_lng=121.02)
     FlyerFactory(status=Flyer.Status.ACTIVE, mode=Flyer.Mode.FOUND, location_lat=14.60, location_lng=121.00)
-    with django_assert_max_num_queries(6):
+    with django_assert_max_num_queries(7):
         resp = api_client.get("/api/flyers/map")
     assert resp.status_code == 200
     body = resp.json()
@@ -143,21 +143,21 @@ def test_create_pet_with_photo_paths_stores_every_angle(auth_client, user):
     assert resp.status_code == 201
     assert resp.json()["photo_path"] == "pets/photos/a.jpg"
     assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 2
-    # More than 4 photos are rejected (a report carries up to 4 images).
+    # More than 10 photos are rejected (a report carries up to 10 images).
     resp = auth_client.post(
         "/api/pets",
-        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(5)]},
+        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(11)]},
         format="json",
     )
     assert resp.status_code == 400
-    # Exactly 4 photos are accepted.
+    # Exactly 10 photos are accepted.
     resp = auth_client.post(
         "/api/pets",
-        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(4)]},
+        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(10)]},
         format="json",
     )
     assert resp.status_code == 201
-    assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 4
+    assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 10
 
 
 def test_create_found_pet_without_name(auth_client, user):

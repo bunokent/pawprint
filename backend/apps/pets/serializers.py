@@ -36,9 +36,9 @@ class PetCreateSerializer(serializers.Serializer):
     temperament_tags = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
     health_tags = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
     photo_path = serializers.CharField(max_length=512, required=False, allow_blank=True)
-    # Up to 4 photos of the same pet (different angles) — the first is the cover photo.
+    # Up to 10 photos of the same pet (different angles) — the first is the cover photo.
     photo_paths = serializers.ListField(
-        child=serializers.CharField(max_length=512), required=False, max_length=4
+        child=serializers.CharField(max_length=512), required=False, max_length=10
     )
     status = serializers.ChoiceField(choices=Pet.Status.choices, default=Pet.Status.ADOPTABLE)
 

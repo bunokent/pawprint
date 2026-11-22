@@ -14,8 +14,9 @@ from apps.vision.services import PetAttributeService, PetDetectionService, load_
 from .models import Pet, PetPhoto
 
 # A report can carry up to this many photos (different angles of the same pet) —
-# the frontend PhotoUpload caps at the same number.
-MAX_PET_PHOTOS = 4
+# the frontend PhotoUpload caps at the same number. Generous on purpose: a finder
+# may snap a pet from every side, and every angle helps the owner recognise it.
+MAX_PET_PHOTOS = 10
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,7 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
     pet = PetSerializer(read_only=True)
     creator_display_name = serializers.CharField(source="creator.display_name", read_only=True)
     photo_url = serializers.SerializerMethodField()
+    photo_urls = serializers.SerializerMethodField()
     export_png_url = serializers.SerializerMethodField()
     export_pdf_url = serializers.SerializerMethodField()
 
@@ -25,15 +26,29 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
             "distinctive_markings",
             "contact_phone", "contact_email", "reward_enabled", "reward_amount_cents",
             "reward_currency", "qr_target_type", "qr_target_value",
-            "photo_url", "export_png_url", "export_pdf_url", "created_at", "updated_at",
+            "photo_url", "photo_urls", "export_png_url", "export_pdf_url", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "creator", "status", "created_at", "updated_at",
-                            "export_png_url", "export_pdf_url", "photo_url"]
+                            "export_png_url", "export_pdf_url", "photo_url", "photo_urls"]
 
     def get_photo_url(self, obj: Flyer) -> str:
         if obj.pet and obj.pet.photo_path:
             return storage.signed_url(obj.pet.photo_path)
         return ""
+
+    def get_photo_urls(self, obj: Flyer) -> list[str]:
+        """Signed URLs of every uploaded angle, cover first (pet.photos is prefetched)."""
+        pet = obj.pet
+        if not pet:
+            return []
+        # Use prefetched PetPhoto rows when present; fall back to the legacy cover
+        # path for pets created before PetPhoto rows existed.
+        photos = getattr(pet, "_prefetched_objects_cache", {}).get("photos")
+        if photos:
+            return [storage.signed_url(p.photo_path) for p in photos]
+        if pet.photo_path:
+            return [storage.signed_url(pet.photo_path)]
+        return []
 
     def get_export_png_url(self, obj: Flyer) -> str:
         return storage.signed_url(obj.export_png_path) if obj.export_png_path else ""

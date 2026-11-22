@@ -22,7 +22,7 @@ def _mock_asset_rendering(monkeypatch):
 def test_public_gallery_guest_allowed(api_client, django_assert_max_num_queries):
     for _ in range(5):
         FlyerFactory(status=Flyer.Status.ACTIVE)
-    with django_assert_max_num_queries(6):
+    with django_assert_max_num_queries(7):
         resp = api_client.get("/api/flyers")
     assert resp.status_code == 200
     body = resp.json()
@@ -73,7 +73,7 @@ def test_gallery_cursor_pagination(api_client):
 
 def test_flyer_detail_guest_allowed(api_client, django_assert_max_num_queries):
     flyer = FlyerFactory(status=Flyer.Status.ACTIVE)
-    with django_assert_max_num_queries(5):
+    with django_assert_max_num_queries(6):
         resp = api_client.get(f"/api/flyers/{flyer.pk}")
     assert resp.status_code == 200
     body = resp.json()
@@ -84,6 +84,39 @@ def test_flyer_detail_guest_allowed(api_client, django_assert_max_num_queries):
 def test_flyer_detail_404(api_client):
     resp = api_client.get(f"/api/flyers/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+def test_flyer_detail_returns_all_photo_urls(api_client, django_assert_max_num_queries):
+    """The public detail carries every uploaded angle (cover first) for the gallery."""
+    from apps.pets.factories import PetPhotoFactory
+
+    flyer = FlyerFactory(status=Flyer.Status.ACTIVE)
+    flyer.pet.photo_path = "pets/photos/cover.jpg"
+    flyer.pet.save(update_fields=["photo_path"])
+    PetPhotoFactory(pet=flyer.pet, photo_path="pets/photos/cover.jpg")
+    PetPhotoFactory(pet=flyer.pet, photo_path="pets/photos/side.jpg")
+    PetPhotoFactory(pet=flyer.pet, photo_path="pets/photos/back.jpg")
+    with django_assert_max_num_queries(6):
+        resp = api_client.get(f"/api/flyers/{flyer.pk}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["photo_url"].endswith("pets/photos/cover.jpg")
+    assert len(body["photo_urls"]) == 3
+    assert body["photo_urls"][0].endswith("pets/photos/cover.jpg")
+    assert {u.rsplit("/", 1)[-1] for u in body["photo_urls"]} == {
+        "cover.jpg", "side.jpg", "back.jpg",
+    }
+
+
+def test_flyer_detail_photo_urls_falls_back_to_cover(api_client):
+    """Legacy pets (cover path only, no PetPhoto rows) still expose one photo URL."""
+    flyer = FlyerFactory(status=Flyer.Status.ACTIVE)
+    flyer.pet.photo_path = "pets/photos/legacy.jpg"
+    flyer.pet.save(update_fields=["photo_path"])
+    resp = api_client.get(f"/api/flyers/{flyer.pk}")
+    body = resp.json()
+    assert len(body["photo_urls"]) == 1
+    assert body["photo_urls"][0].endswith("pets/photos/legacy.jpg")
 
 
 def test_create_requires_auth(api_client):

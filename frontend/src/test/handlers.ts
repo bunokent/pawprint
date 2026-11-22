@@ -55,6 +55,7 @@ export const mockFlyer = (overrides: Partial<Flyer> = {}): Flyer => ({
   qr_target_type: "flyer_url",
   qr_target_value: "http://localhost:5173/flyers/33333333-3333-3333-3333-333333333333",
   photo_url: "http://localhost:8000/media/pets/photos/bento.jpg",
+  photo_urls: ["http://localhost:8000/media/pets/photos/bento.jpg"],
   export_png_url: "http://localhost:8000/media/exports/bento.png",
   export_pdf_url: "http://localhost:8000/media/exports/bento.pdf",
   created_at: "2026-11-16T09:00:00Z",
@@ -75,6 +76,12 @@ export const mockFoundFlyer = (overrides: Partial<Flyer> = {}): Flyer =>
     location_lng: 120.9989,
     reward_enabled: false,
     reward_amount_cents: 0,
+    photo_url: "http://localhost:8000/media/pets/photos/miso.jpg",
+    photo_urls: [
+      "http://localhost:8000/media/pets/photos/miso.jpg",
+      "http://localhost:8000/media/pets/photos/miso-side.jpg",
+      "http://localhost:8000/media/pets/photos/miso-back.jpg",
+    ],
     ...overrides,
   });
 

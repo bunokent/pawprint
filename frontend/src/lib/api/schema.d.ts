@@ -678,6 +678,8 @@ export interface components {
             qr_target_type?: string;
             qr_target_value?: string;
             readonly photo_url: string;
+            /** @description Signed URLs of every uploaded angle, cover first (pet.photos is prefetched). */
+            readonly photo_urls: string[];
             readonly export_png_url: string;
             readonly export_pdf_url: string;
             /** Format: date-time */
