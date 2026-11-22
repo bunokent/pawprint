@@ -40,6 +40,14 @@
     width: 118mm; height: 118mm; object-fit: cover; border-radius: 5mm;
     border: 3mm solid #7f1d1d; box-shadow: 0 1mm 3mm rgba(0,0,0,0.18);
   }
+  /* ---------- Photo fallback (no pet photo uploaded) ---------- */
+  .photo-fallback {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 118mm; height: 118mm; border-radius: 5mm;
+    border: 3mm solid #7f1d1d; box-shadow: 0 1mm 3mm rgba(0,0,0,0.18);
+    background: #fff7f6;
+  }
+  .photo-fallback svg { width: 68mm; height: 68mm; opacity: 0.22; }
   /* ---------- Name ---------- */
   .name { text-align: center; font-size: 32pt; font-weight: 900; letter-spacing: 0.02em; padding: 1mm 0 1mm; text-transform: uppercase; }
   .meta { text-align: center; font-size: 12.5pt; color: #4a3f38; padding-bottom: 3mm; }
@@ -78,7 +86,7 @@
     {% endif %}
   </div>
   <div class="photo">
-    {% if flyer.pet.photo_path %}<img src="{{ photo_url }}" alt="{{ flyer.pet.name }}">{% endif %}
+    {% if photo_url %}<img src="{{ photo_url }}" alt="{{ flyer.pet.name }}">{% else %}<div class="photo-fallback" role="img" aria-label="No photo uploaded"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="#7f1d1d"><ellipse cx="27" cy="22" rx="8" ry="11"/><ellipse cx="50" cy="15" rx="8" ry="11"/><ellipse cx="73" cy="22" rx="8" ry="11"/><ellipse cx="13" cy="45" rx="6.5" ry="9"/><path d="M50 35c-13 0-24 8-24 20 0 10 7 18 24 26 17-8 24-16 24-26 0-12-11-20-24-20z"/></svg></div>{% endif %}
   </div>
   <div class="name">{% if flyer.pet.name %}{{ flyer.pet.name|upper }}{% elif flyer.mode == "found" %}FOUND PET{% endif %}</div>
   <div class="meta">{{ flyer.pet.get_species_display }} · {{ flyer.pet.breed }} · {{ flyer.pet.color }}{% if flyer.pet.age %} · {{ flyer.pet.age }} yrs{% endif %}</div>

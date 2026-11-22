@@ -1066,7 +1066,22 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   exit 0; rewards 100%), `tsc -b` clean; e2e journey ⑧ unaffected (asserts the
   mode legend, which is unchanged).
 
-**Final status:** backend **164 passed @ 95.66%** (100% on all services/drivers incl.
+- **Phase 42** — Flyer photo fallback: every printed flyer now renders a visual even
+  when the pet has no uploaded photo. Two changes: (1) `render_flyer_html` in
+  `apps/flyers/tasks.py` now resolves and passes `photo_url` as an explicit context
+  variable (it was used in both templates but never injected — a pre-existing bug that
+  silently left the photo frame empty even when a photo existed); (2) both A4 templates
+  (`templates/flyers/emergency.html`, `templates/flyers/outreach.html`) replace the bare
+  `{% if flyer.pet.photo_path %}<img>{% endif %}` with a conditional that shows the `<img>`
+  when `photo_url` is set, and falls back to an inline SVG paw-print silhouette otherwise.
+  The fallback div (`<div class="photo-fallback">`) matches each template's color scheme
+  (crimson `#7f1d1d` for emergency, sage `#2f6f5e` for outreach), carries
+  `role="img" aria-label="No photo uploaded"` for accessibility, and needs no external
+  assets — it renders correctly in WeasyPrint and Playwright. Three new unit tests in
+  `tests/unit/test_coverage_gaps.py` cover with-photo, no-photo-emergency and
+  no-photo-outreach cases. Verified: **167 passed @ 95.67%**.
+
+**Final status:** backend **167 passed @ 95.67%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
 frontend **129 vitest tests** @ 89.85/81.75/84.85/91.20 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
@@ -1074,4 +1089,5 @@ CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run dir
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
 vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
 no notifications feature; `/map` has mode + DB-species filters;
+flyer templates always render a photo frame (SVG paw-print fallback when no photo);
 `npm run docs:pdf` regenerated.

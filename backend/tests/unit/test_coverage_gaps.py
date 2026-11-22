@@ -320,3 +320,58 @@ def test_strip_exif_converts_palette_mode_and_thumb_rgb():
     Image.new("L", (16, 16)).save(buf2, format="PNG")
     thumb = PetDetectionService.make_thumbnail(buf2.getvalue())
     assert Image.open(io.BytesIO(thumb)).mode == "RGB"
+
+
+# ---------------------------------------------------------------- flyer HTML rendering (photo fallback)
+def test_render_flyer_html_with_photo(monkeypatch):
+    """When the pet has a photo_path, photo_url is an <img> and no fallback div appears."""
+    from apps.flyers.factories import FlyerFactory as _FF
+    from apps.flyers.models import Flyer as _Flyer
+    from apps.flyers.tasks import render_flyer_html
+    from apps.pets.factories import PetFactory as _PF
+
+    monkeypatch.setattr("apps.common.storage.signed_url", lambda path: f"https://cdn.example.com/{path}")
+    pet = _PF(photo_path="pets/photos/rex.jpg")
+    flyer = _FF(pet=pet, mode=_Flyer.Mode.EMERGENCY)
+
+    html = render_flyer_html(flyer)
+
+    assert 'src="https://cdn.example.com/pets/photos/rex.jpg"' in html
+    # The fallback <div> should not be present when a real photo URL exists
+    assert '<div class="photo-fallback"' not in html
+
+
+def test_render_flyer_html_without_photo_emergency(monkeypatch):
+    """When the pet has no photo, the emergency template renders the SVG fallback."""
+    from apps.flyers.factories import FlyerFactory as _FF
+    from apps.flyers.models import Flyer as _Flyer
+    from apps.flyers.tasks import render_flyer_html
+    from apps.pets.factories import PetFactory as _PF
+
+    monkeypatch.setattr("apps.common.storage.signed_url", lambda path: f"https://cdn.example.com/{path}")
+    pet = _PF(photo_path="")
+    flyer = _FF(pet=pet, mode=_Flyer.Mode.EMERGENCY)
+
+    html = render_flyer_html(flyer)
+
+    assert "<img" not in html.split('<div class="photo">')[1].split("</div>")[0]
+    assert "photo-fallback" in html
+    assert "<svg" in html
+
+
+def test_render_flyer_html_without_photo_outreach(monkeypatch):
+    """When the pet has no photo, the outreach template renders the SVG fallback."""
+    from apps.flyers.factories import FlyerFactory as _FF
+    from apps.flyers.models import Flyer as _Flyer
+    from apps.flyers.tasks import render_flyer_html
+    from apps.pets.factories import PetFactory as _PF
+
+    monkeypatch.setattr("apps.common.storage.signed_url", lambda path: f"https://cdn.example.com/{path}")
+    pet = _PF(photo_path="")
+    flyer = _FF(pet=pet, mode=_Flyer.Mode.OUTREACH)
+
+    html = render_flyer_html(flyer)
+
+    assert "<img" not in html.split('<div class="photo">')[1].split("</div>")[0]
+    assert "photo-fallback" in html
+    assert "<svg" in html

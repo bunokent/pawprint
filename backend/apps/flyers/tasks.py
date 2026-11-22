@@ -31,9 +31,16 @@ def render_flyer_html(flyer) -> str:  # noqa: ANN001
     qr_svg = QrService.svg_for_url(target)
     # Deterministic design variant per flyer ID so every printed flyer looks unique.
     variant = int(flyer.pk.hex[:8], 16) % 4 + 1
+    photo_url = storage.signed_url(flyer.pet.photo_path) if flyer.pet and flyer.pet.photo_path else ""
     return render_to_string(
         template,
-        {"flyer": flyer, "qr_svg": qr_svg, "pet": flyer.pet, "design_variant": variant},
+        {
+            "flyer": flyer,
+            "qr_svg": qr_svg,
+            "pet": flyer.pet,
+            "design_variant": variant,
+            "photo_url": photo_url,
+        },
     )
 
 
