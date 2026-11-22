@@ -34,8 +34,8 @@ describe("PetMapPage", () => {
     expect(await screen.findByTestId("pet-map")).toBeInTheDocument();
     // Map mode: no list fallback.
     expect(screen.queryByTestId("pin-list")).not.toBeInTheDocument();
-    // OSM tile layer on the map container.
-    expect(state.tiles[0].url).toContain("tile.openstreetmap.org");
+    // CartoCDN Voyager tile layer on the map container.
+    expect(state.tiles[0].url).toContain("cartocdn.com");
     expect(state.maps[0].opts.center).toEqual([mockFlyer().location_lat, mockFlyer().location_lng]);
 
     await waitFor(() => expect(state.markers).toHaveLength(2));
@@ -51,7 +51,7 @@ describe("PetMapPage", () => {
     // Click the found pin (second marker) → popup with details + Show Full Details link.
     const user = userEvent.setup();
     (state.listeners["marker:click"] ?? [])[1]({});
-    // Tapping a pin also centres it on the map (panTo with the pin's lat/lng).
+    // Tapping a pin also flies to it on the map (flyTo with the pin's lat/lng).
     expect(state.maps[0].panTos).toEqual([{ lat: mockFoundFlyer().location_lat, lng: mockFoundFlyer().location_lng }]);
     const popup = await screen.findByTestId("map-pin-popup");
     expect(popup).toHaveTextContent("Miso");

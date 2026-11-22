@@ -57,6 +57,13 @@ export function makeFakeLeaflet(state: FakeLeafletState): Record<string, unknown
         panTo(ll: unknown) {
           m.panTos.push(normLatLng(ll));
         },
+        flyTo(ll: unknown, zoom?: unknown) {
+          m.panTos.push(normLatLng(ll));
+          if (zoom != null) (m as any).lastFlyZoom = zoom;
+        },
+        getZoom() {
+          return 13;
+        },
         setView() {},
         fitBounds() {},
         remove() {

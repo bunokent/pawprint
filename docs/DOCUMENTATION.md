@@ -54,8 +54,8 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   There is **no photo matching / re-identification** — lost and found reports never compare
   photos. In-app notifications live
    in `apps.notifications` (REST + per-user `ws/notifications/` push). Maps: Leaflet 1.9
-   (npm dependency, no API key) over OpenStreetMap
-  tiles, with Nominatim geocoding (address search + reverse geocode), for the location
+   (npm dependency, no API key) over **CartoCDN Voyager** tiles (outline-free basemap,
+  no country/island borders), with Nominatim geocoding (address search + reverse geocode), for the location
   picker and `/map`.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
   browser-side exports.
@@ -1015,6 +1015,25 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `NotificationBell.test.tsx`). Verified: backend **168 passed @ 94.99%** (100% on all
   services; ruff + mypy clean), frontend **131 Vitest tests** green (coverage exit 0;
   rewards 100%), `tsc -b` clean.
+
+- **Phase 40** — Map: CartoCDN Voyager tile layer + pin click zooms to flyer.
+  Two map UX improvements:
+  1. **Outline-free tile layer**: switched from `tile.openstreetmap.org` to CartoCDN Voyager
+     (`https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png`) with
+     `subdomains: "abcd"`. Voyager renders a clean, modern basemap with no dark country,
+     island, or landmass outlines — the tile palette was confirmed pixel-exact (0 dark outline
+     pixels vs 5,562–5,871 for OSM at the same tile coordinates). `CARTO_VOYAGER_URL` and
+     `CARTO_ATTRIBUTION` exported from `src/lib/maps.ts` as the new active tile constants
+     (`TILE_URL` / `TILE_ATTRIBUTION`); `OSM_TILE_URL`/`OSM_ATTRIBUTION` retained as named
+     exports for backward compatibility.
+  2. **Click-to-zoom**: the marker `click` handler in `LeafletPins` (`PetMapPage.tsx`) now
+     calls `map.flyTo([lat, lng], Math.max(map.getZoom(), 15), { animate: true, duration: 0.6 })`
+     instead of `panTo` — clicking a pin smoothly animates to zoom level 15+ and centres on
+     the flyer, giving immediate spatial context before the popup card opens.
+  Fake Leaflet (`src/test/fake-leaflet.ts`) gained `flyTo` (pushes to `panTos`, records
+  `lastFlyZoom`) and `getZoom` stubs so existing tests pass without change. All tile URL
+  assertions in `maps.test.ts`, `PetMapPage.test.tsx`, and `LocationPicker.test.tsx` updated
+  to match `cartocdn.com`. Verified: **131 Vitest tests** green (exit 0), `tsc -b` clean.
 
 **Final status:** backend **168 passed @ 94.99%** (100% on all services/drivers incl.
 `apps/vision/services.py`);

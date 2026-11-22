@@ -21,6 +21,21 @@ export const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 export const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
 
+/**
+ * CartoCDN Voyager tile layer — clean, modern basemap with no dark country or
+ * island outlines. Used as the default tile layer instead of OSM to keep the
+ * map background uncluttered and consistent with the PawPrint design system.
+ */
+export const CARTO_VOYAGER_URL =
+  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+export const CARTO_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>';
+
+/** Active tile URL — CartoCDN Voyager (outline-free). */
+export const TILE_URL = CARTO_VOYAGER_URL;
+/** Active tile attribution. */
+export const TILE_ATTRIBUTION = CARTO_ATTRIBUTION;
+
 export interface MapInitOptions {
   center?: L.LatLngExpression;
   zoom?: number;
@@ -34,7 +49,7 @@ export interface MapInitOptions {
 export function createMap(container: HTMLElement, opts: MapInitOptions = {}): L.Map {
   const { center = DEFAULT_CENTER, zoom = DEFAULT_ZOOM, scrollWheelZoom = true } = opts;
   const map = L.map(container, { center, zoom, scrollWheelZoom });
-  L.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(map);
+  L.tileLayer(CARTO_VOYAGER_URL, { maxZoom: 19, attribution: CARTO_ATTRIBUTION, subdomains: "abcd" }).addTo(map);
   return map;
 }
 

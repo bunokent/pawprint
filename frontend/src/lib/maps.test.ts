@@ -5,6 +5,8 @@ import { http, HttpResponse } from "msw";
 import { mswServer } from "@/test/setup";
 import { mockFlyer, mockFoundFlyer } from "@/test/handlers";
 import {
+  CARTO_ATTRIBUTION,
+  CARTO_VOYAGER_URL,
   createDropMarker,
   createMap,
   DEFAULT_CENTER,
@@ -12,8 +14,6 @@ import {
   dropPinIcon,
   groupPins,
   haversineMeters,
-  OSM_ATTRIBUTION,
-  OSM_TILE_URL,
   petPinIcon,
   pinRingColor,
   reverseGeocode,
@@ -41,15 +41,15 @@ beforeEach(async () => {
 });
 
 describe("createMap", () => {
-  it("creates a Leaflet map with the OSM tile layer, centred on Manila by default", () => {
+  it("creates a Leaflet map with the CartoCDN Voyager tile layer, centred on Manila by default", () => {
     const el = document.createElement("div");
     const map = createMap(el);
     expect(state.maps).toHaveLength(1);
     expect(state.maps[0].el).toBe(el);
     expect(state.maps[0].opts).toMatchObject({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, scrollWheelZoom: true });
     expect(state.tiles).toHaveLength(1);
-    expect(state.tiles[0].url).toBe(OSM_TILE_URL);
-    expect(state.tiles[0].opts).toMatchObject({ maxZoom: 19, attribution: OSM_ATTRIBUTION });
+    expect(state.tiles[0].url).toBe(CARTO_VOYAGER_URL);
+    expect(state.tiles[0].opts).toMatchObject({ maxZoom: 19, attribution: CARTO_ATTRIBUTION });
     expect(map).toBe(state.maps[0]);
   });
 

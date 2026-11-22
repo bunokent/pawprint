@@ -105,7 +105,7 @@ function LeafletPins({ flyers }: { flyers: Flyer[] }) {
         }).addTo(map);
         marker.on("click", () => {
           setSelectedKey(g.key);
-          map?.panTo([g.lat, g.lng]);
+          map?.flyTo([g.lat, g.lng], Math.max(map.getZoom(), 15), { animate: true, duration: 0.6 });
         });
       }
       if (groups.length > 1) map.fitBounds(bounds, { padding: [40, 40] });
