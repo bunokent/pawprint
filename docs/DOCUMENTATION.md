@@ -58,21 +58,28 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   picker and `/map`.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
   browser-side exports.
-- **Infra**: **no Docker** — dependencies run directly on the host (setup in
-  `.env.example`): a dedicated local PostgreSQL 16 cluster on **127.0.0.1:5433** (kept off
-  any system cluster on :5432 so tests never touch real data), a Redis-compatible server
-  (valkey, ships `redis-server`) on **127.0.0.1:6379**, and **mailpit** for dev email
-  (SMTP :1025, UI :8025). On the dev machine these run as systemd user services
-  (`pawprint-postgres`, `redis-pawprint`, `mailpit`) — no sudo needed. Run the app with
-  `cd backend && .venv/bin/python manage.py migrate && .venv/bin/python manage.py runserver 8000`
-  plus `celery -A config worker -Q flyers,webhooks,images,default -l info`, and
-  `cd frontend && npm run dev` → **http://localhost:5173** (Vite proxies `/api`, `/media`,
-  `/ws` to `PAWPRINT_API_URL`, default `http://127.0.0.1:8000`). Storage is Cloudinary, so
-  no local object storage is needed. Host-side `python manage.py ...` auto-loads the root
-  `.env` via python-dotenv (real env vars always win over it). For tests and Playwright
-  E2E, `PAWPRINT_TESTING=1` (or running under pytest) switches to locmem cache, in-memory
-  channel layer, eager Celery, `memory://` broker and filesystem storage — no
-  Redis/Cloudinary needed.
+- **Infra**: **Docker Compose** (`docker-compose.yml`, `docker compose up` starts
+  everything): `postgres:16` (published on host :5433 so the existing local tooling keeps
+  working), `redis:7-alpine` (:6379), `mailpit` (SMTP :1025, UI :8025), **`web`** — the
+  backend image (`backend/Dockerfile`) whose entrypoint waits for PostgreSQL, runs
+  `manage.py migrate`, then `python manage.py runserver 0.0.0.0:8000` (:8000),
+  **`celery`** — same image running `celery -A config worker -Q
+  flyers,webhooks,images,default -l info`, and **`frontend`** — `node:24-slim` running
+  `npm run dev -- --host 0.0.0.0` (Vite) on **http://localhost:5173**, with the server-side
+  proxy `PAWPRINT_API_URL=http://web:8000` so `/api`, `/media`, `/ws` reach the `web`
+  service inside the compose network. Secrets come from the root `.env` (`env_file`);
+  compose overrides `POSTGRES_HOST`/`REDIS_URL`/`EMAIL_HOST` with service names. The
+  vision weights are **baked into the backend image at build time** by
+  `backend/scripts/download_weights.sh` (direct download, sha256-pinned, **no Hugging
+  Face token** — see §8); named volumes keep them when `./backend` is mounted for live
+  reload. Host-only fallback (no Docker) is still documented in `.env.example`:
+  local PostgreSQL 16 on **127.0.0.1:5433**, valkey on **127.0.0.1:6379**, mailpit,
+  `python manage.py runserver 8000` + `celery -A config worker ...` + `npm run dev`.
+  Storage is Cloudinary, so no local object storage is needed. Host-side
+  `python manage.py ...` auto-loads the root `.env` via python-dotenv (real env vars
+  always win over it). For tests and Playwright E2E, `PAWPRINT_TESTING=1` (or running
+  under pytest) switches to locmem cache, in-memory channel layer, eager Celery,
+  `memory://` broker and filesystem storage — no Redis/Cloudinary needed.
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
   `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
   `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
@@ -270,9 +277,15 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 - The YOLO loader falls back to `yolov8s-worldv2.pt` if a stale non-World `YOLO_MODEL_PATH` is
   configured, and raises a clear `RuntimeError` if the checkpoint does not contain a World head.
   Generated weights (`backend/yolov8s-worldv2.pt`, `/weights/clip/ViT-B-32.pt`) are git-ignored;
-  Ultralytics/CLIP load them on first lazy load. There is no other vision model and no
-  Hugging Face download: the lost/found photo-matching feature (MegaDescriptor re-ID via timm)
-  was removed in Phase 39.
+  Ultralytics/CLIP load them on first lazy load. There is no other vision model and **no
+  Hugging Face download or token**: `backend/scripts/download_weights.sh` fetches
+  `yolov8s-worldv2.pt` directly from the `ultralytics/assets` GitHub release and
+  `ViT-B-32.pt` from OpenAI's public blob, both verified against pinned sha256 checksums.
+  The script runs at backend Docker-image build time (weights baked in) and can be run
+  standalone on the host. `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1` (set in `.env` /
+  the image / compose) guarantee no library ever phones home to Hugging Face — this
+  supersedes the HF_TOKEN note in the Phase 35 log entry. The lost/found photo-matching
+  feature (MegaDescriptor re-ID via timm) was removed in Phase 39.
 - **Pass**: EXIF stripped via Pillow, thumbnail generated, upload to private Cloudinary
   (delivery type `private`), `PetDetectionLog(passed=True)`, signed preview URL returned.
 - **Fail**: bytes discarded before any storage write, `PetDetectionLog(passed=False)`,
@@ -1164,13 +1177,35 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   thumbs, share popover anchored right on phones with no horizontal overflow, QR modal,
   lightbox). Frontend: **145 vitest tests** @ 86.01/78.40/83.44/87.46, `tsc -b` + `vite build`
   green.
+- **Phase 47** — Tokenless weight downloads + full Docker Compose stack. (1) Vision
+  weights no longer use any Hugging Face token: new `backend/scripts/download_weights.sh`
+  downloads `yolov8s-worldv2.pt` directly from the `ultralytics/assets` GitHub release
+  (`…/releases/download/v8.3.0/yolov8s-worldv2.pt`) and CLIP `ViT-B-32.pt` from OpenAI's
+  public Azure blob, verifying both against pinned sha256 checksums; `HF_TOKEN` was removed
+  from the local `.env`, and `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1` make tokenless
+  loading a hard guarantee (supersedes the Phase 35 HF_TOKEN note). (2) `docker compose up`
+  now runs the whole app: `postgres:16` (:5433), `redis:7-alpine`, `mailpit`, **`web`**
+  (`backend/Dockerfile`: python:3.12-slim, CPU-only torch via pyproject `pytorch-cpu`
+  source, weights baked in by the script, entrypoint waits for PG + migrates + runs
+  `python manage.py runserver 0.0.0.0:8000` on :8000), **`celery`** (same image,
+  `celery -A config worker -Q flyers,webhooks,images,default -l info`), and **`frontend`**
+  (`node:24-slim`, `npm run dev -- --host 0.0.0.0` on :5173 with `PAWPRINT_API_URL=http://web:8000`
+  for the Vite proxy). Root `.env` feeds `env_file`; compose overrides point at service
+  names; named volumes preserve the baked weights over the mounted `./backend`.
+  `docker compose config` clean, `docker compose build` green. Guard tests in
+  `backend/tests/unit/test_weight_downloads.py` pin the direct URLs, the checksums, the
+  absence of any HF token, and the web/celery/frontend services. Verified:
+  **5 new tests pass** (`pytest tests/unit/test_weight_downloads.py`), download script
+  re-run verifies both cached weights.
 
 **Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
 frontend **145 vitest tests** @ 86.01/78.40/83.44/87.46 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
-CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
-the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
+CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run via
+`docker compose up` (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025, web :8000,
+celery worker, Vite dev :5173 — host-only fallback documented in `.env.example`);
+vision weights download directly with no Hugging Face token;
 vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
 no notifications feature; no seed/demo data — all E2E journeys are self-contained;
 `/map` has mode + DB-species filters;

@@ -1,0 +1,121 @@
+# PawPrint dev stack — `docker compose up` starts everything:
+#   postgres (:5433 host) · redis (:6379) · mailpit (:1025/:8025)
+#   web      Django API + migrations   http://localhost:8000
+#   celery   worker on flyers,webhooks,images,default queues
+#   frontend Vite dev server          http://localhost:5173  (proxies /api,/media,/ws to web)
+#
+# Secrets come from the root .env (env_file); the `environment:` blocks below
+# override host-local addresses with in-network service names.
+name: pawprint
+
+services:
+  postgres:
+    image: postgres:16
+    env_file: .env
+    ports:
+      - "5433:5432" # host tooling keeps using 127.0.0.1:5433 from .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025" # dev SMTP
+      - "8025:8025" # web UI
+
+  web:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: "1025"
+      # Weights are baked into the image by direct download — never via Hugging Face.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      DJANGO_ALLOWED_HOSTS: "*"
+      DJANGO_DEBUG: "1"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      # Named volumes keep the baked-in weights even though ./backend is mounted over /app/backend.
+      - yolo-weights:/app/backend/yolov8s-worldv2.pt
+      - clip-weights:/app/weights/clip/ViT-B-32.pt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python manage.py runserver 0.0.0.0:8000
+
+  celery:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: "1025"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      DJANGO_ALLOWED_HOSTS: "*"
+    volumes:
+      - ./backend:/app/backend
+      - yolo-weights:/app/backend/yolov8s-worldv2.pt
+      - clip-weights:/app/weights/clip/ViT-B-32.pt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+    command: celery -A config worker -Q flyers,webhooks,images,default -l info
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      # Server-side Vite proxy target: the web service inside the compose network.
+      PAWPRINT_API_URL: http://web:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  pgdata:
+  redisdata:
+  yolo-weights:
+  clip-weights:
+  frontend-node-modules:

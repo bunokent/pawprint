@@ -1,0 +1,18 @@
+# Keep the backend build context small and secret-free. Vision weights are NOT
+# copied: the image downloads them itself via backend/scripts/download_weights.sh
+# (direct GitHub/OpenAI URLs, sha256-pinned, no Hugging Face token).
+.git
+.github
+.venv
+**/__pycache__
+**/node_modules
+dist
+coverage
+.env
+.env.local
+backend/*.pt
+backend/.test-media
+weights
+docs
+frontend
+*.md
