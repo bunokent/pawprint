@@ -52,8 +52,7 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   and color, with raw confidences returned on the upload response. Labels are grouped into
   domestic, zoo/exotic, reptile, amphibian, small-mammal, farm, bird, and fish categories.
   There is **no photo matching / re-identification** — lost and found reports never compare
-  photos. In-app notifications live
-   in `apps.notifications` (REST + per-user `ws/notifications/` push). Maps: Leaflet 1.9
+  photos — and **no notifications feature** (removed in Phase 40). Maps: Leaflet 1.9
    (npm dependency, no API key) over **CartoCDN Voyager** tiles (outline-free basemap,
   no country/island borders), with Nominatim geocoding (address search + reverse geocode), for the location
   picker and `/map`.
@@ -154,8 +153,6 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `GET /api/rewards/{id}/status` | Auth (payer/creator) | Poll payment status |
 | `GET /api/rewards/mine` | Auth | Own reward history |
 | `POST /api/webhooks/stripe` / `POST /api/webhooks/paymongo` | Signature | Idempotent webhooks |
-| `GET /api/notifications` | Auth | Latest notifications + `unread_count` |
-| `POST /api/notifications/read` | Auth | Mark all (or given `ids`) notifications read |
 | `GET /api/health` | Public | Liveness probe |
 | `GET /api/schema` | Public | drf-spectacular OpenAPI schema |
 
@@ -330,7 +327,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   **Found** / Adoptable — + FTS search + cursor pagination), `/map` **Pet map** (public:
   Leaflet/OpenStreetMap map with one circular photo pin per active lost/found flyer — crimson
   ring = lost, terracotta = found — popup card with name, species·breed·color, date, status and
-  a "Show Full Details" link to `/flyers/:id`; if the map cannot be created it renders the
+  a "Show Full Details" link to `/flyers/:id`; filter pills for mode (all/lost/found) **and
+  species** — the species row is built from the distinct `pet.species` values saved in the DB
+  for the mapped flyers, and the two filters combine, with a "No pets match these filters"
+  empty state + Clear filters reset; if the map cannot be created it renders the
   same pins as a list), `/flyers/:id` Public Flyer + QR + print/export + owner resolve/delete + reward
   checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
@@ -380,7 +380,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 11. Testing & Coverage
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  → **168 passed, 94.99% total** (100% on all `services.py`, `drivers.py`,
+  → **164 passed, 95.66% total** (100% on all `services.py`, `drivers.py`,
   `apps/vision/services.py`, and the Cloudinary storage driver);
   `django_assert_max_num_queries` ceilings on list/detail endpoints (map endpoint at 6);
   429 tests for the
@@ -404,7 +404,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
   `factory-boy` factories.
-- Frontend: `npm run test:run` → **131 Vitest tests, 11 files** (RTL + MSW, jsdom), including
+- Frontend: `npm run test:run` → **129 Vitest tests, 10 files** (RTL + MSW, jsdom), including
   drag-and-drop, multi-file photo picking (sequential uploads, thumbnail strip, remove /
   make-cover, 4-photo cap + "Photo limit reached" lock), real Axios upload-progress callbacks,
   all four live processing labels, the animated
@@ -418,9 +418,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `LocationPicker` map mode (fake `leaflet` via `src/test/fake-leaflet.ts`: pin drop + drag
   reverse-geocode through MSW-mocked Nominatim, address-suggestion dropdown) and its
   map-init-failure fallback, the `/map` page (Leaflet photo pins + popup, pin-list fallback,
-  empty/error states), and `src/lib/maps.ts` helper tests (OSM tile layer, pin icons,
-  Nominatim search/reverse incl. failure fallback);
-  `npm run test:coverage` → **88.89% stmts / 81.31% branches / 83.67% funcs / 90.39% lines**
+  empty/error states, species filter pills derived from `pet.species` + mode×species
+  combination + clear-filters reset), and `src/lib/maps.ts` helper tests (OSM tile layer,
+  pin icons, Nominatim search/reverse incl. failure fallback);
+  `npm run test:coverage` → **89.85% stmts / 81.75% branches / 84.85% funcs / 91.20% lines**
   (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
   `npx tsc -b --noEmit` clean; `npm run build` green.
 - E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **10 journeys /
@@ -790,6 +791,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 - **Phase 30** — Lost/found photo matching + notifications + recoloured map pins.
   *(Phases 30–35 built the lost/found photo-matching feature (CLIP embeddings →
   MegaDescriptor re-ID) — **superseded: the whole feature was removed in Phase 39**;
+  the notifications app added here was likewise removed in Phase 40;
   the entries below are kept as history.)*
   Backend: new `apps.notifications` app (`Notification` model; `GET /api/notifications`
   → `{results, unread_count}`, `POST /api/notifications/read`; per-user websocket
@@ -1035,11 +1037,41 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   assertions in `maps.test.ts`, `PetMapPage.test.tsx`, and `LocationPicker.test.tsx` updated
   to match `cartocdn.com`. Verified: **131 Vitest tests** green (exit 0), `tsc -b` clean.
 
-**Final status:** backend **168 passed @ 94.99%** (100% on all services/drivers incl.
+- **Phase 40** — Removed the notifications feature end-to-end. Backend: deleted
+  `apps/notifications` entirely (Notification model, service, REST views
+  `GET /api/notifications` + `POST /api/notifications/read`, the
+  `ws/notifications/` consumer and its migrations), dropped the app from
+  `INSTALLED_APPS` and `config/urls.py`; `config/routing.py` keeps only the public
+  `ws/flyers/` broadcast, so `config/asgi.py` no longer wraps websockets in
+  `AuthMiddlewareStack`. Deleted `tests/integration/test_notifications.py`;
+  `schema.yml` regenerated (no notification paths). Frontend: deleted
+  `src/features/notifications/` (query + mark-read mutation) and
+  `src/components/notifications/NotificationBell.tsx` (+ its test), removed the
+  bell from the `AppShell` nav and the notification MSW handlers/mocks from
+  `src/test/handlers.ts`; `schema.d.ts` regenerated via `npm run typegen`.
+  Verified: backend **164 passed @ 95.66%** (100% on all services; ruff + mypy
+  clean, `manage.py check` 0 issues), frontend **129 vitest tests** green,
+  `tsc -b` clean.
+
+- **Phase 41** — Species filter on the interactive pet map (`/map`). The page now
+  renders a second pill row (`aria-label="Species filter"`) built from the distinct
+  `pet.species` values saved in the DB for the mapped flyers — "All species (N)" plus
+  one pill per species with its count (label capitalised for display). The mode
+  (all/lost/found) and species filters combine in one `filteredFlyers` memo, so both
+  the Leaflet pins and the pin-list fallback respect them; when the combination
+  matches nothing, an empty state ("No pets match these filters") offers a
+  Clear-filters reset. Tests: species pills derived from the payload, dog-only
+  filter leaves exactly the dog pin, lost+cat → empty state → clear filters
+  restores all pins. Verified: **129 vitest @ 89.85/81.75/84.85/91.20** (coverage
+  exit 0; rewards 100%), `tsc -b` clean; e2e journey ⑧ unaffected (asserts the
+  mode legend, which is unchanged).
+
+**Final status:** backend **164 passed @ 95.66%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
-frontend **131 vitest tests** @ 88.89/81.31/83.67/90.39 + Playwright journeys
+frontend **129 vitest tests** @ 89.85/81.75/84.85/91.20 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
 vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
+no notifications feature; `/map` has mode + DB-species filters;
 `npm run docs:pdf` regenerated.
