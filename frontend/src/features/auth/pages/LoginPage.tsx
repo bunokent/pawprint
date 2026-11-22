@@ -1,4 +1,4 @@
-import { startTransition, useActionState, useEffect, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +9,7 @@ import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
 import { FieldShell, IconInput } from "@/components/ui/field";
-import { GoogleButton } from "@/features/auth/components/GoogleButton";
+import { GoogleBrandIcon, GoogleButton } from "@/features/auth/components/GoogleButton";
 import { PasswordInput } from "@/features/auth/components/PasswordInput";
 
 const loginSchema = z.object({
@@ -29,7 +29,18 @@ export function LoginPage() {
   const navigate = useNavigate();
   const setUser = useAuth((s) => s.setUser);
   const user = useAuth((s) => s.user);
+
+  const code = params.get("code");
+  const errorParam = params.get("error");
+  const errorDescription = params.get("error_description");
+
   const [callbackError, setCallbackError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState<boolean>(() => Boolean(code && !errorParam));
+
+  // Single-use OAuth authorization code exchange guard.
+  // In React 18/19 StrictMode, effects run twice on mount. Google authorization codes
+  // can only be exchanged once; exchanging a second time produces an invalid_grant error.
+  const exchangedCodeRef = useRef<string | null>(null);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -40,33 +51,147 @@ export function LoginPage() {
     try {
       const u = await authApi.login(values);
       setUser(u);
-      navigate("/");
+      const target = params.get("next") || params.get("redirect") || "/";
+      navigate(target.startsWith("/") ? target : "/");
       return { error: null };
     } catch (e) {
       return { error: e instanceof ApiError ? e.message : "Login failed. Please try again." };
     }
   }, initialState);
 
-  // Google redirects back here with ?code=… — exchange it for a session.
-  const code = params.get("code");
+  // Handle Google OAuth error returned directly in query string (e.g. user cancelled prompt).
   useEffect(() => {
-    if (!code) return;
+    if (errorParam) {
+      setIsSigningIn(false);
+      setCallbackError(errorDescription || "Google sign-in was cancelled or denied.");
+      setParams({}, { replace: true });
+    }
+  }, [errorParam, errorDescription, setParams]);
+
+  // Google redirects back here with ?code=… — exchange it for a session.
+  useEffect(() => {
+    if (!code || errorParam) return;
+
+    if (exchangedCodeRef.current === code) return;
+    exchangedCodeRef.current = code;
+    setIsSigningIn(true);
+    setCallbackError(null);
+
     void (async () => {
       try {
         const { user: u } = await authApi.googleCallback(code, REDIRECT_URI);
         setUser(u);
         setParams({}, { replace: true });
-        navigate("/");
+        const target = params.get("next") || params.get("redirect") || "/";
+        navigate(target.startsWith("/") ? target : "/");
       } catch (e) {
+        // If the user is already authenticated (e.g. from an in-flight duplicate), proceed home
+        if (useAuth.getState().user) {
+          navigate("/");
+          return;
+        }
+        setIsSigningIn(false);
         setCallbackError(e instanceof ApiError ? e.message : "Google sign-in failed.");
         setParams({}, { replace: true });
       }
     })();
-  }, [code, setParams, setUser, navigate]);
+  }, [code, errorParam, params, setParams, setUser, navigate]);
 
   useEffect(() => {
-    if (user) navigate("/");
-  }, [user, navigate]);
+    if (user && !isSigningIn) {
+      const target = params.get("next") || params.get("redirect") || "/";
+      navigate(target.startsWith("/") ? target : "/");
+    }
+  }, [user, isSigningIn, params, navigate]);
+
+  if (isSigningIn && !callbackError) {
+    return (
+      <section style={{ padding: "72px 0" }}>
+        <div className="wrap" style={{ maxWidth: 480 }}>
+          <h1 className="t-h1" data-enter style={{ fontSize: "clamp(28px, 4vw, 40px)", marginBottom: 8 }}>
+            Welcome back
+          </h1>
+          <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
+            Verifying your Google credentials.
+          </p>
+
+          <div
+            className="card"
+            style={{
+              padding: "44px 32px",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+            }}
+            data-enter="3"
+            role="status"
+            aria-live="polite"
+          >
+            <div
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: "50%",
+                background: "var(--color-surface)",
+                border: "1.5px solid var(--color-line)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 2px 8px rgb(28 20 16 / 0.06)",
+                marginBottom: 20,
+              }}
+            >
+              <GoogleBrandIcon size={26} />
+            </div>
+
+            <h2 className="t-h2" style={{ fontSize: "clamp(22px, 3.2vw, 28px)", marginBottom: 10 }}>
+              Signing you in…
+            </h2>
+
+            <p
+              className="t-lead"
+              style={{
+                fontSize: 15,
+                margin: "0 auto 24px",
+                maxWidth: 340,
+                color: "var(--color-muted)",
+              }}
+            >
+              Connecting your Google account and opening your PawPrint workspace.
+            </p>
+
+            <div
+              role="progressbar"
+              aria-label="Signing in with Google"
+              style={{
+                height: 6,
+                width: "100%",
+                maxWidth: 240,
+                overflow: "hidden",
+                borderRadius: 999,
+                background: "rgb(28 20 16 / 0.1)",
+              }}
+            >
+              <span
+                className="photo-upload__progress-fill--indeterminate"
+                style={{
+                  display: "block",
+                  height: "100%",
+                  borderRadius: "inherit",
+                  background: "var(--color-sage)",
+                }}
+              />
+            </div>
+
+            <p className="t-small" style={{ color: "var(--color-muted)", marginTop: 20 }}>
+              Taking you to your account…
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section style={{ padding: "72px 0" }}>
@@ -84,7 +209,6 @@ export function LoginPage() {
               {callbackError}
             </div>
           )}
-          {code && !callbackError && <p className="t-body">Finishing Google sign-in…</p>}
 
           <form
             onSubmit={form.handleSubmit((values) => startTransition(() => submit(values)))}

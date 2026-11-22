@@ -86,8 +86,13 @@ export function SettingsPage() {
     initialState,
   );
 
+  useEffect(() => {
+    if (checked && !user) {
+      navigate("/auth/login", { replace: true });
+    }
+  }, [checked, user, navigate]);
+
   if (!user) {
-    if (checked) navigate("/auth/login", { replace: true });
     return null;
   }
 

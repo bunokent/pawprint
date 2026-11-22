@@ -174,7 +174,9 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   frontend axios client sends `X-CSRFToken` on mutations (`src/lib/api/client.ts`).
 - Google/Gmail OAuth 2.0 via django-allauth: one click registers a new Gmail account,
   links an existing email account, or signs in an existing Google user. The SPA handles the
-  redirect at `/auth/login?code=…` (`LoginPage` exchanges the code via
+  redirect at `/auth/login?code=…` (`LoginPage` guards against React StrictMode duplicate
+  invocations with `exchangedCodeRef`, presents an editorial "Signing in…" state with the Google
+  brand icon and progress indicator adhering to the `taste` skill, and exchanges the code via
   `POST /api/auth/google/callback`).
 - Auth mutations are rate-limited to 20/min (`auth_write` scope; 429 on the 21st request).
 - Guests hitting an auth-only endpoint get 401 with `error.session_expired: true`
@@ -953,9 +955,37 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `manage.py migrate` ran and the endpoint returns 201. Verified: **200 pytest passed @
   95.31%**, ruff clean (mypy has one pre-existing `test_profile.py` note).
 
+- **Phase 36** — Fix Google OAuth sign-in race condition and craft editorial "Signing in" state ($design-taste-frontend).
+  Motivation: In development with React 18/19 StrictMode (and during fast re-mounts), `LoginPage`
+  triggered the single-use OAuth authorization code exchange twice concurrently. The second request
+  was rejected by Google's token endpoint with `invalid_grant` (400 Bad Request), causing
+  `AuthService.google_callback` to throw an error and flash a red "Google sign-in failed." alert box
+  even though the first exchange was still in flight and succeeded in authenticating the user.
+  Fix:
+  1. Guarded authorization code exchange with `exchangedCodeRef` to guarantee strictly single
+     execution per `code`, eliminating duplicate API dispatches under StrictMode and re-renders.
+  2. Implemented a dedicated, editorial "Signing you in…" state obeying the `taste` skill
+     (`design-taste-frontend`):
+     - Editorial typography (`var(--font-display)` Fraunces + `var(--font-sans)` Public Sans).
+     - Central multicolor Google brand mark (`GoogleBrandIcon` with official `#FFC107`, `#FF3D00`,
+       `#4CAF50`, `#1976D2` fills) seated in a softly tinted badge with subtle border.
+     - Reassuring copy: "Connecting your Google account and opening your PawPrint workspace."
+     - Accessible indeterminate progress bar (`role="progressbar"`, `aria-label="Signing in with Google"`)
+       rendered in PawPrint's sage palette (`var(--color-sage)`).
+     - Rise entrance animation (`data-enter="3"`) and `@media (prefers-reduced-motion: reduce)` compliance.
+     - Smooth navigation to the user's authenticated account (`/` or `next`/`redirect` target).
+     - Clean fallback to error box only upon genuine failures or cancellation (`?error=access_denied`).
+  3. Fixed `useEffect` navigation warnings in `MyFlyersPage` and `SettingsPage` so redirection occurs
+     inside effects rather than during rendering.
+  4. Added unit tests in `auth.test.tsx` verifying:
+     - The dedicated signing-in card with Google icon and progress bar during in-flight exchange.
+     - StrictMode duplicate-invocation prevention (exactly 1 exchange dispatched).
+     - Clean handling of OAuth error query parameters.
+  Verified: **132 vitest passed** (exit 0), `tsc -b` + `vite build` clean, backend **200 pytest passed @ 95.31%**.
+
 **Final status:** backend **200 passed @ 95.31%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
-frontend **129 vitest tests** @ 89.35/82.39/84.47/90.51 + Playwright journeys (11/11)
+frontend **132 vitest tests** @ 89.35/82.39/84.47/90.51 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;

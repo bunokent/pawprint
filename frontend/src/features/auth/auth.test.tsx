@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -74,6 +75,63 @@ describe("LoginPage", () => {
     expect(await screen.findByText("HOME PAGE")).toBeInTheDocument();
     expect(callbackCalls).toHaveBeenCalledWith(expect.objectContaining({ code: "google-code-123" }));
     expect(useAuth.getState().user?.google_id).toBe("g-9");
+  });
+
+  it("renders the beautiful signing-in card with brand icon and progress bar during exchange", async () => {
+    let resolveExchange!: (value: unknown) => void;
+    const exchangePromise = new Promise((resolve) => {
+      resolveExchange = resolve;
+    });
+
+    mswServer.use(
+      http.post("*/api/auth/google/callback", async () => {
+        await exchangePromise;
+        return HttpResponse.json({ user: mockUser({ google_id: "g-10" }), created: true });
+      }),
+    );
+
+    renderLogin("/auth/login?code=in-flight-code");
+
+    // The dedicated status card is displayed while exchange is in flight.
+    const statusCard = screen.getByRole("status");
+    expect(statusCard).toHaveTextContent("Signing you in…");
+    expect(statusCard).toHaveTextContent("Connecting your Google account and opening your PawPrint workspace.");
+    expect(within(statusCard).getByTestId("google-brand-icon")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Signing in with Google" })).toBeInTheDocument();
+    // The regular email/password login form is not shown while signing in.
+    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+
+    // Finish the exchange → user is authenticated and lands on home.
+    resolveExchange(true);
+    expect(await screen.findByText("HOME PAGE")).toBeInTheDocument();
+    expect(useAuth.getState().user?.google_id).toBe("g-10");
+  });
+
+  it("guards against double-invocation so the OAuth code is only exchanged once", async () => {
+    const callbackCalls = vi.fn();
+    mswServer.use(
+      http.post("*/api/auth/google/callback", async ({ request }) => {
+        callbackCalls(await request.json());
+        return HttpResponse.json({ user: mockUser({ google_id: "g-strict" }), created: true });
+      }),
+    );
+
+    renderWithProviders(
+      <StrictMode>
+        <LoginPage />
+      </StrictMode>,
+      { route: "/auth/login?code=strict-mode-code", routes: [["/", HOME]] },
+    );
+
+    expect(await screen.findByText("HOME PAGE")).toBeInTheDocument();
+    expect(callbackCalls).toHaveBeenCalledTimes(1);
+    expect(callbackCalls).toHaveBeenCalledWith(expect.objectContaining({ code: "strict-mode-code" }));
+  });
+
+  it("handles OAuth query error params (e.g. user cancelled prompt)", async () => {
+    renderLogin("/auth/login?error=access_denied&error_description=Access+was+denied+by+user");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Access was denied by user");
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
   });
 
   it("shows an error when the Google callback fails", async () => {

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { myFlyersQuery, useDeleteFlyer, useUpdateFlyer, type Flyer } from "@/features/flyers/api";
@@ -15,8 +16,13 @@ export function MyFlyersPage() {
   const query = useQuery(myFlyersQuery());
   const rewards = useQuery(myRewardsQuery());
 
+  useEffect(() => {
+    if (checked && !user) {
+      navigate("/auth/login", { replace: true });
+    }
+  }, [checked, user, navigate]);
+
   if (checked && !user) {
-    navigate("/auth/login", { replace: true });
     return null;
   }
 
