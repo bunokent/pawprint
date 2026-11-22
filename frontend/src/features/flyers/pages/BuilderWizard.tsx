@@ -261,7 +261,7 @@ function StepPhotoMode({
       </p>
       <FieldShell
         label="Pet photo"
-        hint={`Every photo is checked by our pet detector before upload — a non-pet photo is simply rejected, never penalised. Add up to 4 clear photos from different angles of the same pet.`}
+        hint={`Every photo is checked by our pet detector before upload — a non-pet photo is simply rejected, never penalised. Add up to 10 clear photos from different angles of the same pet.`}
       >
         <PhotoUpload
           onUploaded={onUploaded}

@@ -16,10 +16,11 @@ const uploadFile = (name = "bento.jpg") => {
 };
 
 /** Stateful harness — PhotoUpload is a controlled component (multi-photo). */
-function Harness({ spy, onMakeCover }: { spy: (r: PhotoUploadResult) => void; onMakeCover?: (key: string) => void }) {
+function Harness({ spy, onMakeCover, maxPhotos }: { spy: (r: PhotoUploadResult) => void; onMakeCover?: (key: string) => void; maxPhotos?: number }) {
   const [uploaded, setUploaded] = useState<PhotoUploadResult[]>([]);
   return (
     <PhotoUpload
+      maxPhotos={maxPhotos}
       uploaded={uploaded}
       onUploaded={(r) => {
         spy(r);
@@ -84,7 +85,40 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
       />,
     );
     expect(screen.getByAltText("Uploaded pet preview")).toHaveAttribute("src", "http://x/thumb.jpg");
-    expect(screen.getByRole("button", { name: "Add photo (1/4)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add photo (1/10)" })).toBeInTheDocument();
+  });
+
+  it("allows up to 10 photos by default (not capped at 4)", async () => {
+    let n = 0;
+    mswServer.use(
+      http.post("*/api/pets/photos", () => {
+        n += 1;
+        return HttpResponse.json(
+          {
+            key: `pets/photos/angle-${n}.jpg`,
+            url: `http://x/angle-${n}.jpg`,
+            thumb_key: `t-angle-${n}.jpg`,
+            thumb_url: `http://x/t-angle-${n}.jpg`,
+            pet_classes: ["dog"],
+            detected_classes: ["dog"],
+            max_confidence: 0.9,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const onUploaded = vi.fn();
+    renderWithProviders(<Harness spy={onUploaded} />);
+    // The empty-state hint advertises the real limit.
+    expect(screen.getByText(/up to 10/)).toBeInTheDocument();
+    // Six angles in one pick — all accepted (the old cap of 4 would drop two).
+    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
+      target: { files: [1, 2, 3, 4, 5, 6].map((i) => new File([String(i)], `a${i}.jpg`, { type: "image/jpeg" })) },
+    });
+    expect(await screen.findByAltText("Uploaded photo 6")).toBeInTheDocument();
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(6));
+    expect(screen.getByText("6 photos")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add photo (6/10)" })).toBeEnabled();
   });
 
   it("accepts several photos at once (different angles) and lists thumbnails", async () => {
@@ -129,7 +163,7 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
     expect(onUploaded).toHaveBeenNthCalledWith(2, expect.objectContaining({ key: "pets/photos/angle-2.jpg" }));
     expect(screen.getByAltText("Uploaded pet preview")).toBeInTheDocument(); // cover = first
     expect(screen.getByText("2 photos")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add photo (2/4)" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add photo (2/10)" })).toBeEnabled();
   });
 
   it("removes a photo via its thumbnail button and promotes the next one to cover", async () => {
@@ -176,7 +210,7 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
     expect(screen.getByAltText("Uploaded pet preview")).toBeInTheDocument();
   });
 
-  it("caps a multi-pick at maxPhotos (4) — the 5th file is dropped and the button locks", async () => {
+  it("caps a multi-pick at the maxPhotos prop — extra files are dropped and the button locks", async () => {
     let n = 0;
     mswServer.use(
       http.post("*/api/pets/photos", () => {
@@ -196,7 +230,7 @@ describe("PhotoUpload (YOLO-World gatekeeper UX)", () => {
       }),
     );
     const onUploaded = vi.fn();
-    renderWithProviders(<Harness spy={onUploaded} />);
+    renderWithProviders(<Harness spy={onUploaded} maxPhotos={4} />);
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [1, 2, 3, 4, 5].map((i) => new File([String(i)], `a${i}.jpg`, { type: "image/jpeg" })) },
     });

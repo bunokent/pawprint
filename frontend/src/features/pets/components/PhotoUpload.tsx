@@ -19,7 +19,9 @@ interface PhotoUploadProps {
   maxPhotos?: number;
 }
 
-const DEFAULT_MAX_PHOTOS = 4;
+// Generous on purpose: a finder may snap the pet from every angle, and every angle
+// helps the owner recognise it. The backend (MAX_PET_PHOTOS) caps at the same number.
+const DEFAULT_MAX_PHOTOS = 10;
 
 const UPLOAD_STAGES = [
   { id: "uploading", label: "Uploading photo", shortLabel: "Upload", detail: "Sending your photo over a secure connection" },
@@ -245,7 +247,7 @@ export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPh
             <span className="photo-upload__empty-title">Drop your pet’s photos here</span>
             <span className="photo-upload__empty-action">or click to browse from your device</span>
             <span className="photo-upload__empty-hint">
-              Add up to {maxPhotos} clear, well-lit photos from different angles of the same pet.
+              Add as many clear, well-lit photos as you like (up to {maxPhotos}) — different angles of the same pet help the owner recognise them.
             </span>
           </button>
         )}
