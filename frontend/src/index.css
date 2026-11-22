@@ -274,6 +274,16 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 .nav-link { padding: 8px 14px; border-radius: 999px; font: 600 14px/1 var(--font-sans); color: var(--color-ink); text-decoration: none; transition: background-color 150ms ease; }
 .nav-link:hover { background: var(--color-surface); }
 .nav-link[aria-current="page"] { background: var(--color-ink); color: var(--color-paper); }
+@media (max-width: 640px) {
+  .nav-inner { gap: 10px; }
+  .nav-links { gap: 2px; }
+  .nav-link { padding: 8px 9px; font-size: 13px; }
+  .nav-links .btn { height: 34px; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  /* Keep only the paw mark so the nav never spills off a phone screen. */
+  .nav-inner > a > span { display: none; }
+}
 
 /* Hero entrance — enters once on load */
 [data-enter] { animation: rise 600ms cubic-bezier(0.22, 1, 0.36, 1) both; }
@@ -607,10 +617,121 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 }
 .pp-suggestions button:hover, .pp-suggestions button:focus-visible { background: var(--color-surface); }
 
+/* ---------- Flyer photo gallery + lightbox (multi-angle view) ---------- */
+.photo-gallery { display: flex; flex-direction: column; gap: 12px; }
+.photo-gallery__main { position: relative; overflow: hidden; transition: box-shadow 180ms ease; }
+.photo-gallery__main:hover { box-shadow: var(--shadow-lift); }
+.photo-gallery__main:focus-visible { outline: 3px solid var(--color-amber); outline-offset: 2px; }
+.photo-gallery__main img { transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+.photo-gallery__main:hover img { transform: scale(1.03); }
+.photo-gallery__zoom {
+  position: absolute; right: 12px; bottom: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 999px;
+  background: rgb(255 253 248 / 0.92); color: var(--color-ink);
+  box-shadow: var(--shadow-card); opacity: 0; transform: translateY(4px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.photo-gallery__main:hover .photo-gallery__zoom,
+.photo-gallery__main:focus-visible .photo-gallery__zoom { opacity: 1; transform: none; }
+.photo-gallery__thumbs { display: flex; flex-wrap: wrap; gap: 10px; }
+.photo-gallery__thumb {
+  width: 64px; height: 64px; padding: 0; overflow: hidden; cursor: pointer;
+  border: 2px solid var(--color-line); border-radius: 12px; background: var(--color-paper);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.photo-gallery__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.photo-gallery__thumb:hover { transform: translateY(-2px); border-color: var(--color-sage); }
+.photo-gallery__thumb:focus-visible { outline: 3px solid var(--color-amber); outline-offset: 2px; }
+.photo-gallery__thumb--active { border-color: var(--color-sage); box-shadow: 0 0 0 3px rgb(47 111 94 / 0.15); }
+
+/* Lightbox — full-size photo viewer */
+.lightbox {
+  position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: rgb(28 20 16 / 0.78); backdrop-filter: blur(6px);
+  animation: backdrop-fade 180ms ease both;
+}
+.lightbox__stage { position: relative; max-width: min(1080px, 100%); animation: dialog-pop 240ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.lightbox__img {
+  display: block; max-width: 100%; max-height: 82vh; margin-inline: auto;
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lift); background: #000;
+}
+.lightbox__counter {
+  position: absolute; left: 50%; bottom: -34px; transform: translateX(-50%);
+  margin: 0; color: var(--color-paper); font: 600 14px/1 var(--font-sans);
+}
+.lightbox__close, .lightbox__nav {
+  position: absolute; display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border: none; border-radius: 999px; cursor: pointer;
+  background: rgb(255 253 248 / 0.94); color: var(--color-ink); box-shadow: var(--shadow-card);
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+.lightbox__close:hover, .lightbox__nav:hover { transform: translateY(-2px); background: #fff; }
+.lightbox__close:active, .lightbox__nav:active { transform: scale(0.96); }
+.lightbox__close:focus-visible, .lightbox__nav:focus-visible { outline: 3px solid var(--color-amber); outline-offset: 2px; }
+.lightbox__close { top: -8px; right: -8px; }
+.lightbox__nav { top: 50%; transform: translateY(-50%); }
+.lightbox__nav:hover { transform: translateY(calc(-50% - 2px)); }
+.lightbox__nav--prev { left: -56px; }
+.lightbox__nav--next { right: -56px; }
+@media (max-width: 1220px) {
+  .lightbox__nav--prev { left: 8px; }
+  .lightbox__nav--next { right: 8px; }
+}
+@media (max-width: 640px) {
+  .lightbox { padding: 12px; }
+  .lightbox__close { top: 8px; right: 8px; }
+  .lightbox__counter { bottom: -30px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lightbox, .lightbox__stage { animation: none; }
+  .photo-gallery__main img, .photo-gallery__thumb, .photo-gallery__zoom, .lightbox__close, .lightbox__nav { transition: none; }
+}
+
+/* ---------- Share menu (replaces the raw QR block on screen) ---------- */
+.share-menu { position: relative; display: inline-flex; }
+.share-menu__popover {
+  position: absolute; z-index: 45; top: calc(100% + 8px); left: 0; min-width: 280px;
+  padding: 6px; border-radius: var(--radius-md); box-shadow: var(--shadow-lift);
+  animation: dialog-pop 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.share-menu__item {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; border: none; border-radius: 8px; background: transparent;
+  color: var(--color-ink); font: 600 14px/1.2 var(--font-sans); text-align: left; cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.share-menu__item:hover, .share-menu__item:focus-visible { background: var(--color-surface); outline: none; }
+.share-menu__icon { display: inline-flex; flex-shrink: 0; width: 20px; justify-content: center; }
+.share-menu__hint { margin-left: auto; font: 400 12px/1.2 var(--font-sans); color: var(--color-muted); }
+.share-menu__divider { height: 1px; margin: 6px 8px; background: var(--color-line); }
+@media (max-width: 640px) {
+  /* Anchor the popover to the button's right edge so it never spills off-screen. */
+  .share-menu__popover { left: auto; right: 0; min-width: 240px; max-width: calc(100vw - 32px); }
+  .share-menu__hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .share-menu__popover { animation: none; } .share-menu__item { transition: none; } }
+
+/* QR modal */
+.qr-modal { display: flex; flex-direction: column; align-items: center; }
+.qr-modal__frame {
+  padding: 18px; border-radius: var(--radius-lg); background: #fff;
+  border: 1px solid var(--color-line); box-shadow: var(--shadow-card);
+}
+.qr-modal__frame img { display: block; border-radius: 8px; }
+.qr-modal__url {
+  max-width: 100%; margin: 14px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 400 13px/1.4 var(--font-sans); color: var(--color-muted);
+}
+
+/* Print-only blocks (A4 sheet keeps the cover + QR; hidden on screen) */
+.print-only { display: none; }
+
 /* ---------- A4 print fidelity for the public flyer page ---------- */
 @media print {
   @page { size: A4; margin: 0; }
   body { background: #fff; }
   .no-print { display: none !important; }
+  .print-only { display: flex; }
   .print-sheet { width: 210mm; min-height: 297mm; margin: 0; box-shadow: none; border: none; border-radius: 0; }
 }

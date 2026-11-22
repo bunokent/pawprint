@@ -69,17 +69,97 @@ describe("FlyerDetailPage", () => {
   const renderDetail = (id: string) =>
     renderWithProviders(<FlyerDetailPage />, { route: `/flyers/${id}`, routePath: "/flyers/:id" });
 
-  it("renders the flyer with QR, print and export actions for a guest", async () => {
+  it("renders the flyer with a share menu (QR lives inside it), print and export actions for a guest", async () => {
+    const user = userEvent.setup();
     renderDetail("33333333-3333-3333-3333-333333333333");
     expect(await screen.findByTestId("flyer-sheet")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Lost pet: Bento");
-    expect(await screen.findByAltText(/QR code linking to Bento/)).toBeInTheDocument();
+    // The sheet's QR is print-only now (hidden on screen); it opens from the share menu.
+    expect(screen.getByAltText(/QR code linking to Bento/).closest(".print-only")).not.toBeNull();
     expect(screen.getByRole("button", { name: /Print A4 flyer/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /PDF/ })).toHaveAttribute("href", mockFlyer().export_pdf_url);
     // Guest cannot fund the reward directly — gets a login link instead.
     expect(screen.getByRole("link", { name: /Log in to fund reward/ })).toBeInTheDocument();
     // Guests see the finder contact block.
     expect(screen.getByText(/0917 000 0000/)).toBeInTheDocument();
+
+    // Share menu: social intents + copy link + QR modal.
+    await user.click(screen.getByRole("button", { name: /Share flyer/ }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /Facebook/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: /Instagram/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: /Copy link/ })).toBeInTheDocument();
+    await user.click(within(menu).getByRole("menuitem", { name: /QR code/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByAltText(/QR code linking to Lost pet: Bento/)).toBeInTheDocument();
+  });
+
+  it("shares via the native share sheet when available and copies the link otherwise", async () => {
+    const user = userEvent.setup();
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "share", { value: share, configurable: true });
+    renderDetail("33333333-3333-3333-3333-333333333333");
+    await user.click(await screen.findByRole("button", { name: /Share flyer/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /Share via/ }));
+    await waitFor(() =>
+      expect(share).toHaveBeenCalledWith(
+        expect.objectContaining({ url: "http://localhost:5173/flyers/33333333-3333-3333-3333-333333333333" }),
+      ),
+    );
+    Object.defineProperty(window.navigator, "share", { value: undefined, configurable: true });
+
+    // Without navigator.share: copy-link writes the flyer URL to the clipboard.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", { value: { writeText }, configurable: true });
+    await user.click(screen.getByRole("button", { name: /Share flyer/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /Copy link/ }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("http://localhost:5173/flyers/33333333-3333-3333-3333-333333333333"),
+    );
+    expect(await screen.findByRole("menuitem", { name: /Link copied/ })).toBeInTheDocument();
+  });
+
+  it("opens the Facebook share intent in a popup", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    renderDetail("33333333-3333-3333-3333-333333333333");
+    await user.click(await screen.findByRole("button", { name: /Share flyer/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /Facebook/ }));
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.stringContaining("https://www.facebook.com/sharer/sharer.php?u="),
+      "pawprint-share",
+      expect.any(String),
+    );
+    openSpy.mockRestore();
+  });
+
+  it("shows every uploaded photo angle in a gallery and opens the lightbox viewer", async () => {
+    mswServer.use(
+      http.get("*/api/flyers/:id", () => HttpResponse.json(mockFoundFlyer({ id: "33333333-3333-3333-3333-333333333333" }))),
+    );
+    const user = userEvent.setup();
+    renderDetail("33333333-3333-3333-3333-333333333333");
+    // Main frame shows the cover; three thumbnails for the three angles.
+    const main = await screen.findByRole("button", { name: /View photo 1 of 3 full screen/ });
+    expect(within(main).getByAltText(/photo 1 of 3/)).toHaveAttribute("src", "http://localhost:8000/media/pets/photos/miso.jpg");
+    expect(screen.getByRole("button", { name: "Show photo 2 of 3" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show photo 3 of 3" })).toBeInTheDocument();
+
+    // Switch to the second angle via its thumbnail.
+    await user.click(screen.getByRole("button", { name: "Show photo 2 of 3" }));
+    expect(await screen.findByRole("button", { name: /View photo 2 of 3 full screen/ })).toBeInTheDocument();
+    expect(screen.getByAltText(/photo 2 of 3/).closest("button")).toHaveAttribute("aria-label", "View photo 2 of 3 full screen");
+
+    // Open the lightbox, step through with arrows, close with Escape.
+    await user.click(screen.getByRole("button", { name: /View photo 2 of 3 full screen/ }));
+    const lightbox = await screen.findByRole("dialog", { name: "Photo 2 of 3" });
+    expect(within(lightbox).getByAltText(/photo 2 of 3/)).toHaveAttribute("src", "http://localhost:8000/media/pets/photos/miso-side.jpg");
+    await user.click(within(lightbox).getByRole("button", { name: "Next photo" }));
+    expect(await screen.findByRole("dialog", { name: "Photo 3 of 3" })).toBeInTheDocument();
+    await user.keyboard("{ArrowLeft}");
+    expect(await screen.findByRole("dialog", { name: "Photo 2 of 3" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Photo \d of 3/ })).not.toBeInTheDocument());
   });
 
   it("shows the fund-reward button to a logged-in non-owner and opens the checkout modal", async () => {
@@ -90,7 +170,7 @@ describe("FlyerDetailPage", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent("Fund the reward for Bento");
   });
 
-  it("shows owner actions to the creator", async () => {
+  it("requires a double click to mark reunited — one click only arms the button", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     const patchCalls: Array<Record<string, unknown>> = [];
     mswServer.use(
@@ -101,7 +181,12 @@ describe("FlyerDetailPage", () => {
     );
     const user = userEvent.setup();
     renderDetail("33333333-3333-3333-3333-333333333333");
-    await user.click(await screen.findByRole("button", { name: /Mark reunited/ }));
+    const btn = await screen.findByRole("button", { name: /Mark reunited/ });
+    await user.click(btn);
+    // Armed, but nothing sent yet.
+    expect(patchCalls).toEqual([]);
+    expect(screen.getByRole("button", { name: /Click again to confirm/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Click again to confirm/ }));
     await waitFor(() => expect(patchCalls).toEqual([{ status: "resolved" }]));
     expect(await screen.findByRole("button", { name: "Delete flyer" })).toBeInTheDocument();
   });
@@ -644,7 +729,7 @@ describe("MyFlyersPage", () => {
     expect(screen.getByRole("button", { name: "Mark returned home" })).toBeInTheDocument();
   });
 
-  it("marks a flyer resolved from the owner card", async () => {
+  it("marks a flyer resolved from the owner card after a double click", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     const patchCalls: Array<Record<string, unknown>> = [];
     mswServer.use(
@@ -656,6 +741,8 @@ describe("MyFlyersPage", () => {
     const user = userEvent.setup();
     renderWithProviders(<MyFlyersPage />, { route: "/my-flyers" });
     await user.click(await screen.findByRole("button", { name: /Mark reunited/ }));
+    expect(patchCalls).toEqual([]); // first click only arms
+    await user.click(screen.getByRole("button", { name: /Click again to confirm/ }));
     await waitFor(() => expect(patchCalls).toEqual([{ status: "resolved" }]));
   });
 

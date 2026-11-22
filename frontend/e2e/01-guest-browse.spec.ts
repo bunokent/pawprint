@@ -3,7 +3,7 @@ import { apiFlyers, createTestFlyer, deleteFlyer, login } from "./helpers";
 
 /**
  * Journey 1 — guest browsing (2-mode access: guests browse without an account).
- * Home → gallery → mode filter → full-text search → flyer detail with QR.
+ * Home → gallery → mode filter → full-text search → flyer detail with share menu + QR modal.
  * Creates its own emergency flyer so the test is self-contained.
  */
 test("guest can browse, filter, search and open a flyer", async ({ page }) => {

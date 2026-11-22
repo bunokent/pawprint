@@ -49,7 +49,7 @@ test("registered user publishes a lost-pet flyer with a reward", async ({ page }
   await expect(page.getByRole("heading", { name: "Lost pet: Rex E2E" })).toBeVisible();
   await expect(page.getByText("Makati City")).toBeVisible();
   await expect(page.getByText(/Reward for safe return/)).toBeVisible();
-  await expect(page.locator('img[alt^="QR code linking to"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: /Share flyer/ })).toBeVisible();
   // Owner-only controls are visible to the creator (delete is unconditional;
   // "Mark reunited" appears once the async A4 export flips status to active).
   await expect(page.getByRole("button", { name: "Delete flyer" })).toBeVisible();

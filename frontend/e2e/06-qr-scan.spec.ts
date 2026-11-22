@@ -4,7 +4,7 @@ import { createTestFlyer, deleteFlyer, login } from "./helpers";
 /**
  * Journey 6 — QR scan: the QR code printed on the flyer encodes the public flyer
  * URL (qr_target_value). Opening that URL as a scanner would lands on the flyer
- * detail page, guest-accessible, with the QR rendered as an SVG data-URL.
+ * detail page, guest-accessible; the QR renders as an SVG data-URL in the share menu's QR modal.
  * Creates its own emergency flyer — no seeded data dependency.
  */
 test("scanning the flyer QR target opens the public flyer page", async ({ page }) => {

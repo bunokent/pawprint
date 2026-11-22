@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Printer, Download, Coins, MapPin } from "lucide-react";
@@ -10,6 +10,8 @@ import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
 import { ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { RewardCheckoutModal } from "@/features/rewards/components/RewardCheckoutModal";
 import { QrImage } from "@/components/QrImage";
+import { PhotoGallery } from "@/components/PhotoGallery";
+import { ShareMenu } from "@/components/ShareMenu";
 import { formatDate, formatMoney, petDisplayName } from "@/lib/utils";
 
 export function FlyerDetailPage() {
@@ -21,9 +23,30 @@ export function FlyerDetailPage() {
   const deleteFlyer = useDeleteFlyer(id ?? "");
   const [rewardOpen, setRewardOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // "Mark reunited / returned home" is a life-changing state change — it requires a
+  // deliberate second click (armed for 4 s) instead of resolving on a single tap.
+  const [resolveArmed, setResolveArmed] = useState(false);
+  const resolveTimer = useRef<number | null>(null);
 
   const flyer = query.data;
   const qrTarget = flyer?.qr_target_value ?? "";
+
+  useEffect(
+    () => () => {
+      if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
+    },
+    [],
+  );
+
+  const armOrResolve = () => {
+    if (resolveArmed) {
+      if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
+      void updateFlyer.mutateAsync({ status: "resolved" });
+      return;
+    }
+    setResolveArmed(true);
+    resolveTimer.current = window.setTimeout(() => setResolveArmed(false), 4000);
+  };
 
   if (query.isLoading) {
     return (
@@ -62,14 +85,30 @@ export function FlyerDetailPage() {
   const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-found-deep)" : "var(--color-sage-deep)";
   const canReward = flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0;
   const hasPin = flyer.location_lat != null && flyer.location_lng != null;
+  const displayName = petDisplayName(flyer.pet, flyer.mode);
+  const photoKind = emergency ? "lost pet" : found ? "found pet" : "adoptable pet";
+  // Every uploaded angle, cover first — falls back to the legacy single cover URL.
+  const galleryPhotos = flyer.photo_urls?.length ? flyer.photo_urls : flyer.photo_url ? [flyer.photo_url] : [];
+  const shareUrl = qrTarget || window.location.href;
+  const shareTitle = `${emergency ? "Lost pet" : found ? "Found pet" : "Up for adoption"}${flyer.pet.name?.trim() ? `: ${flyer.pet.name}` : ""}`;
+  const shareText = `${shareTitle} — ${flyer.pet.species}${flyer.last_seen_location ? ` · ${flyer.last_seen_location}` : ""}. See the PawPrint flyer:`;
 
   return (
     <section style={{ padding: "48px 0 64px" }}>
       <div className="wrap">
-        <div className="no-print btn-row" style={{ marginBottom: 24 }}>
+        <div className="no-print btn-row" style={{ marginBottom: 24, flexWrap: "wrap" }}>
           <Button variant="secondary" style={{ height: 40 }} onClick={() => window.print()}>
             <Printer size={16} /> Print A4 flyer
           </Button>
+          <ShareMenu
+            info={{
+              url: shareUrl,
+              title: shareTitle,
+              text: shareText,
+              qrValue: qrTarget || shareUrl,
+              imageUrl: flyer.export_png_url || undefined,
+            }}
+          />
           {flyer.export_pdf_url && (
             <Button variant="secondary" style={{ height: 40 }} asChild>
               <a href={flyer.export_pdf_url} download>
@@ -106,9 +145,16 @@ export function FlyerDetailPage() {
               variant="sage"
               style={{ height: 40 }}
               disabled={updateFlyer.isPending}
-              onClick={() => void updateFlyer.mutateAsync({ status: "resolved" })}
+              aria-live="polite"
+              onClick={armOrResolve}
+              onBlur={() => {
+                setResolveArmed(false);
+                if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
+              }}
             >
-              {emergency ? "Mark reunited" : found ? "Mark returned home" : "Mark adopted"}
+              {resolveArmed
+                ? "Click again to confirm"
+                : emergency ? "Mark reunited" : found ? "Mark returned home" : "Mark adopted"}
             </Button>
           )}
           {isOwner && (
@@ -129,19 +175,24 @@ export function FlyerDetailPage() {
         <article className="card print-sheet" style={{ padding: 32 }} data-testid="flyer-sheet">
           <div className="split-2">
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+              {/* Screen: full gallery — every uploaded angle, with a lightbox viewer. */}
+              <div className="no-print" style={{ flex: 1 }}>
+                <PhotoGallery photos={galleryPhotos} alt={`${displayName} — ${photoKind} photo`} printSrc={flyer.photo_url || "/pet-fallback.webp"} />
+              </div>
+              {/* Print: the A4 sheet keeps the single cover photo + scannable QR. */}
+              <div className="print-only" style={{ gap: 16, alignItems: "flex-start" }}>
                 <div className="photo-frame" style={{ aspectRatio: "4 / 3", borderRadius: 20, background: "var(--color-surface)", border: "1px solid var(--color-line)", flex: 1 }}>
                   <img
                     src={flyer.photo_url || "/pet-fallback.webp"}
-                    alt={flyer.photo_url ? `${petDisplayName(flyer.pet, flyer.mode)} — ${emergency ? "lost pet" : found ? "found pet" : "adoptable pet"} photo` : ""}
+                    alt={flyer.photo_url ? `${displayName} — ${photoKind} photo` : ""}
                     aria-hidden={!flyer.photo_url ? true : undefined}
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   />
                 </div>
                 {qrTarget && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 150 }}>
-                    <QrImage value={qrTarget} size={150} alt={`QR code linking to ${petDisplayName(flyer.pet, flyer.mode)}'s flyer`} />
-                    <p className="t-label" style={{ marginTop: 2, textAlign: "center" }}>Scan to open this flyer</p>
+                    <p className="t-label" style={{ textAlign: "center" }}>Scan to open this flyer</p>
+                    <QrImage value={qrTarget} size={150} alt={`QR code linking to ${displayName}'s flyer`} />
                   </div>
                 )}
               </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { myFlyersQuery, useDeleteFlyer, useUpdateFlyer, type Flyer } from "@/features/flyers/api";
@@ -112,6 +112,27 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
   const navigate = useNavigate();
   const canResolve = flyer.status === "active";
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Resolving ("reunited" / "returned home" / "adopted") needs a deliberate second
+  // click — armed for 4 s — so a single stray tap never closes a flyer.
+  const [resolveArmed, setResolveArmed] = useState(false);
+  const resolveTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
+    },
+    [],
+  );
+
+  const armOrResolve = () => {
+    if (resolveArmed) {
+      if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
+      void updateFlyer.mutateAsync({ status: "resolved" });
+      return;
+    }
+    setResolveArmed(true);
+    resolveTimer.current = window.setTimeout(() => setResolveArmed(false), 4000);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -122,9 +143,16 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
             variant="sage"
             style={{ height: 36, padding: "0 14px", fontSize: 14 }}
             disabled={updateFlyer.isPending}
-            onClick={() => void updateFlyer.mutateAsync({ status: "resolved" })}
+            aria-live="polite"
+            onClick={armOrResolve}
+            onBlur={() => {
+              setResolveArmed(false);
+              if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
+            }}
           >
-            Mark {flyer.mode === "emergency" ? "reunited" : flyer.mode === "found" ? "returned home" : "adopted"}
+            {resolveArmed
+              ? "Click again to confirm"
+              : `Mark ${flyer.mode === "emergency" ? "reunited" : flyer.mode === "found" ? "returned home" : "adopted"}`}
           </Button>
         )}
         <Button
