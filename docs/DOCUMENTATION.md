@@ -1129,14 +1129,15 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   files** @ 88.99/80.30/84.94/90.26 (coverage exit 0, rewards 100%), `tsc -b` clean
   on the touched files.
 
-**Final status:** backend **167 passed @ 95.67%** (100% on all services/drivers incl.
+**Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
 frontend **134 vitest tests** @ 88.99/80.30/84.94/90.26 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
 vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
-no notifications feature; `/map` has mode + DB-species filters;
+no notifications feature; no seed/demo data — all E2E journeys are self-contained;
+`/map` has mode + DB-species filters;
 flyer templates always render a photo frame (SVG paw-print fallback when no photo);
 all UI photo frames show a real pet photograph fallback (`public/pet-fallback.webp`)
 instead of a blank box or "No photo yet" text;

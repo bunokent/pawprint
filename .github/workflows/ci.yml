@@ -141,11 +141,10 @@ jobs:
             backend/yolov8s-worldv2.pt
             backend/weights/
           key: yolo-weights-${{ hashFiles('backend/pyproject.toml') }}
-      - name: Migrate + seed demo database
+      - name: Migrate database
         run: |
           cd backend
           .venv/bin/python manage.py migrate --noinput
-          .venv/bin/python manage.py seed_demo
         env:
           PAWPRINT_TESTING: "1"
           POSTGRES_HOST: 127.0.0.1

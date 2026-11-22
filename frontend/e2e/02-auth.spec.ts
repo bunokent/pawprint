@@ -1,22 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { DEMO, login } from "./helpers";
+import { login, loginWith, registerUser } from "./helpers";
 
 /**
- * Journey 2 — unified account: register a fresh user, log out, log back in
- * with the seeded demo account, and see a wrong-password error.
+ * Journey 2 — unified account: register a fresh user, log out, log back in.
+ * All accounts are created fresh by the test — no seeded demo data needed.
  */
-test("register → logout → login (seeded demo account)", async ({ page }) => {
-  const email = `e2e-${Date.now()}@example.com`;
+test("register → logout → login with wrong password → correct credentials", async ({ page }) => {
+  // Register a brand-new account via the API, then log in through the UI.
+  const { email, password } = await registerUser(page, { displayName: "E2E Tester" });
 
-  // Register a brand-new account through the UI.
-  await page.goto("/auth/register");
-  await page.locator("#reg-name").fill("E2E Tester");
-  await page.locator("#reg-email").fill(email);
-  await page.locator("#reg-password").fill("e2e-pass-1234");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await page.waitForURL((url) => url.pathname === "/");
-  await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
-  // The nav greets by display name when set.
+  await loginWith(page, email, password);
   await expect(page.locator("nav")).toContainText("E2E Tester");
 
   // Log out → back to guest nav.
@@ -25,21 +18,21 @@ test("register → logout → login (seeded demo account)", async ({ page }) => 
 
   // Wrong password surfaces a friendly error, not a crash.
   await page.goto("/auth/login");
-  await page.locator("#login-email").fill(DEMO.email);
+  await page.locator("#login-email").fill(email);
   await page.locator("#login-password").fill("definitely-wrong");
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.locator(".error-box[role='alert']")).toBeVisible();
 
   // Correct credentials log in and the shell greets the user.
-  await page.locator("#login-password").fill(DEMO.password);
+  await page.locator("#login-password").fill(password);
   await page.getByRole("button", { name: "Log in" }).click();
   await page.waitForURL((url) => url.pathname === "/");
-  await expect(page.locator("nav")).toContainText("Mia Santos");
+  await expect(page.locator("nav")).toContainText("E2E Tester");
   await expect(page.getByRole("link", { name: "My flyers" })).toBeVisible();
   await expect(page.getByRole("link", { name: "New flyer" })).toBeVisible();
 });
 
-test("login helper lands on home as the demo user", async ({ page }) => {
+test("login helper lands on home as a registered user", async ({ page }) => {
   await login(page);
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
 });

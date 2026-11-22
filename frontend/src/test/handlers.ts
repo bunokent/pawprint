@@ -62,7 +62,7 @@ export const mockFlyer = (overrides: Partial<Flyer> = {}): Flyer => ({
   ...overrides,
 });
 
-/** Seeded-style found-pet flyer (mirrors backend seed_demo "Miso"). */
+/** Seeded-style found-pet flyer. */
 export const mockFoundFlyer = (overrides: Partial<Flyer> = {}): Flyer =>
   mockFlyer({
     id: "66666666-6666-6666-6666-666666666666",
@@ -130,8 +130,11 @@ export const handlers = [
 
   http.post("*/api/auth/login", async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
-    if (body.password !== "demo1234") return err(400, "auth_error", "Invalid email or password.");
-    return HttpResponse.json(mockUser({ email: body.email ?? "mia@example.com" }));
+    // Simulate auth failure for the specific "wrong" password used in tests.
+    if (!body.password || body.password === "wrong-password" || body.password === "definitely-wrong") {
+      return err(400, "auth_error", "Invalid email or password.");
+    }
+    return HttpResponse.json(mockUser({ email: body.email ?? "test@example.com" }));
   }),
 
   http.post("*/api/auth/logout", () => HttpResponse.json({ status: "logged_out" })),

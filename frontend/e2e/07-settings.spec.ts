@@ -5,6 +5,7 @@ import { API, fixture, login } from "./helpers";
  * Journey 7 — profile settings: edit display name/phone and upload a profile
  * picture. The avatar endpoint is NOT pet-gated (it is the user's own photo),
  * so any image fixture passes; the pet gate only guards /api/pets/photos.
+ * Creates a fresh account so there is no dependency on seeded demo data.
  */
 test("registered user edits their profile and uploads a profile picture", async ({ page }) => {
   await login(page);
@@ -27,27 +28,21 @@ test("registered user edits their profile and uploads a profile picture", async 
   const patch = page.waitForResponse(
     (r) => r.url().endsWith("/api/auth/profile") && r.request().method() === "PATCH",
   );
-  await page.locator("#settings-name").fill("Mia E2E");
+  await page.locator("#settings-name").fill("Updated Name");
   await page.locator("#settings-phone").fill("09171234567");
   await page.getByRole("button", { name: "Save changes" }).click();
   expect((await patch).status()).toBe(200);
   await expect(page.getByText("Profile saved.")).toBeVisible();
 
-  // The header nav link shows the new name next to the avatar.
-  await expect(page.getByRole("link", { name: "Mia E2E" })).toBeVisible();
+  // The header nav link shows the new name.
+  await expect(page.getByRole("link", { name: "Updated Name" })).toBeVisible();
 
   // Persisted server-side.
   const me = await page.request.get(`${API}/auth/me`);
   expect(me.status()).toBe(200);
   const meBody = await me.json();
-  expect(meBody.display_name).toBe("Mia E2E");
+  expect(meBody.display_name).toBe("Updated Name");
   expect(meBody.phone).toBe("09171234567");
   expect(meBody.avatar_path).toMatch(/^avatars\//);
   expect(meBody.avatar_url).toBeTruthy();
-
-  // Restore the seeded demo profile through the UI so other journeys are unaffected.
-  await page.locator("#settings-name").fill("Mia Santos");
-  await page.locator("#settings-phone").fill("+63 917 000 0001");
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText("Profile saved.")).toBeVisible();
 });

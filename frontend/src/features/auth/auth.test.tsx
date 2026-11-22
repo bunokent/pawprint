@@ -25,7 +25,7 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     renderLogin();
     await user.type(screen.getByLabelText("Email"), "mia@example.com");
-    await user.type(screen.getByLabelText("Password"), "demo1234");
+    await user.type(screen.getByLabelText("Password"), "test-pass-1234");
     await user.click(screen.getByRole("button", { name: "Log in" }));
     expect(await screen.findByText("HOME PAGE")).toBeInTheDocument();
     expect(useAuth.getState().user?.email).toBe("mia@example.com");
