@@ -152,7 +152,6 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 }
 .badge--emergency { background: rgb(179 38 30 / 0.1); color: var(--color-emergency-deep); }
 .badge--found { background: rgb(46 158 99 / 0.14); color: var(--color-found-deep); }
-.badge--match { background: rgb(255 179 0 / 0.2); color: #7a5200; }
 .badge--outreach { background: rgb(47 111 94 / 0.12); color: var(--color-sage-deep); }
 .badge--reward { background: var(--color-amber); color: #2b1a00; }
 .badge--neutral { background: var(--color-surface); color: var(--color-muted); }
@@ -489,29 +488,6 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
   font-size: 22px;
   font-weight: 700;
 }
-/* Vision-matched pins (lost <-> found photo match) get a pulsing amber halo.
-   The halo lives on the marker element (positioned by Leaflet), not on the
-   ring, so the ring's `overflow: hidden` circle clip stays intact. */
-.pp-pin--match::after,
-.pp-stack-pin--match::after {
-  content: "";
-  position: absolute;
-  border-radius: 50%;
-  border: 3px solid var(--color-amber);
-  pointer-events: none;
-  animation: pp-halo 1.8s ease-out infinite;
-}
-.pp-pin--match::after { inset: -8px; }
-.pp-stack-pin--match::after { left: -8px; top: -8px; width: 56px; height: 56px; }
-@keyframes pp-halo {
-  0% { transform: scale(0.82); opacity: 0.95; }
-  100% { transform: scale(1.28); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pp-pin--match::after,
-  .pp-stack-pin--match::after { animation: none; opacity: 0.7; }
-}
-
 /* Stacked pins: pins at the same spot (or within ~30 m) render as a deck of
    circular cards — the newest on top with a ×N badge, the oldest peeking out
    behind it. Every card keeps its own mode ring colour (red lost / green found). */

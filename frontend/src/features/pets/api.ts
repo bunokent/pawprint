@@ -32,7 +32,7 @@ export interface PetCreateInput {
   health_tags?: string[];
   /** Cover photo (first of photo_paths when several angles are uploaded). */
   photo_path?: string;
-  /** All uploaded angles of the same pet — matching takes the best cross-photo pair. */
+  /** All uploaded angles of the same pet — the first is the cover photo. */
   photo_paths?: string[];
   status?: string;
 }

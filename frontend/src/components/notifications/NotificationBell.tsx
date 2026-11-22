@@ -138,7 +138,7 @@ export function NotificationBell() {
             <div style={{ overflowY: "auto" }}>
               {items.length === 0 && (
                 <p className="t-small" style={{ margin: 0, padding: "20px 16px", color: "var(--color-muted)" }}>
-                  No notifications yet. When a found pet's photo matches your lost pet, you'll see it here.
+                  No notifications yet. You'll see account and system alerts here.
                 </p>
               )}
               {items.map((n) => {

@@ -89,20 +89,11 @@ export function pinRingColor(mode: string | null | undefined): string {
 /** Photo-pin diameter in px (ring + circular photo). */
 export const PIN_SIZE = 56;
 
-/** Vision-match counterpart reported by the map endpoint. */
-export interface PinMatch {
-  flyer_id: string;
-  mode: string;
-  pet_name: string;
-  score: number;
-}
-
 /** Minimal shape needed to build a photo pin (a Flyer is assignable to this). */
 export interface PinLike {
   mode?: string | null;
   photo_url?: string | null;
   pet: { name?: string | null };
-  match?: PinMatch | null;
 }
 
 const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -118,15 +109,13 @@ const pinInner = (pin: PinLike): string =>
 /**
  * Circular photo pin: the pet photo clipped to a circle (`overflow: hidden` on
  * the ring) with a status ring (red lost / green found) plus a soft glow;
- * without a photo, the pet's initial on a muted disc. Pins with a vision match
- * get an amber pulsing halo on the marker itself (`pp-pin--match`, so the ring
- * clip stays intact). Rendered as a Leaflet `divIcon`, so it works without canvas.
+ * without a photo, the pet's initial on a muted disc. Rendered as a Leaflet
+ * `divIcon`, so it works without canvas.
  */
 export function petPinIcon(pin: PinLike, size = PIN_SIZE): L.DivIcon {
   const ring = pinRingColor(pin.mode);
-  const matched = Boolean(pin.match);
   return L.divIcon({
-    className: matched ? "pp-pin pp-pin--match" : "pp-pin",
+    className: "pp-pin",
     html: `<span class="pp-pin__ring" data-pet-name="${esc(pinName(pin))}" style="border-color:${ring};--pin-glow:${ring}">${pinInner(pin)}</span>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -199,7 +188,6 @@ export const STACK_STEP = 7;
 export function stackPinIcon<T extends PinLike>(group: PinGroup<T>, size = PIN_SIZE): L.DivIcon {
   const top = group.items[0];
   const backs = group.items.slice(1, 3);
-  const matched = group.items.some((i) => i.match);
   const offset = backs.length * STACK_STEP;
   const backHtml = backs
     .map((b, i) => {
@@ -215,7 +203,7 @@ export function stackPinIcon<T extends PinLike>(group: PinGroup<T>, size = PIN_S
     `<span class="pp-pin__count" data-stack-count="${group.items.length}">×${group.items.length}</span>` +
     `</span></div>`;
   return L.divIcon({
-    className: matched ? "pp-pin pp-stack-pin pp-stack-pin--match" : "pp-pin pp-stack-pin",
+    className: "pp-pin pp-stack-pin",
     html,
     iconSize: [size + offset, size + offset],
     iconAnchor: [size / 2, size / 2],

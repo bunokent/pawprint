@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
-import { MapPin, Sparkles, X } from "lucide-react";
+import { MapPin, X } from "lucide-react";
 import { flyerMapQuery, type Flyer } from "@/features/flyers/api";
 import { Button } from "@/components/ui/button";
 import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
@@ -13,17 +13,15 @@ import { cn, formatDate, petDisplayName } from "@/lib/utils";
 /** Public interactive pet map: one photo pin per active lost/found flyer with coordinates. */
 export function PetMapPage() {
   const query = useQuery(flyerMapQuery());
-  const [filterMode, setFilterMode] = useState<"all" | "emergency" | "found" | "match">("all");
+  const [filterMode, setFilterMode] = useState<"all" | "emergency" | "found">("all");
 
   const allFlyers = query.data ?? [];
   const lostCount = useMemo(() => allFlyers.filter((f) => f.mode === "emergency").length, [allFlyers]);
   const foundCount = useMemo(() => allFlyers.filter((f) => f.mode === "found").length, [allFlyers]);
-  const matchCount = useMemo(() => allFlyers.filter((f) => Boolean(f.match)).length, [allFlyers]);
 
   const filteredFlyers = useMemo(() => {
     if (filterMode === "emergency") return allFlyers.filter((f) => f.mode === "emergency");
     if (filterMode === "found") return allFlyers.filter((f) => f.mode === "found");
-    if (filterMode === "match") return allFlyers.filter((f) => Boolean(f.match));
     return allFlyers;
   }, [allFlyers, filterMode]);
 
@@ -61,16 +59,6 @@ export function PetMapPage() {
           >
             <MapPin size={13} /> Found — green pin ({foundCount})
           </button>
-          {matchCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setFilterMode(filterMode === "match" ? "all" : "match")}
-              className={cn("badge badge--match map-filter-btn", filterMode === "match" && "map-filter-btn--active")}
-              style={{ border: "none" }}
-            >
-              <Sparkles size={13} /> Possible match ({matchCount})
-            </button>
-          )}
         </div>
 
         {query.isLoading && <Skeleton style={{ height: 480, borderRadius: 20 }} />}
@@ -285,11 +273,6 @@ function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () =>
               </strong>
               <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap", alignItems: "center" }}>
                 <ModeBadge mode={flyer.mode} />
-                {flyer.match && (
-                  <span className="badge badge--match" title={`Photo match confidence ${(flyer.match.score * 100).toFixed(0)}%`}>
-                    <Sparkles size={11} /> Match
-                  </span>
-                )}
               </div>
             </div>
             <Button
@@ -381,11 +364,6 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
           {flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0 && (
             <RewardBadge amount={flyer.reward_amount_cents ?? 0} currency={flyer.reward_currency ?? "PHP"} />
           )}
-          {flyer.match && (
-            <span className="badge badge--match" title={`Photo match confidence ${(flyer.match.score * 100).toFixed(0)}%`}>
-              <Sparkles size={12} /> Match
-            </span>
-          )}
           {!flyer.photo_url && (
             <button
               type="button"
@@ -405,25 +383,6 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
             </button>
           )}
         </div>
-
-        {flyer.match && (
-          <p
-            className="t-small"
-            data-testid="pin-match-banner"
-            style={{
-              margin: 0,
-              color: "#7a5200",
-              background: "rgb(255 179 0 / 0.16)",
-              border: "1px solid rgb(255 179 0 / 0.35)",
-              borderRadius: 8,
-              padding: "8px 10px",
-              lineHeight: 1.45,
-            }}
-          >
-            Possible photo match with <strong>{flyer.match.pet_name}</strong> ({(flyer.match.score * 100).toFixed(0)}%) —{" "}
-            <Link to={`/flyers/${flyer.match.flyer_id}`} style={{ fontWeight: 600, color: "#7a5200" }}>open the other flyer</Link>
-          </p>
-        )}
 
         <strong style={{ fontSize: 18, fontFamily: "var(--font-display)", color: accent, lineHeight: 1.25 }}>
           {displayName}

@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ArrowRight, Calendar, MapPin, Sparkles } from "lucide-react";
+import { ArrowRight, Calendar, MapPin } from "lucide-react";
 import type { Flyer } from "@/features/flyers/api";
 import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
 import { formatDate, petDisplayName } from "@/lib/utils";
@@ -68,11 +68,6 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
             <RewardBadge amount={flyer.reward_amount_cents ?? 0} currency={flyer.reward_currency ?? "PHP"} />
           )}
           <StatusBadge status={flyer.status} />
-          {flyer.match && (
-            <span className="badge badge--match" title={`Photo match confidence ${(flyer.match.score * 100).toFixed(0)}%`}>
-              <Sparkles size={11} /> Match
-            </span>
-          )}
         </div>
 
         <h3

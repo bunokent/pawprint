@@ -27,8 +27,8 @@ describe("NotificationBell", () => {
             mockNotification(),
             mockNotification({
               id: "88888888-8888-8888-8888-888888888888",
-              kind: "match_lost",
-              title: "Your found Miso may match a lost report",
+              title: "Profile updated",
+              body: "Your contact details were saved.",
               read_at: "2026-11-19T10:00:00Z",
             }),
           ],
@@ -44,9 +44,9 @@ describe("NotificationBell", () => {
     const user = userEvent.setup();
     await user.click(bell);
     const panel = await screen.findByTestId("notification-panel");
-    expect(panel).toHaveTextContent("Possible match: Miso was found");
-    expect(panel).toHaveTextContent("Your found Miso may match a lost report");
-    // The unread notification links to the counterpart flyer.
+    expect(panel).toHaveTextContent("Welcome to PawPrint");
+    expect(panel).toHaveTextContent("Profile updated");
+    // The unread notification links to its target page.
     expect(panel.querySelector("a")).toHaveAttribute("href", mockNotification().link);
 
     // Closing via the backdrop hides the panel.

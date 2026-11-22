@@ -58,7 +58,6 @@ export const mockFlyer = (overrides: Partial<Flyer> = {}): Flyer => ({
   photo_url: "http://localhost:8000/media/pets/photos/bento.jpg",
   export_png_url: "http://localhost:8000/media/exports/bento.png",
   export_pdf_url: "http://localhost:8000/media/exports/bento.pdf",
-  match: null,
   created_at: "2026-11-16T09:00:00Z",
   updated_at: "2026-11-16T09:00:00Z",
   ...overrides,
@@ -82,9 +81,9 @@ export const mockFoundFlyer = (overrides: Partial<Flyer> = {}): Flyer =>
 
 export const mockNotification = (overrides: Partial<Notification> = {}): Notification => ({
   id: "77777777-7777-7777-7777-777777777777",
-  kind: "match_found",
-  title: "Possible match: Miso was found",
-  body: "A found pet photo matches your lost pet Bento (match confidence 92%). See the found report.",
+  kind: "system",
+  title: "Welcome to PawPrint",
+  body: "Your account is ready — post a lost-pet alert or browse the map.",
   link: "/flyers/66666666-6666-6666-6666-666666666666",
   read_at: null,
   created_at: "2026-11-19T09:00:00Z",

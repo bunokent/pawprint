@@ -34,8 +34,7 @@ type UploadStage = (typeof UPLOAD_STAGES)[number]["id"];
  * Pet-photo upload with the YOLO-World gatekeeper UX: a non-pet photo gets a 422
  * "no pet detected" response — never a ban — and the user can pick another file.
  * Several photos can be added at once (up to `maxPhotos`, e.g. different angles of
- * the same pet); matching on the backend compares every photo pair, so extra
- * angles of the same pet raise the chance of a lost/found match.
+ * the same pet) so the flyer shows the pet from every side.
  */
 export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPhotos = DEFAULT_MAX_PHOTOS }: PhotoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -246,8 +245,7 @@ export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPh
             <span className="photo-upload__empty-title">Drop your pet’s photos here</span>
             <span className="photo-upload__empty-action">or click to browse from your device</span>
             <span className="photo-upload__empty-hint">
-              Add up to {maxPhotos} clear, well-lit photos from different angles — the same pet from another
-              angle still matches lost/found reports.
+              Add up to {maxPhotos} clear, well-lit photos from different angles of the same pet.
             </span>
           </button>
         )}

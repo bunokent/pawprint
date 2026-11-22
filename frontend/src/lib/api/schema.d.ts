@@ -748,21 +748,10 @@ export interface components {
             readonly photo_url: string;
             readonly export_png_url: string;
             readonly export_pdf_url: string;
-            readonly match: components["schemas"]["FlyerMatch"] | null;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
-        };
-        /** @description Vision-match counterpart of a flyer pin (lost <-> found). */
-        FlyerMatch: {
-            /** Format: uuid */
-            flyer_id: string;
-            mode: string;
-            pet_name: string;
-            /** Format: double */
-            score: number;
-            best_pair?: number[] | null;
         };
         /**
          * @description * `draft` - Draft
@@ -780,12 +769,10 @@ export interface components {
             redirect_uri: string;
         };
         /**
-         * @description * `match_found` - Possible match for your lost pet
-         *     * `match_lost` - Your found pet may be someone's lost pet
-         *     * `system` - System
+         * @description * `system` - System
          * @enum {string}
          */
-        KindEnum: "match_found" | "match_lost" | "system";
+        KindEnum: "system";
         Login: {
             /** Format: email */
             email: string;

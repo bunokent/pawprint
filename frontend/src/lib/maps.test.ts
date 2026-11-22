@@ -96,18 +96,15 @@ describe("pin icons", () => {
     expect(found.opts.html).toContain("border-color:#2e9e63");
   });
 
-  it("petPinIcon adds the match halo class on the marker when the pin has a vision match", () => {
-    const matched = petPinIcon(mockFoundFlyer({ match: { flyer_id: "x", mode: "emergency", pet_name: "Bento", score: 0.9 } })) as unknown as {
-      opts: { className: string; html: string };
-    };
-    // The halo lives on the marker element (the ring clips its own content to a circle).
-    expect(matched.opts.className).toBe("pp-pin pp-pin--match");
-    expect(matched.opts.html).toContain("pp-pin__ring");
-    expect(matched.opts.html).toContain("border-color:#2e9e63");
-    // Unmatched pins stay plain.
-    const plain = petPinIcon(mockFlyer()) as unknown as typeof matched;
-    expect(plain.opts.className).toBe("pp-pin");
-    expect(plain.opts.html).toContain("pp-pin__ring");
+  it("petPinIcon always renders the plain marker class with the status ring on the inner ring", () => {
+    const lost = petPinIcon(mockFlyer()) as unknown as { opts: { className: string; html: string } };
+    expect(lost.opts.className).toBe("pp-pin");
+    expect(lost.opts.html).toContain("pp-pin__ring");
+    expect(lost.opts.html).toContain("border-color:#b3261e");
+    const found = petPinIcon(mockFoundFlyer()) as unknown as typeof lost;
+    expect(found.opts.className).toBe("pp-pin");
+    expect(found.opts.html).toContain("pp-pin__ring");
+    expect(found.opts.html).toContain("border-color:#2e9e63");
   });
 
   it("petPinIcon falls back to the pet initial, 'Found pet' for unnamed found pets, and escapes HTML", () => {
@@ -184,13 +181,13 @@ describe("pin stacking", () => {
     expect(icon.opts.iconAnchor).toEqual([28, 28]);
   });
 
-  it("stackPinIcon shows at most two back cards and adds the match halo class when any card matches", () => {
+  it("stackPinIcon shows at most two back cards for a four-pin stack", () => {
     const spot = { location_lat: 14.5995, location_lng: 120.9842 };
     const items = [
       mockFlyer({ ...spot, created_at: "2026-11-01T00:00:00Z", id: "a" }),
       mockFoundFlyer({ ...spot, created_at: "2026-11-02T00:00:00Z", id: "b" }),
       mockFlyer({ ...spot, created_at: "2026-11-03T00:00:00Z", id: "c" }),
-      mockFoundFlyer({ ...spot, created_at: "2026-11-04T00:00:00Z", id: "d", match: { flyer_id: "x", mode: "emergency", pet_name: "Bento", score: 0.9 } }),
+      mockFoundFlyer({ ...spot, created_at: "2026-11-04T00:00:00Z", id: "d" }),
     ];
     const group = groupPins(items)[0];
     const icon = stackPinIcon(group) as unknown as { opts: { className: string; html: string; iconSize: number[] } };
@@ -198,7 +195,7 @@ describe("pin stacking", () => {
     expect(icon.opts.html.match(/pp-stack__card/g)).toHaveLength(2);
     expect(icon.opts.html).toContain("translate(14px, 14px)");
     expect(icon.opts.iconSize).toEqual([70, 70]);
-    expect(icon.opts.className).toBe("pp-pin pp-stack-pin pp-stack-pin--match");
+    expect(icon.opts.className).toBe("pp-pin pp-stack-pin");
   });
 
   it("pin photos are centred in the circle: leaflet-scoped CSS beats Leaflet's `width:auto` marker rule", () => {

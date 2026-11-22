@@ -136,8 +136,7 @@ export function BuilderWizard() {
     const m = params.get("mode");
     return m === "outreach" || m === "found" ? m : "emergency";
   });
-  // All uploaded angles of the pet — the first is the cover photo; matching on the
-  // backend compares every photo pair, so extra angles raise the chance of a hit.
+  // All uploaded angles of the pet — the first is the cover photo.
   const [photos, setPhotos] = useState<LocalPhotoUploadResult[]>([]);
   const [pet, setPet] = useState<Pet | null>(null);
 
@@ -262,7 +261,7 @@ function StepPhotoMode({
       </p>
       <FieldShell
         label="Pet photo"
-        hint={`Every photo is checked by our pet detector before upload — a non-pet photo is simply rejected, never penalised. Add up to 4 photos from different angles: lost/found matching compares every photo pair, so the same pet from another angle still matches.`}
+        hint={`Every photo is checked by our pet detector before upload — a non-pet photo is simply rejected, never penalised. Add up to 4 clear photos from different angles of the same pet.`}
       >
         <PhotoUpload
           onUploaded={onUploaded}

@@ -83,28 +83,6 @@ describe("PetMapPage", () => {
     expect(legend).toHaveTextContent("Found — green pin");
   });
 
-  it("marks vision-matched pins with the amber halo and shows a match banner in the popup", async () => {
-    const lost = mockFlyer();
-    const found = mockFoundFlyer({
-      match: { flyer_id: lost.id, mode: "emergency", pet_name: lost.pet.name ?? "Bento", score: 0.92 },
-    });
-    mswServer.use(http.get("*/api/flyers/map", () => HttpResponse.json([lost, found])));
-    renderWithProviders(<PetMapPage />, { route: "/map" });
-    await waitFor(() => expect(state.markers).toHaveLength(2));
-    // The matched pin gets the halo class on the marker; the unmatched one does not.
-    expect(state.markers[1].opts.icon.opts.className).toContain("pp-pin--match");
-    expect(state.markers[0].opts.icon.opts.className).not.toContain("pp-pin--match");
-    // Legend shows the "Possible match" badge.
-    expect(screen.getByText(/Possible match/)).toBeInTheDocument();
-    // Popup of the matched pin shows the banner linking to the counterpart flyer.
-    (state.listeners["marker:click"] ?? [])[1]({});
-    const popup = await screen.findByTestId("map-pin-popup");
-    const banner = await screen.findByTestId("pin-match-banner");
-    expect(banner).toHaveTextContent("Possible photo match with Bento (92%)");
-    expect(banner.querySelector("a")).toHaveAttribute("href", `/flyers/${lost.id}`);
-    expect(popup).toHaveTextContent("Miso");
-  });
-
   it("stacks pins at the same spot into one deck pin with a ×N badge; tapping it lists every stacked flyer", async () => {
     const spot = { location_lat: 14.5995, location_lng: 120.9842 };
     const lost = mockFlyer({ ...spot, created_at: "2026-11-10T00:00:00Z" }); // oldest → peeks behind
