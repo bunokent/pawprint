@@ -246,26 +246,6 @@ FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")
 YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL_PATH", "yolov8s-worldv2.pt")
 YOLO_CONFIDENCE_THRESHOLD = float(os.environ.get("YOLO_CONFIDENCE_THRESHOLD", "0.20"))
 
-# MegaDescriptor re-identification embeddings (pet re-ID matching). One L2-normalized
-# embedding is cached per photo (PetPhoto.photo_embedding / legacy Pet.photo_embedding),
-# computed from the in-memory padded crop of YOLO-World's best animal box — the stored,
-# uncropped original stays the display image. CLIP ViT-B/32 remains the species-naming
-# and breed/color stage only.
-MEGA_DESCRIPTOR_MODEL = os.environ.get(
-    "MEGA_DESCRIPTOR_MODEL", "hf-hub:BVRA/MegaDescriptor-L-384"
-)  # or "hf-hub:BVRA/MegaDescriptor-DINOv2-518"
-MEGA_DESCRIPTOR_DEVICE = os.environ.get("MEGA_DESCRIPTOR_DEVICE", "")  # "" = cuda if available else cpu
-# Fraction of the detection box size added as padding on every side of the in-memory crop.
-PET_CROP_PADDING = float(os.environ.get("PET_CROP_PADDING", "0.20"))
-
-# Max cross-photo MegaDescriptor cosine similarity at/above which a found report is
-# considered a possible match for a lost report of the same species (notifications +
-# map halo). MegaDescriptor re-ID scores sit well below CLIP full-frame scores, so this
-# starts lower than the old 0.80 CLIP threshold. Calibrated on real photos of one cat
-# from 6 angles (30 shuffle splits: same-cat max-pair 0.35–0.59) vs 27 other cats/dog
-# negatives (max 0.30): 0.33 sits in the middle of that separation window.
-PET_MATCH_SIMILARITY_THRESHOLD = float(os.environ.get("PET_MATCH_SIMILARITY_THRESHOLD", "0.33"))
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGGING = {

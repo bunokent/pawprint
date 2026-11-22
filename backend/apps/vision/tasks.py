@@ -21,17 +21,3 @@ def recheck_photo(log_id: str) -> bool:
         return False
     logger.info("recheck_photo log=%s passed=%s", log_id, log.passed)
     return log.passed
-
-
-@shared_task(name="apps.vision.tasks.match_flyer")
-def match_flyer(flyer_id: str) -> int:
-    """Compare a flyer's pet photos against the opposite mode's active same-species flyers.
-
-    Creates PetMatch rows + notifications for pairs whose max cross-photo MegaDescriptor
-    embedding cosine similarity >= PET_MATCH_SIMILARITY_THRESHOLD. Returns the match count.
-    """
-    from .services import PetMatchService
-
-    matches = PetMatchService.match_flyer(flyer_id)
-    logger.info("match_flyer flyer=%s matches=%d", flyer_id, len(matches))
-    return len(matches)

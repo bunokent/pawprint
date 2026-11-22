@@ -36,14 +36,6 @@ class Pet(models.Model):
     temperament_tags = models.JSONField(default=list, blank=True)
     health_tags = models.JSONField(default=list, blank=True)
     photo_path = models.CharField(max_length=512, blank=True)
-    # MegaDescriptor re-ID embedding of the pet photo (list of floats, L2-normalized),
-    # cached at match time — computed from the in-memory padded crop of YOLO-World's
-    # best animal box; the stored uncropped image stays the display image. Used to
-    # compare found photos against lost ones (PetMatch). Legacy rows hold CLIP
-    # full-frame vectors with embedding_model="" and are re-embedded on next match.
-    photo_embedding = models.JSONField(null=True, blank=True)
-    # Tag of the embedding model that produced photo_embedding (e.g. "MegaDescriptor-L-384").
-    embedding_model = models.CharField(max_length=64, blank=True, default="")
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.ADOPTABLE)
     # Materialized full-text search vector over (name, breed, color) — GIN indexed.
     search_vector = SearchVectorField(null=True, editable=False)
@@ -74,22 +66,12 @@ class Pet(models.Model):
 
 class PetPhoto(models.Model):
     """One photo of a pet — a report can carry up to MAX_PET_PHOTOS of them (e.g.
-    different angles of the same dog). Each photo gets its own cached MegaDescriptor
-    re-ID embedding (from the in-memory padded crop of its detection box); lost/found
-    matching takes the max cosine similarity over every cross-photo pair, so the same
-    pet photographed from different angles still matches (see PetMatchService).
+    different angles of the same pet). The first photo is also the cover (`Pet.photo_path`).
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     pet = models.ForeignKey(Pet, on_delete=models.CASCADE, related_name="photos")
     photo_path = models.CharField(max_length=512)
-    # MegaDescriptor re-ID embedding of THIS photo (list of floats, L2-normalized),
-    # cached at match time — one entry per photo (up to MAX_PET_PHOTOS per report),
-    # not just the cover photo. Computed from an in-memory padded crop of the
-    # detection box; the stored file is the full, uncropped display image.
-    photo_embedding = models.JSONField(null=True, blank=True)
-    # Tag of the embedding model that produced photo_embedding.
-    embedding_model = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

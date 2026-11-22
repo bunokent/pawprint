@@ -933,11 +933,6 @@ components:
         export_pdf_url:
           type: string
           readOnly: true
-        match:
-          allOf:
-          - $ref: '#/components/schemas/FlyerMatch'
-          nullable: true
-          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -953,35 +948,10 @@ components:
       - export_pdf_url
       - export_png_url
       - id
-      - match
       - pet
       - photo_url
       - status
       - updated_at
-    FlyerMatch:
-      type: object
-      description: Vision-match counterpart of a flyer pin (lost <-> found).
-      properties:
-        flyer_id:
-          type: string
-          format: uuid
-        mode:
-          type: string
-        pet_name:
-          type: string
-        score:
-          type: number
-          format: double
-        best_pair:
-          type: array
-          items:
-            type: integer
-          nullable: true
-      required:
-      - flyer_id
-      - mode
-      - pet_name
-      - score
     FlyerStatusEnum:
       enum:
       - draft
@@ -1013,14 +983,9 @@ components:
       - redirect_uri
     KindEnum:
       enum:
-      - match_found
-      - match_lost
       - system
       type: string
-      description: |-
-        * `match_found` - Possible match for your lost pet
-        * `match_lost` - Your found pet may be someone's lost pet
-        * `system` - System
+      description: '* `system` - System'
     Login:
       type: object
       properties:

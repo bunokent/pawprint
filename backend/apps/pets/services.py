@@ -13,8 +13,8 @@ from apps.vision.services import PetAttributeService, PetDetectionService, load_
 
 from .models import Pet, PetPhoto
 
-# A lost/found report can carry up to this many photos (different angles of the
-# same pet) — the frontend PhotoUpload caps at the same number.
+# A report can carry up to this many photos (different angles of the same pet) —
+# the frontend PhotoUpload caps at the same number.
 MAX_PET_PHOTOS = 4
 
 
@@ -50,23 +50,8 @@ class PetService:
             temperament_tags=temperament_tags or [], health_tags=health_tags or [],
             photo_path=paths[0] if paths else "", status=status,
         )
-        if paths:
-            # Cache the MegaDescriptor re-ID embedding of every photo now (computed from
-            # the in-memory padded crop of the best detection box — the stored files stay
-            # full and uncropped), so lost/found matching never has to re-download photos
-            # mid-task (no-op under PAWPRINT_TESTING, and never raises — see
-            # PetMatchService.ensure_embedding).
-            from apps.vision.services import PetMatchService
-
-            primary_embedding = PetMatchService.ensure_embedding(pet)
-            for index, path in enumerate(paths):
-                photo = PetPhoto.objects.create(pet=pet, photo_path=path)
-                if index == 0 and primary_embedding:
-                    # Reuse the cover photo's embedding instead of re-reading storage.
-                    photo.photo_embedding = primary_embedding
-                    photo.save(update_fields=["photo_embedding"])
-                else:
-                    PetMatchService.ensure_embedding(photo)
+        for path in paths:
+            PetPhoto.objects.create(pet=pet, photo_path=path)
         return pet
 
 

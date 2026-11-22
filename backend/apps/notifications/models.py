@@ -1,4 +1,4 @@
-"""Notification model — in-app alerts (e.g. lost/found photo matches)."""
+"""Notification model — in-app system alerts."""
 
 import uuid
 
@@ -8,8 +8,6 @@ from django.db.models import Index
 
 class Notification(models.Model):
     class Kind(models.TextChoices):
-        MATCH_FOUND = "match_found", "Possible match for your lost pet"
-        MATCH_LOST = "match_lost", "Your found pet may be someone's lost pet"
         SYSTEM = "system", "System"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.common import storage
@@ -11,25 +10,12 @@ from apps.pets.serializers import PetSerializer
 from .models import Flyer
 
 
-class FlyerMatchSerializer(serializers.Serializer):
-    """Vision-match counterpart of a flyer pin (lost <-> found)."""
-
-    flyer_id = serializers.UUIDField()
-    mode = serializers.CharField()
-    pet_name = serializers.CharField()
-    score = serializers.FloatField()
-    # [lost photo index, found photo index] of the image pair that produced `score`.
-    best_pair = serializers.ListField(child=serializers.IntegerField(), allow_null=True, required=False)
-
-
 class FlyerSerializer(serializers.ModelSerializer[Flyer]):
     pet = PetSerializer(read_only=True)
     creator_display_name = serializers.CharField(source="creator.display_name", read_only=True)
     photo_url = serializers.SerializerMethodField()
     export_png_url = serializers.SerializerMethodField()
     export_pdf_url = serializers.SerializerMethodField()
-    # Counterpart of a vision match (set by FlyerMapView via context["matches"]).
-    match = serializers.SerializerMethodField()
 
     class Meta:
         model = Flyer
@@ -39,16 +25,10 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
             "distinctive_markings",
             "contact_phone", "contact_email", "reward_enabled", "reward_amount_cents",
             "reward_currency", "qr_target_type", "qr_target_value",
-            "photo_url", "export_png_url", "export_pdf_url", "match", "created_at", "updated_at",
+            "photo_url", "export_png_url", "export_pdf_url", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "creator", "status", "created_at", "updated_at",
-                            "export_png_url", "export_pdf_url", "photo_url", "match"]
-
-    @extend_schema_field(FlyerMatchSerializer(allow_null=True))
-    def get_match(self, obj: Flyer):
-        """Vision-match counterpart for map pins: {flyer_id, mode, pet_name, score} or None."""
-        matches = self.context.get("matches") or {}
-        return matches.get(str(obj.pk))
+                            "export_png_url", "export_pdf_url", "photo_url"]
 
     def get_photo_url(self, obj: Flyer) -> str:
         if obj.pet and obj.pet.photo_path:

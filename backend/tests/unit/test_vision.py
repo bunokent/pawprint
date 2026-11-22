@@ -518,7 +518,7 @@ def test_group_contrast_rank_uses_contrast_prompts_and_picks_winner():
     aligned to the cat prompts wins the feline group."""
     import apps.vision.services as svc
 
-    members = tuple(l for l in svc.CONFUSABLE_GROUPS["feline"] if l in svc.ANIMAL_CATEGORY_BY_LABEL)
+    members = tuple(label for label in svc.CONFUSABLE_GROUPS["feline"] if label in svc.ANIMAL_CATEGORY_BY_LABEL)
     assert members == ("cat", "tiger", "lion")
     # "cat" contrast prompts come first in the focused prompt list (members order).
     fake = _FakeClip(0)
@@ -535,3 +535,31 @@ def test_confusable_group_winner_none_for_ungrouped_top_label(monkeypatch):
     assert svc._confusable_group_winner(Image.new("RGB", (8, 8)), [("elephant", 0.9), ("dog", 0.05)]) is None
     # Single known member in the group (porcupine/hare are not configured labels).
     assert svc._confusable_group_winner(Image.new("RGB", (8, 8)), [("hedgehog", 0.9)]) is None
+
+
+def test_padded_crop_expands_clamps_and_falls_back(monkeypatch):
+    """padded_crop: padded box clamped to image bounds; None/degenerate box → full image."""
+    import apps.vision.services as svc
+
+    image = Image.new("RGB", (100, 80))
+    # Box (40, 30)-(60, 50): 20×20, padding 0.25 → 5px per side → (35,25)-(65,55) = 30×30.
+    assert svc.padded_crop(image, (40.0, 30.0, 60.0, 50.0), 0.25).size == (30, 30)
+    # Corner box clamps instead of going negative.
+    assert svc.padded_crop(image, (0.0, 0.0, 10.0, 10.0), 0.5).size == (15, 15)
+    # No box or degenerate box → the full image, and the original is never mutated.
+    assert svc.padded_crop(image, None, 0.2).size == (100, 80)
+    assert svc.padded_crop(image, (50.0, 40.0, 50.0, 40.0), 0.0).size == (100, 80)
+    assert image.size == (100, 80)
+
+
+def test_best_animal_box_picks_highest_confidence_animal(monkeypatch, settings):
+    settings.YOLO_CONFIDENCE_THRESHOLD = 0.20
+    _mock_model(
+        monkeypatch,
+        [(0, 0.99), (16, 0.60), (15, 0.80)],  # person, dog, cat
+        xyxy=[(0.0, 0.0, 5.0, 5.0), (10.0, 10.0, 20.0, 20.0), (1.0, 1.0, 9.0, 9.0)],
+    )
+    from PIL import Image
+
+    box = PetDetectionService().best_animal_box(Image.new("RGB", (32, 32)))
+    assert box == (1.0, 1.0, 9.0, 9.0)  # cat @ 0.80 beats dog @ 0.60 (person ignored)

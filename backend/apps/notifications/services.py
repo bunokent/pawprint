@@ -1,4 +1,4 @@
-"""Notification service — create + realtime push, match alerts, mark-read."""
+"""Notification service — create + realtime push, mark-read."""
 
 from __future__ import annotations
 
@@ -45,38 +45,3 @@ class NotificationService:
         if ids:
             qs = qs.filter(pk__in=ids)
         return qs.update(read_at=timezone.now())
-
-    @staticmethod
-    def notify_match(match) -> None:
-        """Alert both sides of a PetMatch: the lost pet's owner + the finder."""
-        lost, found = match.lost_flyer, match.found_flyer
-        # Found pets are often unnamed — fall back to a readable label.
-        lost_name = lost.pet.name or "your lost pet"
-        found_name = found.pet.name or "a found pet"
-        score_pct = f"{match.score:.0%}"
-        notified = set()
-        for recipient in (lost.creator, lost.pet.owner):
-            if recipient is None or recipient.pk in notified:
-                continue
-            notified.add(recipient.pk)
-            NotificationService.create(
-                recipient,
-                kind=Notification.Kind.MATCH_FOUND,
-                title=f"Possible match: {found_name} was found",
-                body=(
-                    f"A found pet photo matches your lost pet {lost_name} "
-                    f"(match confidence {score_pct}). See the found report."
-                ),
-                link=f"/flyers/{found.pk}",
-            )
-        if found.creator_id not in notified:
-            NotificationService.create(
-                found.creator,
-                kind=Notification.Kind.MATCH_LOST,
-                title="Your found pet may match a lost report",
-                body=(
-                    f"Your found pet photo matches a lost report for {lost_name} "
-                    f"(match confidence {score_pct}). See the lost flyer."
-                ),
-                link=f"/flyers/{lost.pk}",
-            )

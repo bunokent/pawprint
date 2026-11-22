@@ -25,4 +25,3 @@ class PetPhotoFactory(factory.django.DjangoModelFactory):
 
     pet = factory.SubFactory(PetFactory)
     photo_path = factory.Sequence(lambda n: f"pets/photos/angle-{n}.jpg")
-    photo_embedding = None

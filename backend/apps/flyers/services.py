@@ -19,14 +19,6 @@ class FlyerError(Exception):
     pass
 
 
-def _dispatch_photo_match(flyer: Flyer) -> None:
-    """Queue lost/found photo matching for lost/found flyers (no-op for outreach)."""
-    if flyer.mode in (Flyer.Mode.EMERGENCY, Flyer.Mode.FOUND):
-        from apps.vision.tasks import match_flyer
-
-        match_flyer.delay(str(flyer.pk))
-
-
 @dataclass(frozen=True)
 class FlyerDTO:
     id: uuid.UUID
@@ -73,7 +65,6 @@ class FlyerService:
         from .tasks import generate_flyer_assets
 
         generate_flyer_assets.delay(str(flyer.pk))
-        _dispatch_photo_match(flyer)
         flyer.refresh_from_db()  # reflects eager execution in tests; stays 'active' in async prod
         return flyer
 
@@ -88,7 +79,6 @@ class FlyerService:
         from .tasks import generate_flyer_assets
 
         generate_flyer_assets.delay(str(flyer.pk))
-        _dispatch_photo_match(flyer)
         flyer.refresh_from_db()
         return flyer
 
