@@ -49,7 +49,7 @@ export interface MapInitOptions {
 export function createMap(container: HTMLElement, opts: MapInitOptions = {}): L.Map {
   const { center = DEFAULT_CENTER, zoom = DEFAULT_ZOOM, scrollWheelZoom = true } = opts;
   const map = L.map(container, { center, zoom, scrollWheelZoom });
-  L.tileLayer(CARTO_VOYAGER_URL, { maxZoom: 19, attribution: CARTO_ATTRIBUTION, subdomains: ["a", "b", "c", "d"] }).addTo(map);
+  L.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(map);
   return map;
 }
 

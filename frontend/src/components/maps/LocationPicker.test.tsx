@@ -63,8 +63,8 @@ describe("LocationPicker", () => {
     expect(await screen.findByTestId("flyer-loc-map")).toBeInTheDocument();
     // The address input keeps its id under the same label.
     expect(screen.getByLabelText("Last seen location")).toHaveAttribute("id", "flyer-loc");
-    // CartoCDN Voyager tile layer + one draggable pin.
-    expect(state.tiles[0].url).toContain("cartocdn.com");
+    // OSM tile layer + one draggable pin.
+    expect(state.tiles[0].url).toContain("tile.openstreetmap.org");
     expect(state.markers).toHaveLength(1);
     expect(state.markers[0].opts.draggable).toBe(true);
     await waitFor(() => {

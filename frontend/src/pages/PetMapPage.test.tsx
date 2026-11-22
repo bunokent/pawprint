@@ -34,8 +34,8 @@ describe("PetMapPage", () => {
     expect(await screen.findByTestId("pet-map")).toBeInTheDocument();
     // Map mode: no list fallback.
     expect(screen.queryByTestId("pin-list")).not.toBeInTheDocument();
-    // CartoCDN Voyager tile layer on the map container.
-    expect(state.tiles[0].url).toContain("cartocdn.com");
+    // OSM tile layer on the map container.
+    expect(state.tiles[0].url).toContain("tile.openstreetmap.org");
     expect(state.maps[0].opts.center).toEqual([mockFlyer().location_lat, mockFlyer().location_lng]);
 
     await waitFor(() => expect(state.markers).toHaveLength(2));
