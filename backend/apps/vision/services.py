@@ -120,10 +120,40 @@ CLIP_PROMPT_TEMPLATES: tuple[str, ...] = (
     "a photo of a pet {}",
 )
 SPECIES_PROMPT_OVERRIDES: dict[str, tuple[str, ...]] = {
-    "dog": ("a domestic dog", "a pet dog looking at the camera"),
-    "cat": ("a domestic cat", "a pet cat looking at the camera"),
-    "fox": ("a red fox", "a wild fox with pointed ears and a bushy tail", "a fox in the wild"),
-    "wolf": ("a wild wolf with pointed ears",),
+    "dog": (
+        "a domestic dog kept as a pet",
+        "a pet dog looking at the camera",
+        "a small pet dog next to a person, furniture or a household floor",
+    ),
+    "cat": (
+        "a domestic house cat kept as a pet",
+        "a pet cat looking at the camera",
+        "a small pet tabby cat sitting on the ground or floor",
+        "a house cat — small and tame, not a wild big cat",
+    ),
+    "tiger": (
+        "a large wild tiger with orange fur and black stripes, much bigger than a house cat",
+        "a tiger in the wild or in a zoo enclosure",
+    ),
+    "lion": (
+        "a large wild lion with a mane, in the savanna or a zoo",
+        "a big wild cat with a mane — not a house cat",
+    ),
+    "bear": ("a large wild bear in a forest",),
+    "fox": (
+        "a wild red fox with pointed ears and a bushy tail in nature",
+        "a red fox in the wild — not a pet dog",
+    ),
+    "wolf": (
+        "a large wild grey wolf in a forest, bigger than a pet dog",
+        "a wild wolf with pointed ears — not a domestic dog",
+    ),
+    "deer": ("a wild deer with antlers in a forest",),
+    "horse": ("a horse standing in a field or stable",),
+    "hedgehog": (
+        "a small hedgehog covered in short brown spines, curled into a ball",
+        "a tiny hedgehog with a pointed snout and spiky back",
+    ),
     "crocodile": (
         "a crocodile with a broad snout",
         "a crocodile in water",
@@ -148,6 +178,65 @@ SPECIES_PROMPT_OVERRIDES: dict[str, tuple[str, ...]] = {
     "guinea pig": ("a guinea pig with a round body",),
     "chinchilla": ("a chinchilla with soft grey fur",),
 }
+# Labels that CLIP/YOLO-World confuse on pet photos — a tabby cat reads as "tiger"
+# (stripes) or even "hedgehog" (spiky-looking fur), a dog as "wolf"/"fox". When the top
+# pick lands in one of these groups with a rival close behind, a focused contrast pass
+# (GROUP_CONTRAST_PROMPTS on the cropped animal) decides the single winner.
+CONFUSABLE_GROUPS: dict[str, tuple[str, ...]] = {
+    "feline": ("cat", "tiger", "lion"),
+    "canine": ("dog", "wolf", "fox"),
+    "spiny": ("hedgehog", "porcupine"),
+    "lagomorph": ("rabbit", "hare"),
+    "rodent": ("mouse", "rat", "hamster", "guinea pig", "chinchilla"),
+    "crocodilian": ("crocodile", "alligator"),
+    "anuran": ("frog", "toad"),
+}
+GROUP_CONTRAST_PROMPTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "feline": {
+        "cat": (
+            "a small domestic house cat kept as a pet, with soft fur and no big-cat stripes",
+            "a pet tabby cat sitting on concrete or a floor indoors or in a yard",
+        ),
+        "tiger": (
+            "a large wild tiger with bold orange-and-black stripes, far bigger than any house cat",
+            "a tiger in jungle or zoo surroundings",
+        ),
+        "lion": ("a large wild lion with a mane in the wild or a zoo",),
+    },
+    "canine": {
+        "dog": (
+            "a domestic pet dog, small or medium, next to people or household things",
+            "a pet dog being held or sitting at home",
+        ),
+        "wolf": ("a large wild grey wolf in a forest, much bigger than a pet dog",),
+        "fox": ("a wild red fox with a bushy tail in nature, not a pet",),
+    },
+    "spiny": {
+        "hedgehog": ("a small hedgehog covered in spines, curled into a ball",),
+        "porcupine": ("a porcupine with long quills on its back",),
+    },
+    "lagomorph": {
+        "rabbit": ("a rabbit with long ears and a short fluffy tail",),
+        "hare": ("a wild hare with very long ears in a field",),
+    },
+    "rodent": {
+        "mouse": ("a tiny mouse with small rounded ears",),
+        "rat": ("a rat with a long bare tail",),
+        "hamster": ("a small hamster with cheek pouches",),
+        "guinea pig": ("a round guinea pig",),
+        "chinchilla": ("a chinchilla with soft grey fur",),
+    },
+    "crocodilian": {
+        "crocodile": ("a crocodile with a long broad snout and scaly skin",),
+        "alligator": ("an alligator with a short rounded snout",),
+    },
+    "anuran": {
+        "frog": ("a green frog with smooth skin",),
+        "toad": ("a toad with dry bumpy skin",),
+    },
+}
+# A group rival within this probability margin of the top pick triggers the contrast pass.
+GROUP_RIVAL_MARGIN = 0.20
 CLIP_ANIMAL_PROMPTS: tuple[str, ...] = (
     "a photo of an animal",
     "a photo of a pet",
@@ -168,6 +257,13 @@ CLIP_NON_ANIMAL_PROMPTS: tuple[str, ...] = (
 )
 CLIP_ANIMAL_GATE_MIN_PROBABILITY = 0.25
 CLIP_SPECIES_MIN_PROBABILITY = 0.15
+# Only CLIP labels within this fraction of the top probability stay selected — a tabby
+# cat must not also be labelled "hedgehog" just because both cleared the absolute floor.
+CLIP_SPECIES_RELATIVE_MARGIN = 0.9
+# Padding (fraction of the box size per side) for the in-memory crop that is classified:
+# naming the species from the cropped animal — not the full scene — keeps background
+# clutter (concrete, leaves, walls) from tipping CLIP toward wild lookalikes.
+SPECIES_CROP_PADDING = 0.25
 
 _MODEL: YOLOWorld | None = None
 _MODEL_LOCK = Lock()
@@ -309,13 +405,76 @@ def _clip_animal_gate(image: Any, clip_model: Any | None = None) -> bool:
     return animal_prob >= CLIP_ANIMAL_GATE_MIN_PROBABILITY and animal_prob > non_animal_prob
 
 
+def _group_contrast_rank(
+    image: Any, group: str, members: tuple[str, ...], clip_model: Any | None = None
+) -> list[tuple[str, float]]:
+    """Focused CLIP ranking of one confusable group with contrastive prompts.
+
+    e.g. feline members compared as "small domestic house cat" vs "large wild tiger" —
+    the prompts force CLIP to use size/domestication cues instead of just stripes.
+    """
+    import torch
+
+    model = clip_model or _get_clip_model()
+    prompts: list[str] = []
+    ranges: dict[str, tuple[int, int]] = {}
+    for label in members:
+        start = len(prompts)
+        prompts.extend(GROUP_CONTRAST_PROMPTS.get(group, {}).get(label, ()))
+        prompts.extend(template.format(label) for template in CLIP_PROMPT_TEMPLATES)
+        prompts.extend(SPECIES_PROMPT_OVERRIDES.get(label, ()))
+        ranges[label] = (start, len(prompts))
+    with torch.no_grad():
+        text_feats = _normalize_torch(model.encode_text(model.tokenize(prompts)))
+        image_feat = model.encode_image(image)
+        logits = (100.0 * image_feat @ text_feats.T).squeeze(0)
+    scores = [(label, float(logits[start:end].mean().item())) for label, (start, end) in ranges.items()]
+    probs = torch.softmax(torch.tensor([score for _, score in scores]), dim=0)
+    ranked = sorted(zip([label for label, _ in scores], probs.tolist(), strict=True), key=lambda item: -item[1])
+    return [(label, float(prob)) for label, prob in ranked]
+
+
+def _confusable_group_winner(
+    image: Any, rank: list[tuple[str, float]], clip_model: Any | None = None
+) -> str | None:
+    """Single species when the top pick is a confusable lookalike of a rival.
+
+    Returns the contrast-pass winner when the top label belongs to a multi-member
+    confusable group and another member is within GROUP_RIVAL_MARGIN of it (e.g. a tabby
+    cat ranked "tiger" with "cat" close behind); None otherwise.
+    """
+    top_label, top_prob = rank[0]
+    if top_prob < CLIP_SPECIES_MIN_PROBABILITY:
+        return None  # uniform/garbage ranking — no meaningful top pick to disambiguate
+    group = next((name for name, labels in CONFUSABLE_GROUPS.items() if top_label in labels), None)
+    if group is None:
+        return None
+    members = tuple(label for label in CONFUSABLE_GROUPS[group] if label in ANIMAL_CATEGORY_BY_LABEL)
+    if len(members) < 2:
+        return None
+    rivals = [label for label, prob in rank if label in members and label != top_label and prob >= top_prob - GROUP_RIVAL_MARGIN]
+    if not rivals:
+        return None
+    contrast = _group_contrast_rank(image, group, members, clip_model)
+    return contrast[0][0] if contrast else None
+
+
 def _refine_species(image: Any, accepted_raw: list[str], clip_model: Any | None = None) -> list[str]:
-    """Name the actual animal with CLIP; fall back to YOLO-World labels when unsure."""
+    """Name the actual animal with CLIP; fall back to YOLO-World labels when unsure.
+
+    Runs on the cropped animal region (see validate_pet_image). A confusable-group
+    contrast pass resolves lookalikes (tabby cat vs tiger/wolf vs dog) to a single
+    species; otherwise only labels within CLIP_SPECIES_RELATIVE_MARGIN of the top
+    probability are kept.
+    """
     rank = _clip_rank(image, clip_model)
     if not rank:
         return list(accepted_raw)
+    winner = _confusable_group_winner(image, rank, clip_model)
+    if winner is not None:
+        return [winner]
     top_prob = rank[0][1]
-    min_prob = max(CLIP_SPECIES_MIN_PROBABILITY, top_prob * 0.5)
+    min_prob = max(CLIP_SPECIES_MIN_PROBABILITY, top_prob * CLIP_SPECIES_RELATIVE_MARGIN)
     selected = [label for label, prob in rank if prob >= min_prob and label in ANIMAL_CATEGORY_BY_LABEL]
     if selected:
         return selected
@@ -356,7 +515,7 @@ def padded_crop(
     """In-memory crop of `box` (xyxy, absolute pixels) expanded by `padding` (a fraction of
     the box size on every side), clamped to the image bounds. Falls back to the full image
     when no box is given or the padded box degenerates — the stored display image is never
-    modified; this crop exists only for the re-identification embedding.
+    modified; this crop exists only for the in-memory CLIP species-classification pass.
     """
     if box is None:
         return image
@@ -391,9 +550,10 @@ class PetDetectionService:
         """Gate with YOLO-World and name the species with CLIP.
 
         Returns pass/fail, refined `pet_classes`, raw `detected_classes`, and `best_box`
-        (the highest-confidence accepted animal's xyxy box, used for the in-memory
-        re-identification crop). Raises NoPetDetectedError when neither YOLO-World nor
-        the CLIP animal gate finds an animal.
+        (the highest-confidence accepted animal's xyxy box — the species-naming CLIP pass
+        runs on a padded in-memory crop of it so background clutter cannot tip the
+        classifier toward wild lookalikes like tiger/hedgehog). Raises
+        NoPetDetectedError when neither YOLO-World nor the CLIP animal gate finds an animal.
         """
         model = _get_model()
         image = load_image(image_bytes)
@@ -415,9 +575,11 @@ class PetDetectionService:
                 accepted_raw.append(label)
                 if box is not None and confidence > best_box_conf:
                     best_box, best_box_conf = box, confidence
+        # Classify the cropped animal, not the full scene — precision against lookalikes.
+        classify_image = padded_crop(image, best_box, SPECIES_CROP_PADDING) if best_box else image
         if accepted_raw:
             # YOLO-World proved an animal is present; CLIP names the actual species.
-            pet_classes = _refine_species(image, accepted_raw)
+            pet_classes = _refine_species(classify_image, accepted_raw)
         elif _clip_animal_gate(image):
             # Clear animal photo that YOLO-World missed at the configured threshold
             # (e.g. a crocodile close-up): CLIP gate + CLIP species naming.

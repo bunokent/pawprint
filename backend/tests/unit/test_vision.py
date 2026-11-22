@@ -437,3 +437,101 @@ def test_ambiguous_clip_top_labels_keep_multiple_species_editable(monkeypatch):
         clip_rank=[("cat", 0.50), ("dog", 0.45)],
     )
     assert PetDetectionService().validate_pet_image(_img_bytes()).pet_classes == ["cat", "dog"]
+
+
+# ---------------------------------------------------------------------------
+# Precision: cropped classification + confusable-group contrast pass. A tabby
+# cat must not be named "tiger" (stripes) or "hedgehog" (spiky-looking fur).
+# ---------------------------------------------------------------------------
+
+
+def test_validate_classifies_the_padded_crop_not_the_full_image(monkeypatch):
+    """The CLIP species pass runs on the padded best-box crop, not the full scene."""
+    seen: list[tuple[int, int]] = []
+
+    def _capture(image, accepted, clip_model=None):
+        seen.append(image.size)
+        return list(accepted)
+
+    _mock_model(
+        monkeypatch,
+        [(15, 0.85)],
+        {15: "cat"},
+        xyxy=[(8.0, 8.0, 24.0, 24.0)],  # 16×16 box in a 32×32 image
+    )
+    monkeypatch.setattr("apps.vision.services._refine_species", _capture)
+    result = PetDetectionService().validate_pet_image(_img_bytes())
+    assert result.passed is True
+    assert result.pet_classes == ["cat"]
+    # 16×16 box + 25% padding per side → 8px wider/higher → 24×24 crop (clamped to 32×32).
+    assert seen == [(24, 24)]
+
+
+def test_refine_species_relative_margin_drops_distant_lookalikes(monkeypatch):
+    """Only labels within CLIP_SPECIES_RELATIVE_MARGIN of the top stay — hedgehog at
+    0.16 must not ride along with cat at 0.40."""
+    import apps.vision.services as svc
+
+    monkeypatch.setattr(
+        svc, "_clip_rank", lambda image, clip_model=None: [("cat", 0.40), ("hedgehog", 0.16), ("dog", 0.05)]
+    )
+    image = Image.new("RGB", (8, 8))
+    assert svc._refine_species(image, ["cat"]) == ["cat"]
+
+
+def test_confusable_group_contrast_resolves_tabby_cat_vs_tiger(monkeypatch):
+    """Top pick "tiger" with "cat" close behind → contrast pass picks the house cat."""
+    import apps.vision.services as svc
+
+    monkeypatch.setattr(
+        svc,
+        "_clip_rank",
+        lambda image, clip_model=None: [("tiger", 0.30), ("hedgehog", 0.16), ("cat", 0.14)],
+    )
+    monkeypatch.setattr(
+        svc,
+        "_group_contrast_rank",
+        lambda image, group, members, clip_model=None: [("cat", 0.91), ("tiger", 0.09)],
+    )
+    image = Image.new("RGB", (8, 8))
+    assert svc._refine_species(image, ["tiger", "hedgehog"]) == ["cat"]
+
+
+def test_confusable_group_not_triggered_without_close_rival(monkeypatch):
+    """A clear tiger (cat far behind the rival margin) stays "tiger" — no contrast pass."""
+    import apps.vision.services as svc
+
+    monkeypatch.setattr(
+        svc, "_clip_rank", lambda image, clip_model=None: [("tiger", 0.60), ("cat", 0.10)]
+    )
+
+    def _boom(image, group, members, clip_model=None):
+        raise AssertionError("contrast pass ran despite no close rival")
+
+    monkeypatch.setattr(svc, "_group_contrast_rank", _boom)
+    image = Image.new("RGB", (8, 8))
+    assert svc._refine_species(image, ["tiger"]) == ["tiger"]
+
+
+def test_group_contrast_rank_uses_contrast_prompts_and_picks_winner():
+    """The focused pass tokenizes the group's contrast prompts; the image feature
+    aligned to the cat prompts wins the feline group."""
+    import apps.vision.services as svc
+
+    members = tuple(l for l in svc.CONFUSABLE_GROUPS["feline"] if l in svc.ANIMAL_CATEGORY_BY_LABEL)
+    assert members == ("cat", "tiger", "lion")
+    # "cat" contrast prompts come first in the focused prompt list (members order).
+    fake = _FakeClip(0)
+    image = Image.new("RGB", (8, 8))
+    ranked = svc._group_contrast_rank(image, "feline", members, fake)
+    assert ranked[0][0] == "cat"
+    assert ranked[0][1] > 0.99
+    assert {label for label, _ in ranked} == set(members)
+
+
+def test_confusable_group_winner_none_for_ungrouped_top_label(monkeypatch):
+    import apps.vision.services as svc
+
+    assert svc._confusable_group_winner(Image.new("RGB", (8, 8)), [("elephant", 0.9), ("dog", 0.05)]) is None
+    # Single known member in the group (porcupine/hare are not configured labels).
+    assert svc._confusable_group_winner(Image.new("RGB", (8, 8)), [("hedgehog", 0.9)]) is None
