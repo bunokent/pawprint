@@ -185,15 +185,21 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 - `QrService` mints a QR code targeting the public flyer URL —
   `qr_target_value = {FRONTEND_BASE_URL}/flyers/{id}` (set on create), so a
   printed QR lands a scanner directly on the guest-accessible flyer page. The SPA renders the
-  same target as an SVG data-URL QR (`QrImage`) on the detail page and inside the A4 export.
+  same target as an SVG data-URL QR (`QrImage`) inside the share menu's QR modal (with a PNG
+  download) and inside the A4 export — the QR is **print/modal-only** on screen, never a raw
+  block on the sheet.
 - On create/update, `FlyerService` dispatches Celery task `generate_flyer_assets` (queue
   `flyers`): renders the HTML flyer template with WeasyPrint to A4 PDF + Playwright A4@300dpi
   PNG, uploads to private Cloudinary, marks the flyer `active`, then broadcasts `flyer.generated`
   over Django Channels (`ws/flyers/`).
-- `PetCreateSerializer` accepts `photo_paths` (list, max 4; `photo_path` stays as the cover =
-  first photo), and `PetService.create_pet` creates one `PetPhoto` row per photo. A report can
-  therefore show the same pet from up to 4 angles on its flyer; the stored files are always
-  the full, uncropped originals.
+- `PetCreateSerializer` accepts `photo_paths` (list, max 10 — `MAX_PET_PHOTOS`; `photo_path`
+  stays as the cover = first photo), and `PetService.create_pet` creates one `PetPhoto` row per
+  photo. A report can therefore show the same pet from up to 10 angles on its flyer; the stored
+  files are always the full, uncropped originals.
+- The public flyer API exposes **`photo_urls`** (string[] of signed URLs, cover first, legacy
+  fallback `[photo_path]`) on `FlyerSerializer`; `select_flyer_queryset()` prefetches
+  `pet__photos` (one extra query; the test ceilings bumped +1) so list/detail/map never N+1 on
+  the photo list.
 - Flyer templates (`templates/flyers/{emergency,outreach}.html`) and the on-screen
   `.print-sheet` follow the `taste` skill print typography (`@page { size: A4; margin: 0 }`,
   `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
@@ -330,13 +336,13 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   species** — the species row is built from the distinct `pet.species` values saved in the DB
   for the mapped flyers, and the two filters combine, with a "No pets match these filters"
   empty state + Clear filters reset; if the map cannot be created it renders the
-  same pins as a list), `/flyers/:id` Public Flyer + QR + print/export + owner resolve/delete
+  same pins as a list), `/flyers/:id` Public Flyer + **photo gallery** (main frame + thumbnail strip + lightbox viewer, `components/PhotoGallery.tsx`, fed by `flyer.photo_urls`) + **Share flyer** menu (`components/ShareMenu.tsx` + `lib/share.ts`: native Web Share API with the QR PNG attached where supported, Facebook/X/WhatsApp share intents, Instagram via native image share or copy-caption-and-open, copy-link, and a QR modal with PNG download — browsers cannot auto-post to social accounts, the intents/share sheet pre-fill the composer instead; the QR itself is print/modal-only) + print/export + owner resolve (now a deliberate **double click** — "Click again to confirm", armed 4 s, disarmed on blur — on both the detail page and the owner card) / delete
   (delete opens the custom `ConfirmDeleteDialog` — `src/components/ui/confirm-dialog.tsx`,
   an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`)
   + reward checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
   urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
-  the photo step stays open until **Next** so up to 4 angle photos can be added, and going
+  the photo step stays open until **Next** so up to 10 angle photos can be added (`DEFAULT_MAX_PHOTOS = 10`, matching backend `MAX_PET_PHOTOS`), and going
   back with uploaded photos shows **Next** to continue without re-uploading; the pet is
   created with `photo_path` = cover + `photo_paths` = all angles). Found mode hides
   **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
@@ -366,8 +372,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   works), `useOptimistic` publishing card on flyer create, ref-as-prop, React Compiler in
   `vite.config.ts` (disabled under Vitest so coverage maps to source). TanStack Query
   `queryOptions` factories; reward status polls every 2 s while `pending`. Zod + RHF forms.
-  QR codes rendered as SVG data-URLs via the `qrcode` package (`src/components/QrImage.tsx`).
-  `@media print` A4-exact stylesheet (`@page { size: A4 }`, `.print-sheet`, `.no-print`) +
+  QR codes rendered as SVG data-URLs (`src/components/QrImage.tsx`) and as shareable/downloadable PNGs via the `qrcode` package (`src/lib/share.ts`, used by the Share menu's QR modal and Web Share file attachment).
+  `@media print` A4-exact stylesheet (`@page { size: A4 }`, `.print-sheet`, `.no-print`, `.print-only` — the A4 sheet keeps the single cover photo + QR while the screen shows the full gallery) +
   Print button.
 - Dev proxy: Vite proxies `/api`, `/media`, `/ws` to the backend; the origin is env-driven
   (`PAWPRINT_API_URL`, default `http://127.0.0.1:8000`) so Playwright E2E can run the API on
@@ -1129,9 +1135,39 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   files** @ 88.99/80.30/84.94/90.26 (coverage exit 0, rewards 100%), `tsc -b` clean
   on the touched files.
 
+- **Phase 45** — Multi-photo flyers: upload cap raised 4 → 10 end to end (backend
+  `MAX_PET_PHOTOS`, `photo_paths max_length=10`, frontend `DEFAULT_MAX_PHOTOS = 10` +
+  wizard hint). The public flyer API now returns **`photo_urls`** (signed URLs of every
+  uploaded angle, cover first, legacy `[photo_path]` fallback) via a `pet__photos` prefetch
+  in `select_flyer_queryset()` — query ceilings in the integration tests bumped +1 so list /
+  detail / map still cannot N+1. `schema.yml` + `schema.d.ts` regenerated, MSW mocks carry
+  `photo_urls`. On the detail page a new `PhotoGallery` (`components/PhotoGallery.tsx`)
+  renders the cover large with a thumbnail strip and opens a keyboard-friendly lightbox
+  (Arrow keys / Esc, focus restore, `prefers-reduced-motion` respected); the A4 print sheet
+  keeps the single cover + QR via `.print-only`. Header nav compacts under 640 px so it never
+  overflows a phone. Backend: **169 passed @ 97.16%**, ruff + mypy clean. Frontend: gallery /
+  cap tests green.
+
+- **Phase 46** — Share instead of a raw QR block + double-click resolve. The on-screen QR on the
+  flyer sheet is replaced by a **Share flyer** button + popover (`components/ShareMenu.tsx`,
+  helpers in `lib/share.ts`): native Web Share API (attaches the QR PNG via `navigator.share({
+  files })` where the browser supports it — on mobile the OS sheet lists Instagram/Facebook/
+  Messenger with the image ready to post), Facebook sharer / X / WhatsApp popup intents,
+  Instagram via native image share or copy-caption-and-open-instagram (no web API can
+  auto-publish to Instagram/Facebook — the intents pre-fill the composer, one tap from a real
+  post), copy-link with a "Link copied ✓" confirmation, and a **QR modal** (pretty SVG QR +
+  PNG download + copy link). The QR stays **print-only** on the A4 sheet. "Mark reunited" /
+  "Mark returned home" / "Mark adopted" now require a deliberate **double click** ("Click
+  again to confirm", armed 4 s, disarmed on blur) on both `FlyerDetailPage` and the
+  `MyFlyersPage` owner card. e2e journeys 01/03/06 open the QR through the share menu.
+  Verified visually at 1440×900, 390×844 and 320×700 (headless Chromium screenshots: gallery +
+  thumbs, share popover anchored right on phones with no horizontal overflow, QR modal,
+  lightbox). Frontend: **145 vitest tests** @ 86.01/78.40/83.44/87.46, `tsc -b` + `vite build`
+  green.
+
 **Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
-frontend **134 vitest tests** @ 88.99/80.30/84.94/90.26 + Playwright journeys
+frontend **145 vitest tests** @ 86.01/78.40/83.44/87.46 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run directly on
 the host (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025) — no Docker;
@@ -1141,4 +1177,9 @@ no notifications feature; no seed/demo data — all E2E journeys are self-contai
 flyer templates always render a photo frame (SVG paw-print fallback when no photo);
 all UI photo frames show a real pet photograph fallback (`public/pet-fallback.webp`)
 instead of a blank box or "No photo yet" text;
+flyers accept up to 10 photos and the public page shows them all in a gallery + lightbox
+(`photo_urls` on the API, `PhotoGallery` on the detail page; A4 print keeps cover + QR);
+the on-screen QR is replaced by a Share flyer menu (native share w/ QR PNG, Facebook /
+Instagram / X / WhatsApp, copy link, QR modal with PNG download);
+resolving a flyer (reunited / returned home / adopted) requires a double click;
 `npm run docs:pdf` regenerated.
