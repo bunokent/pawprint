@@ -10,20 +10,38 @@ import { EmptyState, ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { createMap, groupPins, petPinIcon, pinRingColor, stackPinIcon, type PinGroup } from "@/lib/maps";
 import { cn, formatDate, petDisplayName } from "@/lib/utils";
 
+/** "cat" → "Cat" — species are stored lowercase in the DB. */
+function speciesLabel(species: string): string {
+  return species.charAt(0).toUpperCase() + species.slice(1);
+}
+
 /** Public interactive pet map: one photo pin per active lost/found flyer with coordinates. */
 export function PetMapPage() {
   const query = useQuery(flyerMapQuery());
   const [filterMode, setFilterMode] = useState<"all" | "emergency" | "found">("all");
+  const [filterSpecies, setFilterSpecies] = useState<string>("all");
 
   const allFlyers = query.data ?? [];
   const lostCount = useMemo(() => allFlyers.filter((f) => f.mode === "emergency").length, [allFlyers]);
   const foundCount = useMemo(() => allFlyers.filter((f) => f.mode === "found").length, [allFlyers]);
 
+  // Species filter options come straight from the species saved on each flyer's pet (DB).
+  const speciesOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const f of allFlyers) {
+      const species = f.pet.species?.trim();
+      if (species) counts.set(species, (counts.get(species) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [allFlyers]);
+
   const filteredFlyers = useMemo(() => {
-    if (filterMode === "emergency") return allFlyers.filter((f) => f.mode === "emergency");
-    if (filterMode === "found") return allFlyers.filter((f) => f.mode === "found");
-    return allFlyers;
-  }, [allFlyers, filterMode]);
+    let out = allFlyers;
+    if (filterMode === "emergency") out = out.filter((f) => f.mode === "emergency");
+    else if (filterMode === "found") out = out.filter((f) => f.mode === "found");
+    if (filterSpecies !== "all") out = out.filter((f) => f.pet.species === filterSpecies);
+    return out;
+  }, [allFlyers, filterMode, filterSpecies]);
 
   return (
     <section style={{ padding: "64px 0" }}>
@@ -60,6 +78,30 @@ export function PetMapPage() {
             <MapPin size={13} /> Found — green pin ({foundCount})
           </button>
         </div>
+        {speciesOptions.length > 0 && (
+          <div className="btn-row" data-enter="3" style={{ marginBottom: 24, flexWrap: "wrap", gap: 8 }} aria-label="Species filter">
+            <button
+              type="button"
+              onClick={() => setFilterSpecies("all")}
+              className={cn("badge badge--neutral map-filter-btn", filterSpecies === "all" && "map-filter-btn--active")}
+              style={{ border: "none" }}
+            >
+              All species ({allFlyers.length})
+            </button>
+            {speciesOptions.map(([species, count]) => (
+              <button
+                key={species}
+                type="button"
+                data-testid={`species-filter-${species}`}
+                onClick={() => setFilterSpecies(filterSpecies === species ? "all" : species)}
+                className={cn("badge badge--neutral map-filter-btn", filterSpecies === species && "map-filter-btn--active")}
+                style={{ border: "none" }}
+              >
+                {speciesLabel(species)} ({count})
+              </button>
+            ))}
+          </div>
+        )}
 
         {query.isLoading && <Skeleton style={{ height: 480, borderRadius: 20 }} />}
         {query.isError && <ErrorBox message="Could not load the pet map. Please try again." />}
@@ -68,7 +110,21 @@ export function PetMapPage() {
             <p>Lost and found flyers with a map location will appear here.</p>
           </EmptyState>
         )}
-        {query.data && query.data.length > 0 && <LeafletPins flyers={filteredFlyers} />}
+        {query.data && query.data.length > 0 && filteredFlyers.length === 0 && (
+          <EmptyState title="No pets match these filters">
+            <p>Try a different species or mode.</p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setFilterMode("all");
+                setFilterSpecies("all");
+              }}
+            >
+              Clear filters
+            </Button>
+          </EmptyState>
+        )}
+        {query.data && filteredFlyers.length > 0 && <LeafletPins flyers={filteredFlyers} />}
       </div>
     </section>
   );

@@ -83,6 +83,48 @@ describe("PetMapPage", () => {
     expect(legend).toHaveTextContent("Found — green pin");
   });
 
+  it("filters the pins by the species saved on each pet (DB value)", async () => {
+    // Default MSW data: Bento (dog, lost) + Miso (cat, found).
+    renderWithProviders(<PetMapPage />, { route: "/map" });
+    await waitFor(() => expect(state.markers).toHaveLength(2));
+
+    // The species row is built from the distinct pet.species values in the payload.
+    const speciesRow = screen.getByLabelText("Species filter");
+    expect(speciesRow).toHaveTextContent("All species (2)");
+    expect(speciesRow).toHaveTextContent("Cat (1)");
+    expect(speciesRow).toHaveTextContent("Dog (1)");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("species-filter-dog"));
+    // Only the dog pin remains: status pill + the newest marker.
+    expect(await screen.findByText("1 pet on map")).toBeInTheDocument();
+    await waitFor(() => expect(state.markers.length).toBeGreaterThanOrEqual(3));
+    expect(state.markers.at(-1)?.latlng).toEqual({ lat: mockFlyer().location_lat, lng: mockFlyer().location_lng });
+
+    // Tapping the same species again (or "All species") restores every pin.
+    await user.click(screen.getByRole("button", { name: /All species/ }));
+    expect(await screen.findByText("2 pets on map")).toBeInTheDocument();
+  });
+
+  it("combines mode + species filters and offers a clear-filters empty state", async () => {
+    renderWithProviders(<PetMapPage />, { route: "/map" });
+    await waitFor(() => expect(state.markers).toHaveLength(2));
+    const user = userEvent.setup();
+
+    // Lost mode → only Bento (dog) remains.
+    await user.click(screen.getByRole("button", { name: /Lost — red pin/ }));
+    expect(await screen.findByText("1 pet on map")).toBeInTheDocument();
+
+    // Lost + cat → nothing: empty state with a reset action.
+    await user.click(screen.getByTestId("species-filter-cat"));
+    expect(await screen.findByText("No pets match these filters")).toBeInTheDocument();
+    expect(screen.queryByTestId("pet-map")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(await screen.findByText("2 pets on map")).toBeInTheDocument();
+    expect(screen.getByTestId("pet-map")).toBeInTheDocument();
+  });
+
   it("stacks pins at the same spot into one deck pin with a ×N badge; tapping it lists every stacked flyer", async () => {
     const spot = { location_lat: 14.5995, location_lng: 120.9842 };
     const lost = mockFlyer({ ...spot, created_at: "2026-11-10T00:00:00Z" }); // oldest → peeks behind
