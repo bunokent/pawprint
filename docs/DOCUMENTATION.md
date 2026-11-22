@@ -55,7 +55,7 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   detection box (cached on `PetPhoto.photo_embedding` with an `embedding_model` tag; legacy
   single-photo pets on `Pet.photo_embedding`), and a found report is matched against lost
   reports of the same species by the **max** cosine similarity over every cross-photo pair ≥
-  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.60) — creating a `vision.PetMatch` (with the
+  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.33) — creating a `vision.PetMatch` (with the
   winning image pair in `best_pair`) plus notifications to both sides, so the same pet
   photographed from different angles still matches (Phases 33–34). In-app notifications live
    in `apps.notifications` (REST + per-user `ws/notifications/` push). Maps: Leaflet 1.9
@@ -208,7 +208,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   (front vs side vs back) still matches, not just literally the same picture. Embeddings are
   MegaDescriptor re-ID vectors of each photo's in-memory padded detection crop (the stored
   images stay uncropped). Every pair whose max similarity ≥
-  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.60, env-tunable) gets a unique `vision.PetMatch`
+  `PET_MATCH_SIMILARITY_THRESHOLD` (default 0.33, env-tunable) gets a unique `vision.PetMatch`
   row (score + `best_pair`) plus `apps.notifications` alerts to both sides, pushed over
   `ws/notifications/` (per-user group; ASGI wraps websockets in `AuthMiddlewareStack`).
   `GET /api/flyers/map` annotates each pin with its `match` counterpart (incl. `best_pair`).
@@ -293,9 +293,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   product, also returning the winning pair indices. `PetMatchService.rank_candidates(flyer_id,
   top_k)` ranks candidates (max similarity, best pair, `is_match` vs threshold);
   `match_flyer` creates `PetMatch` rows (`score` + `best_pair`) ≥
-  `PET_MATCH_SIMILARITY_THRESHOLD` (default **0.60** — MegaDescriptor re-ID scores sit well
-  below CLIP full-frame scores, so the old 0.80 default was lowered; tune against real test
-  pairs via the env var) and notifies both sides. Same pet, different angle → still matches.
+  `PET_MATCH_SIMILARITY_THRESHOLD` (default **0.33** — MegaDescriptor re-ID scores sit well
+  below CLIP full-frame scores, so the old 0.80 default was lowered; 0.33 is calibrated on
+  real photos (Phase 35), tune via the env var) and notifies both sides. Same pet,
+  different angle → still matches.
 - The YOLO loader falls back to `yolov8s-worldv2.pt` if a stale non-World `YOLO_MODEL_PATH` is
   configured, and raises a clear `RuntimeError` if the checkpoint does not contain a World head.
   Generated weights (`backend/yolov8s-worldv2.pt`, `/weights/`) are git-ignored; Ultralytics
@@ -922,7 +923,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `vision/0003`; a tag mismatch with a stored photo re-embeds, so legacy CLIP rows migrate
   on the next `backfill_matches`). Scoring is the max cosine similarity over the full
   cross-photo pair product (`score_embedding_pairs`), same-species only (`pet__species`
-  filter); threshold `PET_MATCH_SIMILARITY_THRESHOLD` default lowered 0.80 → 0.60
+  filter); threshold `PET_MATCH_SIMILARITY_THRESHOLD` default lowered 0.80 → 0.60 → 0.33 after real-photo calibration (Phase 35)
   (env-tunable). The winning image pair lands on `PetMatch.best_pair` and in the
   `/api/flyers/map` `match` payload; `rank_candidates(flyer_id, top_k)` exposes ranked
   candidates. Reports capped at 4 photos (`MAX_PET_PHOTOS`, serializer `max_length=4`,
@@ -931,6 +932,26 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   regenerated. Tests: new `test_megadescriptor.py` + updated `test_vision_match.py`,
   `test_vision.py`, `test_flyer_map.py`. Verified: **200 pytest passed @ 95.31%** (100%
   `apps/vision/services.py`; ruff + mypy clean), **129 Vitest** green, `tsc -b` clean.
+
+- **Phase 35** — Threshold calibrated on the user's 6 real cat photos (one cat, 6 angles:
+  sitting / lounging / playing / close-up / yawning / window). All 6 pass the YOLO-World
+  gate as `cat` (max_conf 0.74–0.84, `best_box` present). MegaDescriptor-L-384 embeddings
+  (1536-d, L2-normalized padded crops, `PET_CROP_PADDING`=0.20; padding 0.10–0.35 barely
+  moves scores) give same-cat cross-angle pairs 0.20–0.61 (mean 0.36) while 27 negative
+  images (a dog + 26 other cats) score ≤ 0.32 (mean 0.12). End-to-end shuffle test
+  (real upload → gate → `ensure_embedding` → `match_flyer`, scratch DB): **30/30
+  4-lost × 1-found shuffle splits matched at threshold 0.33** (per-split max-pair scores
+  0.3499–0.5861, `best_pair` stored on `PetMatch` and surfaced in `/api/flyers/map`),
+  and other-cat found reports scored ≤ 0.3007 → no false `PetMatch`. Separation window
+  [0.30 neg max, 0.35 same-cat min] → `PET_MATCH_SIMILARITY_THRESHOLD` default set to
+  **0.33** (env-tunable). `MegaDescriptor-DINOv2-518` was downloaded (2.6 GB, HF token
+  from root `.env`) but its CLS/patch features are near-degenerate under timm 1.0.31
+  (cosine ≈ 1.0 even vs noise), so L-384 stays the default. HF downloads (timm hub +
+  Ultralytics) use `HF_TOKEN` from the root `.env` (auto-loaded by `settings.py`);
+  YOLO-World weights stay local (`backend/yolov8s-worldv2.pt`). Also fixed the dev-DB
+  500 on `POST /api/pets`: migrations `pets/0007` + `vision/0003` were unapplied —
+  `manage.py migrate` ran and the endpoint returns 201. Verified: **200 pytest passed @
+  95.31%**, ruff clean (mypy has one pre-existing `test_profile.py` note).
 
 **Final status:** backend **200 passed @ 95.31%** (100% on all services/drivers incl.
 `apps/vision/services.py`);

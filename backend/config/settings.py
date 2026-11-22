@@ -261,8 +261,10 @@ PET_CROP_PADDING = float(os.environ.get("PET_CROP_PADDING", "0.20"))
 # Max cross-photo MegaDescriptor cosine similarity at/above which a found report is
 # considered a possible match for a lost report of the same species (notifications +
 # map halo). MegaDescriptor re-ID scores sit well below CLIP full-frame scores, so this
-# starts lower than the old 0.80 CLIP threshold — tune against real test pairs.
-PET_MATCH_SIMILARITY_THRESHOLD = float(os.environ.get("PET_MATCH_SIMILARITY_THRESHOLD", "0.60"))
+# starts lower than the old 0.80 CLIP threshold. Calibrated on real photos of one cat
+# from 6 angles (30 shuffle splits: same-cat max-pair 0.35–0.59) vs 27 other cats/dog
+# negatives (max 0.30): 0.33 sits in the middle of that separation window.
+PET_MATCH_SIMILARITY_THRESHOLD = float(os.environ.get("PET_MATCH_SIMILARITY_THRESHOLD", "0.33"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
