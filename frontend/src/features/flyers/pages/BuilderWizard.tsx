@@ -136,7 +136,7 @@ export function BuilderWizard() {
     const m = params.get("mode");
     return m === "outreach" || m === "found" ? m : "emergency";
   });
-  // All uploaded angles of the pet — the first is the cover photo.
+  // One photo per pet — the single accepted photo is the flyer's cover image.
   const [photos, setPhotos] = useState<LocalPhotoUploadResult[]>([]);
   const [pet, setPet] = useState<Pet | null>(null);
 
@@ -185,18 +185,8 @@ export function BuilderWizard() {
             mode={mode}
             setMode={setMode}
             photos={photos}
-            onUploaded={(r) =>
-              setPhotos((prev) =>
-                prev.some((p) => p.key === r.key) ? prev.map((p) => (p.key === r.key ? r : p)) : [...prev, r],
-              )
-            }
+            onUploaded={(r) => setPhotos([r])}
             onRemove={(key) => setPhotos((prev) => prev.filter((p) => p.key !== key))}
-            onMakeCover={(key) =>
-              setPhotos((prev) => {
-                const target = prev.find((p) => p.key === key);
-                return target ? [target, ...prev.filter((p) => p.key !== key)] : prev;
-              })
-            }
             onNext={() => setStep(1)}
           />
         )}
@@ -213,7 +203,6 @@ function StepPhotoMode({
   photos,
   onUploaded,
   onRemove,
-  onMakeCover,
   onNext,
 }: {
   mode: Mode;
@@ -221,7 +210,6 @@ function StepPhotoMode({
   photos: LocalPhotoUploadResult[];
   onUploaded: (r: LocalPhotoUploadResult) => void;
   onRemove: (key: string) => void;
-  onMakeCover: (key: string) => void;
   onNext: () => void;
 }) {
   return (
@@ -261,12 +249,11 @@ function StepPhotoMode({
       </p>
       <FieldShell
         label="Pet photo"
-        hint={`Every photo is checked by our pet detector before upload — a non-pet photo is simply rejected, never penalised. Add up to 10 clear photos from different angles of the same pet.`}
+        hint={`One clear photo of your pet. Our detector checks it before saving — logos and non-pet photos are simply rejected, never penalised.`}
       >
         <PhotoUpload
           onUploaded={onUploaded}
           onRemove={onRemove}
-          onMakeCover={onMakeCover}
           uploaded={photos}
         />
       </FieldShell>
@@ -293,9 +280,9 @@ function StepPet({
   onBack: () => void;
 }) {
   const createPet = useCreatePet();
-  // Detection runs on the latest uploaded photo (the cover is photos[0]);
-  // prefer the CLIP-refined species names; fall back to raw YOLO-World labels.
-  const photo = photos[photos.length - 1];
+  // Detection ran on the single uploaded photo (the cover); prefer the CLIP-refined
+  // species names, falling back to raw YOLO-World labels.
+  const photo = photos[0];
   const detectedLabels = photo.pet_classes?.length ? photo.pet_classes : photo.detected_classes;
   const speciesText = detectedLabels.length > 0 ? detectedLabels.map(capitalize).join(", ") : "Not detected";
   const autoSpecies = (detectedSpecies(detectedLabels) ?? "dog") as Species;
@@ -328,7 +315,6 @@ function StepPet({
         age: mode === "found" ? null : values.age ? Number(values.age) : null,
         temperament_tags: parseTags(values.temperament_tags ?? ""),
         photo_path: photos[0].key,
-        photo_paths: photos.map((p) => p.key),
         status: mode === "emergency" ? "lost" : mode === "found" ? "found" : "adoptable",
       });
       onDone(pet);

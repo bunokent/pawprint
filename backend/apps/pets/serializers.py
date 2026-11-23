@@ -7,6 +7,7 @@ from rest_framework import serializers
 from apps.common import storage
 
 from .models import Pet
+from .services import MAX_PET_PHOTOS
 
 
 class PetSerializer(serializers.ModelSerializer[Pet]):
@@ -36,9 +37,12 @@ class PetCreateSerializer(serializers.Serializer):
     temperament_tags = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
     health_tags = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
     photo_path = serializers.CharField(max_length=512, required=False, allow_blank=True)
-    # Up to 10 photos of the same pet (different angles) — the first is the cover photo.
+    # One photo per pet — the cover image used by the flyer and the detector readout.
     photo_paths = serializers.ListField(
-        child=serializers.CharField(max_length=512), required=False, max_length=10
+        child=serializers.CharField(max_length=512),
+        required=False,
+        max_length=MAX_PET_PHOTOS,
+        error_messages={"max_length": "One photo per pet is allowed. Please upload a single clear photo."},
     )
     status = serializers.ChoiceField(choices=Pet.Status.choices, default=Pet.Status.ADOPTABLE)
 

@@ -464,7 +464,7 @@ describe("BuilderWizard", () => {
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     expect(screen.getByTestId("species-value")).toHaveTextContent("Dog");
 
-    // Back to the photo step, upload a different photo (now detected as cat).
+    // Back to the photo step, replace the photo (now detected as cat).
     await user.click(screen.getByRole("button", { name: "← Back" }));
     await screen.findByRole("heading", { name: "Report a lost pet" });
     mswServer.use(
@@ -490,8 +490,9 @@ describe("BuilderWizard", () => {
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: { files: [new File(["img"], "cat.jpg", { type: "image/jpeg" })] },
     });
-    // The new angle photo is appended (2 photos now) and drives detection.
-    await screen.findByAltText("Uploaded photo 2");
+    // The new photo replaces the old one (one photo per pet) and drives detection.
+    expect(await screen.findByText("Detected: cat ✓")).toBeInTheDocument();
+    expect(screen.getAllByAltText("Uploaded pet preview")).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     expect(screen.getByTestId("species-value")).toHaveTextContent("Cat");
@@ -560,15 +561,13 @@ describe("BuilderWizard", () => {
     expect(screen.queryByLabelText("Personality tags")).not.toBeInTheDocument();
     expect(screen.getByTestId("found-hint")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    // The pet is created unnamed, ageless, with status "found" — photo_path is the
-    // cover and photo_paths carries every uploaded angle.
+    // The pet is created unnamed, ageless, with status "found" and a single cover photo.
     await waitFor(() =>
       expect(createdPets[0]).toMatchObject({
         name: "",
         status: "found",
         age: null,
         photo_path: "pets/photos/bento.jpg",
-        photo_paths: ["pets/photos/bento.jpg"],
       }),
     );
 
@@ -596,22 +595,20 @@ describe("BuilderWizard", () => {
     expect(screen.getByRole("heading", { level: 1 })).not.toHaveTextContent(":");
   });
 
-  it("uploads several angle photos and posts them all as photo_paths (cover = first)", async () => {
+  it("accepts only one photo even when several files are picked, and posts it as the cover", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     const user = userEvent.setup();
     const createdPets: Array<Record<string, unknown>> = [];
-    // Counter-based keys: MSW cannot read the jsdom FormData body, so the handler
-    // numbers each accepted upload instead of echoing the file name.
-    let n = 0;
+    let uploads = 0;
     mswServer.use(
       http.post("*/api/pets/photos", () => {
-        n += 1;
+        uploads += 1;
         return HttpResponse.json(
           {
-            key: `pets/photos/angle-${n}.jpg`,
-            url: `http://x/angle-${n}.jpg`,
-            thumb_key: `t-angle-${n}.jpg`,
-            thumb_url: `http://x/t-angle-${n}.jpg`,
+            key: "pets/photos/only.jpg",
+            url: "http://x/only.jpg",
+            thumb_key: "t-only.jpg",
+            thumb_url: "http://x/t-only.jpg",
             pet_classes: ["dog"],
             detected_classes: ["dog"],
             max_confidence: 0.9,
@@ -630,7 +627,7 @@ describe("BuilderWizard", () => {
     );
     renderWithProviders(<BuilderWizard />, { route: "/builder?mode=emergency", routePath: "/builder" });
 
-    // Pick two angles of the same pet in one go.
+    // Pick two files at once — only the first is uploaded and shown.
     fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
       target: {
         files: [
@@ -639,18 +636,18 @@ describe("BuilderWizard", () => {
         ],
       },
     });
-    await screen.findByAltText("Uploaded photo 2");
-    expect(screen.getByText("2 photos")).toBeInTheDocument();
+    expect(await screen.findByAltText("Uploaded pet preview")).toBeInTheDocument();
+    expect(screen.getAllByAltText("Uploaded pet preview")).toHaveLength(1);
+    await waitFor(() => expect(uploads).toBe(1));
+
     await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     await user.type(screen.getByLabelText("Pet name"), "Gab");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => expect(createdPets).toHaveLength(1));
-    expect(createdPets[0]).toMatchObject({
-      photo_path: "pets/photos/angle-1.jpg",
-      photo_paths: ["pets/photos/angle-1.jpg", "pets/photos/angle-2.jpg"],
-    });
+    expect(createdPets[0]).toMatchObject({ photo_path: "pets/photos/only.jpg" });
+    expect(createdPets[0]).not.toHaveProperty("photo_paths");
   });
 
   it("surfaces the 422 gatekeeper error inside the wizard", async () => {

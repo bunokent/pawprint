@@ -30,10 +30,8 @@ export interface PetCreateInput {
   age?: number | null;
   temperament_tags?: string[];
   health_tags?: string[];
-  /** Cover photo (first of photo_paths when several angles are uploaded). */
+  /** The single uploaded photo — the flyer's cover image. */
   photo_path?: string;
-  /** All uploaded angles of the same pet — the first is the cover photo. */
-  photo_paths?: string[];
   status?: string;
 }
 

@@ -12,7 +12,7 @@ test("registered user publishes a lost-pet flyer with a reward", async ({ page }
   await expect(page.getByRole("heading", { name: "Report a lost pet" })).toBeVisible();
 
   // Step 1 — photo upload passes the YOLO-World pet gate; the wizard stays on the
-  // photo step (more angle photos can be added) until Next is clicked.
+  // photo step (the single photo can be replaced) until Next is clicked.
   const upload = page.waitForResponse(
     (r) => r.url().endsWith("/api/pets/photos") && r.request().method() === "POST",
   );

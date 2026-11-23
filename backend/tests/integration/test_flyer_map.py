@@ -112,52 +112,40 @@ def test_create_pet_with_found_status(auth_client, user):
     assert resp.json()["status"] == "found"
 
 
-def test_create_pet_with_photo_paths_stores_every_angle(auth_client, user):
-    """Multi-angle upload: each photo becomes a PetPhoto row; the first is the cover."""
+def test_create_pet_stores_one_photo(auth_client, user):
+    """One photo per pet: it becomes both the cover and the single PetPhoto row."""
     from apps.pets.models import PetPhoto
 
     resp = auth_client.post(
         "/api/pets",
-        {
-            "species": "dog",
-            "status": "found",
-            "photo_paths": ["pets/photos/front.jpg", "pets/photos/side.jpg", "pets/photos/back.jpg"],
-        },
+        {"species": "dog", "status": "found", "photo_paths": ["pets/photos/front.jpg"]},
         format="json",
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["photo_path"] == "pets/photos/front.jpg"  # cover = first photo
+    assert body["photo_path"] == "pets/photos/front.jpg"
     photos = PetPhoto.objects.filter(pet_id=body["id"]).order_by("created_at")
-    assert [p.photo_path for p in photos] == [
-        "pets/photos/front.jpg",
-        "pets/photos/side.jpg",
-        "pets/photos/back.jpg",
-    ]
-    # Legacy single photo_path still works and merges with photo_paths.
+    assert [p.photo_path for p in photos] == ["pets/photos/front.jpg"]
+
+    # More than one photo is rejected with a clear field error.
     resp = auth_client.post(
         "/api/pets",
-        {"species": "dog", "photo_path": "pets/photos/a.jpg", "photo_paths": ["pets/photos/b.jpg"]},
-        format="json",
-    )
-    assert resp.status_code == 201
-    assert resp.json()["photo_path"] == "pets/photos/a.jpg"
-    assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 2
-    # More than 10 photos are rejected (a report carries up to 10 images).
-    resp = auth_client.post(
-        "/api/pets",
-        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(11)]},
+        {"species": "dog", "photo_paths": ["pets/photos/a.jpg", "pets/photos/b.jpg"]},
         format="json",
     )
     assert resp.status_code == 400
-    # Exactly 10 photos are accepted.
+    assert "One photo per pet" in str(resp.json())
+    assert PetPhoto.objects.count() == 1
+
+    # The legacy single photo_path field still works.
     resp = auth_client.post(
         "/api/pets",
-        {"species": "dog", "photo_paths": [f"pets/photos/p{i}.jpg" for i in range(10)]},
+        {"species": "dog", "photo_path": "pets/photos/legacy.jpg"},
         format="json",
     )
     assert resp.status_code == 201
-    assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 10
+    assert resp.json()["photo_path"] == "pets/photos/legacy.jpg"
+    assert PetPhoto.objects.filter(pet_id=resp.json()["id"]).count() == 1
 
 
 def test_create_found_pet_without_name(auth_client, user):

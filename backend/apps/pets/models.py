@@ -65,8 +65,8 @@ class Pet(models.Model):
 
 
 class PetPhoto(models.Model):
-    """One photo of a pet — a report can carry up to MAX_PET_PHOTOS of them (e.g.
-    different angles of the same pet). The first photo is also the cover (`Pet.photo_path`).
+    """The single photo of a pet (MAX_PET_PHOTOS = 1), mirrored on `Pet.photo_path`
+    as the cover used by flyers and search results.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

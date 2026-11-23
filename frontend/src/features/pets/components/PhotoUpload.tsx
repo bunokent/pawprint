@@ -10,35 +10,27 @@ export interface LocalPhotoUploadResult extends PhotoUploadResult {
 }
 
 interface PhotoUploadProps {
-  /** Called once per accepted photo (several files can be picked at once). */
+  /** Called with the accepted photo — replaces any previous selection. */
   onUploaded: (result: LocalPhotoUploadResult) => void;
   onRemove: (key: string) => void;
-  /** Promote a thumbnail to the cover photo (first position). */
-  onMakeCover: (key: string) => void;
   uploaded: LocalPhotoUploadResult[];
-  maxPhotos?: number;
 }
-
-// Generous on purpose: a finder may snap the pet from every angle, and every angle
-// helps the owner recognise it. The backend (MAX_PET_PHOTOS) caps at the same number.
-const DEFAULT_MAX_PHOTOS = 10;
 
 const UPLOAD_STAGES = [
   { id: "uploading", label: "Uploading photo", shortLabel: "Upload", detail: "Sending your photo over a secure connection" },
-  { id: "scanning", label: "Scanning photo", shortLabel: "Scan", detail: "Reading the image and preparing it for pet detection" },
-  { id: "detecting", label: "Detecting your pet", shortLabel: "Detect", detail: "YOLO-World is looking for a pet in your photo" },
+  { id: "scanning", label: "Scanning photo", shortLabel: "Scan", detail: "Reading the image and checking it is a real photo" },
+  { id: "detecting", label: "Detecting your pet", shortLabel: "Detect", detail: "Looking for your pet — logos and illustrations are rejected" },
   { id: "saving", label: "Saving securely", shortLabel: "Save", detail: "Removing metadata and preparing your private preview" },
 ] as const;
 
 type UploadStage = (typeof UPLOAD_STAGES)[number]["id"];
 
 /**
- * Pet-photo upload with the YOLO-World gatekeeper UX: a non-pet photo gets a 422
- * "no pet detected" response — never a ban — and the user can pick another file.
- * Several photos can be added at once (up to `maxPhotos`, e.g. different angles of
- * the same pet) so the flyer shows the pet from every side.
+ * Pet-photo upload with the YOLO-World gatekeeper UX: one photo only, and a non-pet
+ * image (including a logo or illustration) gets a 422 "no pet detected" response —
+ * never a ban — so the user can pick a different file straight away.
  */
-export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPhotos = DEFAULT_MAX_PHOTOS }: PhotoUploadProps) {
+export function PhotoUpload({ onUploaded, onRemove, uploaded }: PhotoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingUrlRef = useRef<string | null>(null);
   // Every object URL we created, so removed/unmounted previews can be revoked.
@@ -50,10 +42,8 @@ export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPh
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [stage, setStage] = useState<UploadStage>("uploading");
   const [uploadProgress, setUploadProgress] = useState(0);
-  // True while a multi-file batch is being processed (keeps the overlay up
-  // between two sequential uploads).
-  const [batchPending, setBatchPending] = useState(false);
-  const busy = upload.isPending || batchPending;
+  const busy = upload.isPending;
+  const photo = uploaded[0];
 
   // Revoke object URLs that are no longer referenced by the uploaded list.
   useEffect(() => {
@@ -81,58 +71,52 @@ export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPh
   }, [busy, stage]);
 
   const pick = async (files: File[]) => {
-    if (busy || files.length === 0) return;
-    const slots = Math.max(0, maxPhotos - uploaded.length);
-    const batch = files.slice(0, slots);
-    if (batch.length === 0) return;
-    setBatchPending(true);
+    const file = files[0];
+    if (busy || !file) return;
+    const localUrl = URL.createObjectURL(file);
+    urlRegistry.current.add(localUrl);
+    pendingUrlRef.current = localUrl;
+
+    setError(null);
+    setImageFailed(false);
+    setPendingPreview(localUrl);
+    setStage("uploading");
+    setUploadProgress(0);
+
     try {
-      for (const file of batch) {
-        if (pendingUrlRef.current) URL.revokeObjectURL(pendingUrlRef.current);
-        const localUrl = URL.createObjectURL(file);
-        urlRegistry.current.add(localUrl);
-        pendingUrlRef.current = localUrl;
-
-        setError(null);
-        setImageFailed(false);
-        setPendingPreview(localUrl);
-        setStage("uploading");
-        setUploadProgress(0);
-
-        try {
-          const result = await upload.mutateAsync({
-            file,
-            onProgress: (percentage) => {
-              setUploadProgress(percentage);
-              if (percentage === 100) {
-                setStage((current) => current === "uploading" ? "scanning" : current);
-              }
-            },
-          });
-          // Ownership of the object URL passes to the controlled uploaded result.
-          pendingUrlRef.current = null;
-          onUploaded({ ...result, localUrl });
-        } catch (e) {
-          URL.revokeObjectURL(localUrl);
-          urlRegistry.current.delete(localUrl);
-          if (pendingUrlRef.current === localUrl) pendingUrlRef.current = null;
-          setPendingPreview(null);
-          setError(e instanceof ApiError ? e : new ApiError(e as never));
-          // A rejected file in a multi-pick must not block the remaining ones.
-        }
-      }
+      const result = await upload.mutateAsync({
+        file,
+        onProgress: (percentage) => {
+          setUploadProgress(percentage);
+          if (percentage === 100) {
+            setStage((current) => current === "uploading" ? "scanning" : current);
+          }
+        },
+      });
+      // Ownership of the object URL passes to the controlled uploaded result.
+      pendingUrlRef.current = null;
+      onUploaded({ ...result, localUrl });
+    } catch (e) {
+      URL.revokeObjectURL(localUrl);
+      urlRegistry.current.delete(localUrl);
+      if (pendingUrlRef.current === localUrl) pendingUrlRef.current = null;
+      setError(e instanceof ApiError ? e : new ApiError(e as never));
     } finally {
       setPendingPreview(null);
-      setBatchPending(false);
     }
   };
 
+  const remove = () => {
+    if (!photo) return;
+    onRemove(photo.key);
+    setImageFailed(false);
+    setError(null);
+  };
+
   const noPet = error?.status === 422 && error.code === "no_pet_detected";
-  const cover = uploaded[0];
-  const src = cover?.localUrl || cover?.thumb_url || cover?.url;
+  const src = photo?.localUrl || photo?.thumb_url || photo?.url;
   const currentStageIndex = UPLOAD_STAGES.findIndex((item) => item.id === stage);
   const currentStage = UPLOAD_STAGES[currentStageIndex];
-  const atLimit = uploaded.length >= maxPhotos;
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -153,7 +137,6 @@ export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPh
         ref={inputRef}
         type="file"
         accept="image/*"
-        multiple
         className="photo-upload__input"
         aria-label="Choose a pet photo"
         onChange={(e) => {
@@ -227,73 +210,58 @@ export function PhotoUpload({ onUploaded, onRemove, onMakeCover, uploaded, maxPh
               </ol>
             </div>
           </div>
-        ) : uploaded.length > 0 && imageFailed ? (
+        ) : photo && imageFailed ? (
           <div className="photo-upload__message">
             <span>Could not load photo</span>
             <p className="t-small">Pick another photo below</p>
           </div>
-        ) : uploaded.length > 0 && src ? (
-          <img
-            className="photo-upload__uploaded-image"
-            src={src}
-            alt="Uploaded pet preview"
-            onError={() => setImageFailed(true)}
-          />
+        ) : photo && src ? (
+          <>
+            <img
+              className="photo-upload__uploaded-image"
+              src={src}
+              alt="Uploaded pet preview"
+              onError={() => setImageFailed(true)}
+            />
+            <button
+              type="button"
+              className="photo-upload__remove"
+              aria-label="Remove photo"
+              onClick={remove}
+            >
+              <X size={17} strokeWidth={2.5} aria-hidden="true" />
+            </button>
+          </>
         ) : (
           <button className="photo-upload__empty" type="button" onClick={() => inputRef.current?.click()}>
             <span className="photo-upload__icon" aria-hidden="true">
               <ImagePlus size={30} strokeWidth={1.8} />
             </span>
-            <span className="photo-upload__empty-title">Drop your pet’s photos here</span>
+            <span className="photo-upload__empty-title">Drop your pet’s photo here</span>
             <span className="photo-upload__empty-action">or click to browse from your device</span>
             <span className="photo-upload__empty-hint">
-              Add as many clear, well-lit photos as you like (up to {maxPhotos}) — different angles of the same pet help the owner recognise them.
+              One clear, well-lit photo of your pet. We check it before saving — logos and non-pet images are rejected.
             </span>
           </button>
         )}
       </div>
 
-      {!busy && uploaded.length > 1 && (
-        <div className="photo-upload__thumbs" role="group" aria-label="Uploaded photos">
-          {uploaded.map((p, i) => (
-            <div key={p.key} className={`photo-upload__thumb${i === 0 ? " photo-upload__thumb--cover" : ""}`}>
-              <button
-                type="button"
-                className="photo-upload__thumb-btn"
-                aria-pressed={i === 0}
-                aria-label={i === 0 ? "Cover photo" : `Make photo ${i + 1} the cover photo`}
-                onClick={() => onMakeCover(p.key)}
-              >
-                <img src={p.localUrl || p.thumb_url || p.url} alt={`Uploaded photo ${i + 1}`} />
-              </button>
-              <button
-                type="button"
-                className="photo-upload__thumb-remove"
-                aria-label={`Remove photo ${i + 1}`}
-                onClick={() => onRemove(p.key)}
-              >
-                <X size={13} strokeWidth={2.5} aria-hidden="true" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="btn-row">
         <Button
           type="button"
-          variant={uploaded.length > 0 ? "secondary" : "primary"}
-          disabled={busy || atLimit}
+          variant={photo ? "secondary" : "primary"}
+          disabled={busy}
           onClick={() => inputRef.current?.click()}
         >
-          {busy ? "Processing…" : uploaded.length === 0 ? "Choose a photo" : atLimit ? "Photo limit reached" : `Add photo (${uploaded.length}/${maxPhotos})`}
+          {busy ? "Processing…" : photo ? "Replace photo" : "Choose a photo"}
         </Button>
-        {uploaded.length > 0 && !imageFailed && !busy && (
-          <span className="badge badge--outreach">
-            {cover?.pet_classes?.length ? `Detected: ${cover.pet_classes[0]} ✓` : "Pet detected ✓"}
-          </span>
+        {photo && src && !imageFailed && !busy && (
+          <>
+            <span className="badge badge--outreach">
+              {photo.pet_classes?.length ? `Detected: ${photo.pet_classes[0]} ✓` : "Pet detected ✓"}
+            </span>
+          </>
         )}
-        {uploaded.length > 1 && <span className="badge badge--neutral">{uploaded.length} photos</span>}
       </div>
 
       {noPet && (

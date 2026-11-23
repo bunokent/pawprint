@@ -14,7 +14,7 @@ def select_flyer_queryset() -> QuerySet[Flyer]:
     """Base queryset: FKs joined, payload trimmed with only()."""
     return (
         Flyer.objects.select_related("pet", "pet__owner", "creator")
-        # Every angle of the pet (bounded by MAX_PET_PHOTOS) — one extra query for
+        # The pet's single photo (MAX_PET_PHOTOS = 1) — one extra query for
         # the whole page, so the serializer never N+1s on pet.photos.
         .prefetch_related("pet__photos")
         .only(

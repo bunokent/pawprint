@@ -264,12 +264,38 @@ CLIP_SPECIES_RELATIVE_MARGIN = 0.9
 # clutter (concrete, leaves, walls) from tipping CLIP toward wild lookalikes.
 SPECIES_CROP_PADDING = 0.25
 
+# A flat logo can still read as "dog" to YOLO-World's open vocabulary (a stylized paw
+# mark inside a map pin, a cartoon dog in a brand mark). A dedicated CLIP photo-vs-graphic
+# pass over the FULL frame settles it: a graphic is rejected only when it clearly wins
+# over every real-photo prompt. Real pet photos — including a small pet on a plain
+# background — keep a photo prompt at least as likely, so they are never caught by it.
+CLIP_PHOTO_PROMPTS: tuple[str, ...] = (
+    "a photograph of a real living animal",
+    "a camera photo of a pet with natural fur feathers or scales",
+    "a real photo of a dog cat bird or other animal",
+    "a person holding a real pet in a photograph",
+)
+CLIP_GRAPHIC_PROMPTS: tuple[str, ...] = (
+    "a logo or app icon on a solid color background",
+    "a flat vector illustration or graphic design",
+    "a map location pin icon",
+    "a stylized paw print symbol, not a real animal",
+    "clipart or a brand mark",
+    "a cartoon icon, not a photograph of a real animal",
+)
+GRAPHIC_REJECT_MIN_PROBABILITY = 0.50
+GRAPHIC_REJECTION_MESSAGE = (
+    "This looks like a logo or illustration, not a photo of a real pet. "
+    "Please upload a clear photo of your pet."
+)
+
 _MODEL: YOLOWorld | None = None
 _MODEL_LOCK = Lock()
 _CLIP_MODEL: Any | None = None
 _CLIP_LOCK = Lock()
 _CLIP_TEXT_FEATS: Any | None = None
 _CLIP_GATE_TEXT_FEATS: Any | None = None
+_CLIP_GRAPHIC_TEXT_FEATS: Any | None = None
 _CLIP_LABEL_RANGES: dict[str, tuple[int, int]] = {}
 
 
@@ -402,6 +428,45 @@ def _clip_animal_gate(image: Any, clip_model: Any | None = None) -> bool:
     animal_prob = float(probs[:animal_count].max().item())
     non_animal_prob = float(probs[animal_count:].max().item())
     return animal_prob >= CLIP_ANIMAL_GATE_MIN_PROBABILITY and animal_prob > non_animal_prob
+
+
+def _graphic_text_feats(clip_model: Any, cached: bool) -> Any:
+    """Encode the photo-vs-graphic prompts once for the process CLIP singleton."""
+    global _CLIP_GRAPHIC_TEXT_FEATS
+    if cached and _CLIP_GRAPHIC_TEXT_FEATS is not None:
+        return _CLIP_GRAPHIC_TEXT_FEATS
+    import torch
+
+    prompts = [*CLIP_PHOTO_PROMPTS, *CLIP_GRAPHIC_PROMPTS]
+    with torch.no_grad():
+        feats = _normalize_torch(clip_model.encode_text(clip_model.tokenize(prompts)))
+    if cached:
+        _CLIP_GRAPHIC_TEXT_FEATS = feats
+    return feats
+
+
+def _clip_is_flat_graphic(image: Any, clip_model: Any | None = None) -> bool:
+    """True when a logo/illustration prompt clearly beats every real-photo prompt.
+
+    Runs on the FULL frame, not the animal crop: the point is to tell a flat brand
+    mark from a camera photo. The asymmetric rule — graphic must be at least
+    GRAPHIC_REJECT_MIN_PROBABILITY *and* strictly greater than the best photo prompt —
+    keeps ambiguous real photos (a small pet on white, a dark coat, a busy yard)
+    passing while rejecting a logo that YOLO-World mistook for a dog.
+    """
+    import torch
+
+    model = clip_model or _get_clip_model()
+    text_feats = _graphic_text_feats(model, cached=clip_model is None)
+    with torch.no_grad():
+        image_feat = model.encode_image(image)
+        logits = (100.0 * image_feat @ text_feats.T).squeeze(0)
+    probs = torch.softmax(logits, dim=0)
+    photo_count = len(CLIP_PHOTO_PROMPTS)
+    photo_prob = float(probs[:photo_count].max().item())
+    graphic_prob = float(probs[photo_count:].max().item())
+    logger.debug("Graphic gate: photo=%.3f graphic=%.3f", photo_prob, graphic_prob)
+    return graphic_prob >= GRAPHIC_REJECT_MIN_PROBABILITY and graphic_prob > photo_prob
 
 
 def _group_contrast_rank(
@@ -555,8 +620,10 @@ class PetDetectionService:
         Returns pass/fail, refined `pet_classes`, raw `detected_classes`, and `best_box`
         (the highest-confidence accepted animal's xyxy box — the species-naming CLIP pass
         runs on a padded in-memory crop of it so background clutter cannot tip the
-        classifier toward wild lookalikes like tiger/hedgehog). Raises
-        NoPetDetectedError when neither YOLO-World nor the CLIP animal gate finds an animal.
+        classifier toward wild lookalikes like tiger/hedgehog). A final full-frame
+        photo-vs-graphic CLIP pass vetoes flat logos/illustrations that an open-vocabulary
+        detector may mistake for a pet. Raises NoPetDetectedError when no animal is found
+        or the image reads as a graphic.
         """
         model = _get_model()
         image = load_image(image_bytes)
@@ -589,6 +656,12 @@ class PetDetectionService:
             pet_classes = _refine_species(image, [])
         else:
             pet_classes = []
+        # Final veto: a flat logo (e.g. a stylized paw inside a map pin) can survive
+        # both YOLO-World and the animal gate. The full-frame photo-vs-graphic pass
+        # has the last word; the bytes are still discarded before any storage write.
+        graphic = bool(pet_classes) and _clip_is_flat_graphic(image)
+        if graphic:
+            pet_classes = []
         passed = bool(pet_classes)
         detection = DetectionResult(
             passed=passed,
@@ -598,7 +671,10 @@ class PetDetectionService:
             best_box=best_box,
         )
         if not passed:
-            raise NoPetDetectedError(detected_labels=detected_classes)
+            raise NoPetDetectedError(
+                detected_labels=detected_classes,
+                detail=GRAPHIC_REJECTION_MESSAGE if graphic else None,
+            )
         return detection
 
     @staticmethod

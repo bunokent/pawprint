@@ -13,10 +13,10 @@ from apps.vision.services import PetAttributeService, PetDetectionService, load_
 
 from .models import Pet, PetPhoto
 
-# A report can carry up to this many photos (different angles of the same pet) —
-# the frontend PhotoUpload caps at the same number. Generous on purpose: a finder
-# may snap a pet from every side, and every angle helps the owner recognise it.
-MAX_PET_PHOTOS = 10
+# One photo per pet: the flyer, the detector readout and the reward flow all key off a
+# single clear cover image. The upload endpoint also accepts one file per request and
+# the frontend PhotoUpload caps at the same number.
+MAX_PET_PHOTOS = 1
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ class PetService:
                    health_tags: list[str] | None = None, photo_path: str = "",
                    photo_paths: list[str] | None = None,
                    status: str = Pet.Status.ADOPTABLE) -> Pet:
-        # Cover photo first, then any extra angles — deduped, capped at MAX_PET_PHOTOS.
+        # One cover photo only — dedupe, then cap at MAX_PET_PHOTOS (1).
         paths = list(dict.fromkeys(p for p in [photo_path, *(photo_paths or [])] if p))[:MAX_PET_PHOTOS]
         pet = Pet.objects.create(
             owner=owner, name=name, species=species, breed=breed, color=color, age=age,

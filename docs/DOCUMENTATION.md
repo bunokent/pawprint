@@ -25,8 +25,7 @@ it ever reaches storage; a CLIP second stage names the actual species and classi
 breed/color (prefilled in the builder only when confidence ≥ 0.80). Non-animal photos are
 rejected with a friendly 422 — no strikes, no bans.
 The web app (`frontend/`, React 19 + TS + Vite) implements the full product in the browser —
-including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo pins) —
-and Playwright E2E covers the 10 critical journeys end-to-end.
+including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo pins).
 
 ## 2. Architecture & Stack
 
@@ -57,7 +56,7 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
   no country/island borders), with Nominatim geocoding (address search + reverse geocode), for the location
   picker and `/map`.
 - **Exports**: WeasyPrint A4 PDF + Playwright (python package, declared in
-  `pyproject.toml` main deps, Chromium baked into the Docker image and installed in CI)
+  `pyproject.toml` main deps, Chromium baked into the Docker image)
   for the A4@300dpi PNG; Pillow thumbnails.
 - **Infra**: **Docker Compose** (`docker-compose.yml`, `docker compose up` starts
   everything): `postgres:16` and `redis:7-alpine` run **internal-only** (no host ports —
@@ -123,8 +122,8 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `rewards`, `webhooks`, `v
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
 - `pets.PetPhoto` — one photo per row: `pet` FK (`related_name="photos"`, cascade), `photo_path`,
   index `(pet, created_at)` (migration `pets/0006`).
-  A report carries up to **4** photos (different angles of the same pet, `MAX_PET_PHOTOS`);
-  the first is the cover. The stored file is always the full, uncropped display image.
+  A report carries exactly **one** photo (`MAX_PET_PHOTOS = 1`), mirrored on `Pet.photo_path`
+  as the cover. The stored file is always the full, uncropped display image.
 - `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
   fields, `location_lat`/`location_lng` floats (the map pin), contact fields, reward fields, QR
   target, export paths, `status` (`draft|generating|active|resolved`); indexes
@@ -206,10 +205,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `flyers`): renders the HTML flyer template with WeasyPrint to A4 PDF + Playwright A4@300dpi
   PNG, uploads to private Cloudinary, marks the flyer `active`, then broadcasts `flyer.generated`
   over Django Channels (`ws/flyers/`).
-- `PetCreateSerializer` accepts `photo_paths` (list, max 10 — `MAX_PET_PHOTOS`; `photo_path`
-  stays as the cover = first photo), and `PetService.create_pet` creates one `PetPhoto` row per
-  photo. A report can therefore show the same pet from up to 10 angles on its flyer; the stored
-  files are always the full, uncropped originals.
+- `PetCreateSerializer` accepts `photo_paths` (list, max 1 — `MAX_PET_PHOTOS`; `photo_path`
+  stays as the cover), and `PetService.create_pet` creates a single `PetPhoto` row. A report
+  therefore shows one clear photo of the pet on its flyer; the stored file is always the full,
+  uncropped original.
 - The public flyer API exposes **`photo_urls`** (string[] of signed URLs, cover first, legacy
   fallback `[photo_path]`) on `FlyerSerializer`; `select_flyer_queryset()` prefetches
   `pet__photos` (one extra query; the test ceilings bumped +1) so list/detail/map never N+1 on
@@ -273,6 +272,17 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   is named by CLIP; plain landscapes still 422. When CLIP is unsure it falls back to the raw
   accepted YOLO labels. Verified on 18 real photos of one tabby cat: all classify as
   `['cat']` (raw labels like `bear`/`bird` stay in `detected_classes` only).
+- **Flat-graphic / logo veto**: open vocabulary labels are not enough on their own — a stylized
+  paw inside a map pin can score as `dog`. After the animal gate and species naming, a final
+  full-frame CLIP pass ranks `CLIP_PHOTO_PROMPTS` against `CLIP_GRAPHIC_PROMPTS` (logo/app icon,
+  flat vector graphic, map-pin icon, stylized paw symbol, clipart/brand mark, cartoon icon).
+  The image is rejected only when a graphic prompt reaches `GRAPHIC_REJECT_MIN_PROBABILITY`
+  (0.50) **and** beats the best photo prompt; an asymmetric rule that keeps ambiguous real
+  photos — a small pet on white, a dark coat, a dog in a yard — passing. The rejection clears
+  `pet_classes` and raises the same 422 with a logo-specific message
+  (`GRAPHIC_REJECTION_MESSAGE`; code stays `no_pet_detected`, zero penalties). Verified with the
+  real models: the reported logo is rejected, `dog.jpg` passes, and dog-on-white /
+  tiny-dog-on-white / dog-in-yard composites all pass.
 - **Breed & color classification**: a separate CLIP zero-shot `PetAttributeService`
   (`apps/vision/services.py`) runs on the gated photo — breed over curated lists (dog breeds
   and cat breeds only; any other species yields an empty breed, never a guess) and color over
@@ -297,13 +307,12 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   (delivery type `private`), `PetDetectionLog(passed=True)`, signed preview URL returned.
 - **Fail**: bytes discarded before any storage write, `PetDetectionLog(passed=False)`,
   `NoPetDetectedError` → HTTP 422 `{"error":{"code":"no_pet_detected","message":…,
-  "detected_labels":[…]}}` so the user can retry instantly. Zero penalties.
+  "detected_labels":[…]}}` so the user can retry instantly. Zero penalties. A logo caught by
+  the graphic veto uses the clearer `GRAPHIC_REJECTION_MESSAGE` while keeping the same code.
 - Frontend UX (`PhotoUpload`): a full-width, fixed-height drop rectangle supports click, keyboard,
-  and drag-and-drop selection with a clear drag-active state — and **multiple files at once**
-  (up to 4 photos, e.g. different angles of the same pet). Accepted photos upload sequentially
-  behind the same overlay; a thumbnail strip appears under the cover frame with per-photo
-  remove buttons and tap-to-make-cover, plus an "N photos" badge and a locked
-  "Photo limit reached" state at the cap. During upload, the local pet preview
+  and drag-and-drop selection with a clear drag-active state. **One photo per pet**: picking
+  several files uploads only the first, and the current photo can be replaced or removed from a
+  44px tap-target control plus a "Replace photo" button. During upload, the local pet preview
   stays visible behind an animated scan line and spinner; a live region reports **Uploading photo →
   Scanning photo → Detecting your pet → Saving securely**, with a four-step indicator and progress
   bar. Axios supplies the real byte-upload percentage; because `POST /api/pets/photos` is one
@@ -321,9 +330,9 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   confidence ≥ 0.80; below that they stay blank — the fields carry **only the "Not detected"
   placeholder, no confidence badges** — plus the helper tip "Auto-detected —
   change if not correct. Detection is not 100% accurate." — both fields always stay editable.
-- E2E journey ④ drives both photos through the real models: `e2e/fixtures/dog.jpg`
+- E2E journey ④ drives three images through the real models: `e2e/fixtures/dog.jpg`
   passes as refined `dog` (raw `cat` @ 0.717 + `dog` @ 0.655 stay in `detected_classes`),
-  while `landscape.jpg` → 422.
+  `landscape.jpg` → 422, and the reported `logo.jpg` → 422 with the logo-specific message.
 
 ## 9. Payments — Rewards (Stripe Test + GCash / QR Ph)
 
@@ -362,9 +371,9 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   + reward checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
   urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
-  the photo step stays open until **Next** so up to 10 angle photos can be added (`DEFAULT_MAX_PHOTOS = 10`, matching backend `MAX_PET_PHOTOS`), and going
-  back with uploaded photos shows **Next** to continue without re-uploading; the pet is
-  created with `photo_path` = cover + `photo_paths` = all angles). Found mode hides
+  the photo step stays open until **Next** with exactly one photo (picking several files keeps
+  only the first) and going back with an uploaded photo shows **Next** to continue without
+  re-uploading; the pet is created with `photo_path` = that single photo). Found mode hides
   **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
   `/rewards/success`, `/rewards/cancel`, `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
@@ -396,8 +405,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `@media print` A4-exact stylesheet (`@page { size: A4 }`, `.print-sheet`, `.no-print`, `.print-only` — the A4 sheet keeps the single cover photo + QR while the screen shows the full gallery) +
   Print button.
 - Dev proxy: Vite proxies `/api`, `/media`, `/ws` to the backend; the origin is env-driven
-  (`PAWPRINT_API_URL`, default `http://127.0.0.1:8000`) so Playwright E2E can run the API on
-  another port.
+  (`PAWPRINT_API_URL`, default `http://127.0.0.1:8000`).
 - Visual system per the `taste` skill: one type scale, one card recipe, equal edges,
   tactile hover/press, skeleton/empty/error states, dual palette (emergency crimson/amber vs
   outreach sage/teal/terracotta). The photo uploader uses a fixed 380px desktop rectangle (360px
@@ -407,8 +415,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 11. Testing & Coverage
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  → **164 passed, 95.66% total** (100% on all `services.py`, `drivers.py`,
-  `apps/vision/services.py`, and the Cloudinary storage driver);
+  → **179 passed, 97% total** (100% on all `services.py`, `drivers.py`,
+  `apps/vision/services.py`, `apps/pets/serializers.py`, and the Cloudinary storage driver);
   `django_assert_max_num_queries` ceilings on list/detail endpoints (map endpoint at 6);
   429 tests for the
   `auth_write` (20/min) and `upload` (10/min) throttles; webhook idempotency tests (duplicate
@@ -420,28 +428,31 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   multi-species handling, `best_box` selection of the highest-confidence accepted animal,
   padded-crop padding/clamping/full-image fallback, the confusable-group contrast pass
   resolving tabby-cat-vs-tiger to `cat`, the 0.9 relative selection margin dropping distant
-  lookalikes, and the contrast pass not firing without a close rival);
+  lookalikes, and the contrast pass not firing without a close rival); **graphic-gate tests**
+  (photo vs graphic prompt ranking, ambiguous images not rejected, a logo YOLO called `dog`
+  failing with the logo-specific 422 message, and a real pet photo still passing);
   CLIP breed/color classifier tests (`PetAttributeService`: dog/cat
   breed lists, other-species empty breed, color always classified, raw confidences on the
   upload response); found-mode + `location_lat`/`location_lng` + `GET /api/flyers/map`
-  integration tests; `photo_paths` on `POST /api/pets` + PetPhoto rows (4-photo cap);
-  Cloudinary
+  integration tests; `photo_paths` on `POST /api/pets` + one PetPhoto row (single-photo cap,
+  second photo → 400 field error); Cloudinary
   driver unit tests (SDK mocked, 100% on the driver);
   profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
   `factory-boy` factories.
-- Frontend: `npm run test:run` → **134 Vitest tests, 11 files** (RTL + MSW, jsdom), including
+- Frontend: `npm run test:run` → **145 Vitest tests, 12 files** (RTL + MSW, jsdom), including
   the delete-confirmation dialog (`alertdialog` wiring, confirm / cancel / Escape /
   backdrop-click, pending lock, focus moved to the safe action),
-  drag-and-drop, multi-file photo picking (sequential uploads, thumbnail strip, remove /
-  make-cover, 4-photo cap + "Photo limit reached" lock), real Axios upload-progress callbacks,
+  drag-and-drop, **single-photo picking** (a multi-file selection uploads only the first file,
+  replace/remove flows, one preview, no `photo_paths` in the create payload), the logo-specific
+  422 error box, real Axios upload-progress callbacks,
   all four live processing labels, the animated
   indeterminate bar, read-only detected-species text (rabbit over raw `cat`, ambiguous cat+dog,
   re-detect on re-upload), breed/color prefill at ≥0.80 with only the "Not detected" placeholder
   below threshold (no confidence badges anywhere), the wizard staying on the photo step until
-  **Next** and posting `photo_paths`, the found-pet wizard flow (`?mode=found`, no pet-name/age
-  fields, `age: null` + `photo_paths` in the create payload, no
+  **Next** and posting `photo_path`, the found-pet wizard flow (`?mode=found`, no pet-name/age
+  fields, `age: null` + a single `photo_path` in the create payload, no
   reward toggle, location/date/description, `location_lat/lng: null` from the fallback input),
   the gallery Found filter, found rendering on detail/cards, per-mode resolve labels,
   `LocationPicker` map mode (fake `leaflet` via `src/test/fake-leaflet.ts`: pin drop + drag
@@ -450,18 +461,18 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   empty/error states, species filter pills derived from `pet.species` + mode×species
   combination + clear-filters reset), and `src/lib/maps.ts` helper tests (OSM tile layer,
   pin icons, Nominatim search/reverse incl. failure fallback);
-  `npm run test:coverage` → **88.99% stmts / 80.30% branches / 84.94% funcs / 90.26% lines**
+  `npm run test:coverage` → **88.42% stmts / 79.51% branches / 85.12% funcs / 89.75% lines**
   (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
   `npx tsc -b --noEmit` clean; `npm run build` green.
 - E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **10 journeys /
-  11 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
+  12 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
   :9100), the Django backend on :8010 with `PAWPRINT_TESTING=1` (eager Celery, locmem, local
   PG :5433; filesystem `/media/` is served explicitly under TESTING so signed URLs load),
   and the Vite dev server on :5173 proxying to :8010. Journeys: ① guest browse →
   filter → search → detail+QR, ② register → logout → login (demo account), ③ create an
   emergency flyer through the 3-step wizard (YOLO-World-gated upload → preview → **Next** →
-  read-only detected species) → public detail page, ④ landscape photo → 422 `no_pet_detected`
-  retry UX → dog photo passes → preview → **Next**, ⑤ GCash reward checkout → QR modal →
+  read-only detected species) → public detail page, ④ landscape photo + flat logo → 422
+  `no_pet_detected` retry UX → dog photo passes → preview → **Next**, ⑤ GCash reward checkout → QR modal →
   HMAC-signed PayMongo webhook flips
   status to `succeeded` (and a forged signature is 400), ⑥ open the flyer's
   `qr_target_value` like a scanner → public detail page with SVG QR, ⑦ profile settings →
@@ -1240,25 +1251,38 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   flyer PNGs. Guard test `test_playwright_is_a_declared_runtime_dep_and_ci_installs_its_browser`
   pins all three. Verified: **7 tests pass** in `test_weight_downloads.py`, ruff + mypy
   clean, ci.yml valid YAML, `docker compose build` green with the new dep.
+- **Phase 50** — One photo per pet + flat-logo gatekeeper. The reported map-pin/paw logo was
+  accepted as `dog`: open-vocabulary labels alone cannot tell a flat brand mark from a camera
+  photo. Added a final full-frame CLIP photo-vs-graphic pass in `PetDetectionService`
+  (`_clip_is_flat_graphic`, `GRAPHIC_REJECT_MIN_PROBABILITY = 0.50`, asymmetric "graphic must
+  beat photo" rule) that rejects clear logos/illustrations with a specific 422 message while
+  keeping real photos (including a small pet on white and a dog in a yard) passing. Verified with
+  the real models: logo → 422 logo message, `dog.jpg` → `['dog']`, landscape → ordinary 422.
+  Enforced one photo end to end: `MAX_PET_PHOTOS = 1`, `photo_paths max_length=1` with a clear
+  field error, one `PetPhoto` row, and a rewritten `PhotoUpload` that keeps only the first
+  picked file with replace/remove controls (no multi-file strip, no `photo_paths` payload).
+  Updated `schema.yml`, unit/integration/E2E tests (including a logo fixture),
+  `docs/DOCUMENTATION.md`, and regenerated the PDF.
 
-**Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
+**Final status:** backend **179 passed @ 97%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
-frontend **145 vitest tests** @ 86.01/78.40/83.44/87.46 + Playwright journeys
-green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
+frontend **145 vitest tests** @ 88.42/79.51/85.12/89.75 + Playwright coverage extended
+(E2E not re-run locally; needs the full Postgres/Celery/Playwright stack);
+`ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run via
 `docker compose up` (internal PostgreSQL + Redis, web :8000, celery worker, Vite dev
 :5173, host mailpit via host.docker.internal — host-only fallback documented in
 `.env.example`); vision weights download directly with no Hugging Face token;
 CI pins `uv pip install --python .venv/bin/python` (runner `VIRTUAL_ENV` would otherwise
 capture the install into a root `.venv`);
-vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
+vision = YOLO-World gate + CLIP species/breed/color + flat-graphic/logo veto (no matching model);
 no notifications feature; no seed/demo data — all E2E journeys are self-contained;
 `/map` has mode + DB-species filters;
 flyer templates always render a photo frame (SVG paw-print fallback when no photo);
 all UI photo frames show a real pet photograph fallback (`public/pet-fallback.webp`)
 instead of a blank box or "No photo yet" text;
-flyers accept up to 10 photos and the public page shows them all in a gallery + lightbox
-(`photo_urls` on the API, `PhotoGallery` on the detail page; A4 print keeps cover + QR);
+each pet has exactly one photo (the cover) and the public page shows it in the gallery +
+lightbox (`photo_urls` on the API, `PhotoGallery` on the detail page; A4 print keeps cover + QR);
 the on-screen QR is replaced by a Share flyer menu (native share w/ QR PNG, Facebook /
 Instagram / X / WhatsApp, copy link, QR modal with PNG download);
 resolving a flyer (reunited / returned home / adopted) requires a double click;

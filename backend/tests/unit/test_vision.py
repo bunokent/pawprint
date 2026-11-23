@@ -8,7 +8,11 @@ from PIL import Image
 from apps.common.exceptions import NoPetDetectedError
 from apps.vision.dto import DetectionResult
 from apps.vision.models import PetDetectionLog
-from apps.vision.services import ANIMAL_CATEGORY_BY_LABEL, PetDetectionService
+from apps.vision.services import (
+    ANIMAL_CATEGORY_BY_LABEL,
+    GRAPHIC_REJECTION_MESSAGE,
+    PetDetectionService,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -40,7 +44,16 @@ class _FakeResult:
         self.boxes = boxes
 
 
-def _mock_model(monkeypatch, detections, label_overrides=None, *, clip_rank=None, clip_gate=False, xyxy=None):
+def _mock_model(
+    monkeypatch,
+    detections,
+    label_overrides=None,
+    *,
+    clip_rank=None,
+    clip_gate=False,
+    graphic=False,
+    xyxy=None,
+):
     """detections: list of (cls_id, conf); label_overrides maps ids to open-vocabulary labels."""
     names = {i: f"cls{i}" for i in range(80)}
     names.update({14: "bird", 15: "cat", 16: "dog", 17: "horse", 18: "sheep", 19: "cow", 0: "person"})
@@ -63,6 +76,7 @@ def _mock_model(monkeypatch, detections, label_overrides=None, *, clip_rank=None
         refine = lambda image, accepted: _refine_from_rank(accepted, clip_rank)  # noqa: E731
     monkeypatch.setattr("apps.vision.services._refine_species", refine)
     monkeypatch.setattr("apps.vision.services._clip_animal_gate", lambda image: clip_gate)
+    monkeypatch.setattr("apps.vision.services._clip_is_flat_graphic", lambda image: graphic)
     return model
 
 
@@ -131,6 +145,7 @@ def test_validate_without_boxes_yields_none_best_box(monkeypatch):
 
     monkeypatch.setattr("apps.vision.services._get_model", lambda: FakeModel())
     monkeypatch.setattr("apps.vision.services._refine_species", lambda image, accepted: list(accepted))
+    monkeypatch.setattr("apps.vision.services._clip_is_flat_graphic", lambda image: False)
     result = PetDetectionService().validate_pet_image(_img_bytes())
     assert result.passed is True
     assert result.best_box is None  # crop falls back to the full image
@@ -157,6 +172,7 @@ def test_malformed_model_result_is_ignored(monkeypatch):
             return [object()]
 
     monkeypatch.setattr("apps.vision.services._get_model", lambda: FakeModel())
+    monkeypatch.setattr("apps.vision.services._clip_is_flat_graphic", lambda image: False)
     with pytest.raises(NoPetDetectedError):
         PetDetectionService().validate_pet_image(_img_bytes())
 
@@ -307,6 +323,34 @@ def test_clip_animal_gate_accepts_animal_and_rejects_non_animal():
     image = Image.new("RGB", (8, 8))
     assert svc._clip_animal_gate(image, _FakeClip(0)) is True
     assert svc._clip_animal_gate(image, _FakeClip(len(svc.CLIP_ANIMAL_PROMPTS))) is False
+
+
+def test_graphic_gate_rejects_logo_prompts_but_keeps_photo_prompts():
+    """The full-frame pass separates a flat graphic from a real photo prompt."""
+    import apps.vision.services as svc
+
+    image = Image.new("RGB", (8, 8))
+    photo_index = 0
+    graphic_index = len(svc.CLIP_PHOTO_PROMPTS)  # first graphic prompt
+    assert svc._clip_is_flat_graphic(image, _FakeClip(photo_index)) is False
+    assert svc._clip_is_flat_graphic(image, _FakeClip(graphic_index)) is True
+    # An ambiguous image (no dominant prompt) must not be rejected.
+    assert svc._clip_is_flat_graphic(image, _ZeroClip(0)) is False
+
+
+def test_logo_mistaken_for_dog_is_rejected_with_graphic_message(monkeypatch):
+    """A logo YOLO-World called 'dog' still fails with the specific 422 message."""
+    _mock_model(monkeypatch, [(16, 0.92)], graphic=True)
+    with pytest.raises(NoPetDetectedError) as exc_info:
+        PetDetectionService().validate_pet_image(_img_bytes())
+    assert exc_info.value.status_code == 422
+    assert str(exc_info.value.detail) == GRAPHIC_REJECTION_MESSAGE
+    assert exc_info.value.detected_labels == ["dog"]
+
+
+def test_graphic_gate_does_not_block_real_photos(monkeypatch):
+    _mock_model(monkeypatch, [(16, 0.92)], graphic=False)
+    assert PetDetectionService().validate_pet_image(_img_bytes()).pet_classes == ["dog"]
 
 
 class _ZeroClip(_FakeClip):

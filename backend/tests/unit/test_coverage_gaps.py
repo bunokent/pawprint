@@ -121,6 +121,7 @@ def test_vision_model_str_and_max_conf_empty(monkeypatch):
 
     monkeypatch.setattr("apps.vision.services._get_model", lambda: FakeModel())
     monkeypatch.setattr("apps.vision.services._clip_animal_gate", lambda image: False)
+    monkeypatch.setattr("apps.vision.services._clip_is_flat_graphic", lambda image: False)
     monkeypatch.setattr("apps.vision.services._refine_species", lambda image, accepted: list(accepted))
     from apps.common.exceptions import NoPetDetectedError
 
