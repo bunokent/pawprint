@@ -1,13 +1,9 @@
 """PawPrint Django settings.
 
-Environment-driven with dev defaults. When running under pytest (or with
-PAWPRINT_TESTING=1, e.g. for Playwright E2E) the settings switch to
-in-memory channel layer, eager Celery, private local storage and locmem cache so the
-suite never needs Redis or an external storage provider.
+Environment-driven with development defaults.
 """
 
 import os
-import sys
 from pathlib import Path
 
 try:
@@ -22,10 +18,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if load_dotenv is not None:
     load_dotenv(BASE_DIR.parent / ".env")
 
-TESTING = "pytest" in sys.modules or os.environ.get("PAWPRINT_TESTING") == "1"
-
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-secret-key-change-me")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1" if not TESTING else "0") == "1"
+DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
@@ -177,22 +171,14 @@ CSRF_COOKIE_SAMESITE = "Lax"
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 # In-memory cache only — no Redis caching (project is small, single-instance).
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
-if TESTING:
-    channel_layers: dict = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
-    CELERY_TASK_ALWAYS_EAGER = True
-    CELERY_TASK_EAGER_PROPAGATES = False
-    CELERY_BROKER_URL = "memory://"
-    CELERY_RESULT_BACKEND = "cache+memory://"
-else:
-    channel_layers = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {"hosts": [REDIS_URL]},
-        }
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [REDIS_URL]},
     }
-    CELERY_BROKER_URL = REDIS_URL
-    CELERY_RESULT_BACKEND = REDIS_URL
-CHANNEL_LAYERS = channel_layers
+}
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 
 CELERY_TASK_ROUTES = {
     "apps.flyers.tasks.*": {"queue": "flyers"},
@@ -206,7 +192,7 @@ CELERY_TASK_DEFAULT_QUEUE = "default"
 # The root is outside STATIC_ROOT and is never served as a static directory.
 # Pet photos/exports live under flyers/{user_id}/{losts|adoptions|found}/...
 # ---------------------------------------------------------------------------
-_default_private_root = BASE_DIR / (".test-media" if TESTING else "private")
+_default_private_root = BASE_DIR / "private"
 _private_root = Path(os.environ.get("PRIVATE_STORAGE_ROOT", str(_default_private_root)))
 PRIVATE_STORAGE_ROOT = (_private_root if _private_root.is_absolute() else BASE_DIR / _private_root).resolve()
 # Dedicated signing key; defaults to SECRET_KEY but may be rotated independently.

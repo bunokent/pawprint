@@ -54,7 +54,7 @@ description: Engineering and UI conventions for PawPrint. Always follow the `tas
 - Commit after EVERY phase AND after EVERY major/minor impactful change (e.g., new service, model migration, API integration, UI feature, or test suite milestone).
 - Never batch multiple phases into one giant commit. Keep git history clean, atomic, and bisectable.
 
-## Testing & Living Documentation (MANDATORY)
-- Backend: `pytest -n auto --cov=apps --cov-fail-under=80` (100% coverage on Services, Drivers, and `PetDetectionService`). Assert query count ceilings (`django_assert_max_num_queries`) on list/detail endpoints.
-- Frontend: `npm run test:run` (≥70% overall) + Playwright E2E for all 8 critical journeys.
+## Verification & Living Documentation (MANDATORY)
+- Automated test suites are not part of this repository by project direction. Do not add test runners, test suites, or test-only dependencies.
+- Run backend static checks (`ruff check .`, `mypy apps`) and frontend type-check/build (`npm run lint`, `npm run build`) when relevant.
 - Update all 12 sections of `docs/DOCUMENTATION.md` (including the **Tutorial** build log) and regenerate `docs/documentation.pdf` via `npm run docs:pdf` before committing each phase.

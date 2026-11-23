@@ -90,16 +90,12 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
   (`privatemedia:/app/backend/private`), so uploads survive container recreation; set
   `PRIVATE_STORAGE_ROOT` on both services if you move it. Host-side
   `python manage.py ...` auto-loads the root `.env` via python-dotenv (real env vars
-  always win over it). For tests and Playwright E2E, `PAWPRINT_TESTING=1` (or running
-  under pytest) switches to locmem cache, in-memory channel layer, eager Celery,
-  `memory://` broker and the same private-local backend rooted at `backend/.test-media`
-  — no Redis or external storage needed.
-- **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
-  `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
-  `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
-  `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 8
-  journeys against a `postgres:16` service on :5433, with migrate and cached
-  YOLO-World weights). Coverage HTML/XML and Playwright reports upload as artifacts.
+  always win over it). The application uses Redis for Channels and Celery and stores
+  private media under `backend/private`; test-only settings and test media roots have
+  been removed.
+- **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs backend lint (`ruff` + `mypy`)
+  and frontend type-check/build (`npm run lint` + `npm run build`) on pushes and pull
+  requests. Automated test suites and test reporting jobs have been removed.
 
 ## 3. Access Model (Guest vs Registered — STRICT 2 Modes)
 
@@ -190,7 +186,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   (`AuthService.update_avatar`, `upload` throttle 10/min). `UserSerializer` exposes
   `avatar_path` plus a fresh signed `avatar_url` on every response, so the SPA always
   has a valid link to the private object. The root URLconf serves **only** signed
-  `/private-media/` URLs (in every mode, including `PAWPRINT_TESTING=1`); there is no
+  `/private-media/` URLs; there is no
   public `/media/` static route.
 
 ## 7. Flyers, QR & A4 Export
@@ -215,11 +211,13 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   fallback `[photo_path]`) on `FlyerSerializer`; `select_flyer_queryset()` prefetches
   `pet__photos` (one extra query; the test ceilings bumped +1) so list/detail/map never N+1 on
   the photo list.
-- Flyer templates (`templates/flyers/{emergency,outreach}.html`) and the on-screen
-  `.print-sheet` follow the `taste` skill print typography (`@page { size: A4; margin: 0 }`,
-  `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
-  outreach mode uses sage/teal/terracotta warmth. The detail page's Print button uses the
-  same sheet.
+- Flyer templates (`templates/flyers/{emergency,outreach}.html`) follow the `taste` skill
+  print typography (`@page { size: A4; margin: 0 }`, equal 15 mm edges, one editorial display
+  face, one accent, one card recipe): emergency mode uses crimson/amber high-contrast
+  scannability; outreach mode uses sage/teal/terracotta warmth. The single photo leads at
+  180 × 118 mm with no caption, and the QR + phone form one footer. The on-screen sheet
+  mirrors that hierarchy with one large photo and one fact column; the A4 **PDF** is the only
+  flyer download (no browser Print or PNG button).
 - **Found mode**: `Flyer.Mode.FOUND` + `Pet.Status.FOUND` mirror the lost flow; the A4
   emergency template is mode-aware (FOUND PET header, "Found at", description).
   Found pets are **unnamed** (`Pet.name` blank — the finder doesn't know the owner's pet; the
@@ -373,7 +371,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   species** — the species row is built from the distinct `pet.species` values saved in the DB
   for the mapped flyers, and the two filters combine, with a "No pets match these filters"
   empty state + Clear filters reset; if the map cannot be created it renders the
-  same pins as a list), `/flyers/:id` Public Flyer + **photo gallery** (main frame + thumbnail strip + lightbox viewer, `components/PhotoGallery.tsx`, fed by `flyer.photo_urls`) + **Share flyer** menu (`components/ShareMenu.tsx` + `lib/share.ts`: native Web Share API with the QR PNG attached where supported, Facebook/X/WhatsApp share intents, Instagram via native image share or copy-caption-and-open, copy-link, and a QR modal with PNG download — browsers cannot auto-post to social accounts, the intents/share sheet pre-fill the composer instead; the QR itself is print/modal-only) + print/export + owner resolve (now a deliberate **double click** — "Click again to confirm", armed 4 s, disarmed on blur — on both the detail page and the owner card) / delete
+  same pins as a list), `/flyers/:id` Public Flyer + **one large photo** with a full-screen viewer (`components/PhotoGallery.tsx`, fed by `flyer.photo_url` with a `photo_urls[0]` legacy fallback, no count/thumbnails) + **Share flyer** menu (`components/ShareMenu.tsx` + `lib/share.ts`: native Web Share API with the QR PNG attached where supported, Facebook/X/WhatsApp share intents, Instagram via native image share or copy-caption-and-open, copy-link, and a QR modal with PNG download — browsers cannot auto-post to social accounts, the intents/share sheet pre-fill the composer instead; the QR lives in that modal and in the A4 PDF) + A4 PDF download + owner resolve (now a deliberate **double click** — "Click again to confirm", armed 4 s, disarmed on blur — on both the detail page and the owner card) / delete
   (delete opens the custom `ConfirmDeleteDialog` — `src/components/ui/confirm-dialog.tsx`,
   an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`)
   (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
@@ -407,11 +405,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `GoogleButton` sign-in button.
 - React 19 idioms: `useActionState` forms (dispatch wrapped in `startTransition` so `pending`
   works), `useOptimistic` publishing card on flyer create, ref-as-prop, React Compiler in
-  `vite.config.ts` (disabled under Vitest so coverage maps to source). TanStack Query
+  `vite.config.ts`. TanStack Query
   `queryOptions` factories. Zod + RHF forms.
   QR codes rendered as SVG data-URLs (`src/components/QrImage.tsx`) and as shareable/downloadable PNGs via the `qrcode` package (`src/lib/share.ts`, used by the Share menu's QR modal and Web Share file attachment).
-  `@media print` A4-exact stylesheet (`@page { size: A4 }`, `.print-sheet`, `.no-print`, `.print-only` — the A4 sheet keeps the single cover photo + QR while the screen shows the full gallery) +
-  Print button.
+  `@media print` fallback (`@page { size: A4 }`, hidden `.no-print` chrome, flat `.flyer-sheet`);
+  the primary A4 output is the generated PDF, so there is no browser Print or PNG button.
 - Dev proxy: Vite proxies `/api`, `/media`, `/ws` to the backend; the origin is env-driven
   (`PAWPRINT_API_URL`, default `http://127.0.0.1:8000`).
 - Visual system per the `taste` skill: one type scale, one card recipe, equal edges,
@@ -420,90 +418,48 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   on phones), neutral/sage drop affordances, an animated processing overlay, accessible live status
   and progress semantics, and reduced-motion fallbacks.
 
-## 11. Testing & Coverage
+## 11. Verification & CI
 
-- Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  with full coverage on `services.py`, `apps/vision/services.py`, `apps/pets/serializers.py`,
-  and the private storage driver / signed-media view;
-  `django_assert_max_num_queries` ceilings on list/detail endpoints (map endpoint at 6);
-  429 tests for the
-  `auth_write` (20/min) and `upload` (10/min) throttles; 422-before-storage tests (non-animal bytes never
-  reach private storage); expanded YOLO-World + CLIP species tests (66 labels,
-  `conf=0.20` asserted on the predictor call, EXIF-orientation/RGB normalization, stale-path
-  fallback, non-World checkpoint rejection, rabbit/fox/frog/crocodile renaming from wrong raw
-  labels, CLIP animal-gate fallback for YOLO misses, CLIP singleton/loader paths, ambiguous
-  multi-species handling, `best_box` selection of the highest-confidence accepted animal,
-  padded-crop padding/clamping/full-image fallback, the confusable-group contrast pass
-  resolving tabby-cat-vs-tiger to `cat`, the 0.9 relative selection margin dropping distant
-  lookalikes, and the contrast pass not firing without a close rival); **graphic-gate tests**
-  (photo vs graphic prompt ranking, ambiguous images not rejected, a logo YOLO called `dog`
-  failing with the logo-specific 422 message, and a real pet photo still passing);
-  CLIP breed/color classifier tests (`PetAttributeService`: dog/cat
-  breed lists, other-species empty breed, color always classified, raw confidences on the
-  upload response); found-mode + `location_lat`/`location_lng` + `GET /api/flyers/map`
-  integration tests; `photo_paths` on `POST /api/pets` + one PetPhoto row (single-photo cap,
-  second photo → 400 field error); private-storage driver tests (key validation, path
-  traversal/symlink refusal, `0600`/`0700` permissions, atomic overwrite, HMAC signature
-  + expiry + rotation, signed-view 200/404, no public `/media/` route) and one test per
-  category folder on the upload endpoint;
-  profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
-  file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
-  `avatar_url`, signing-failure fallback); `factory-boy` factories.
-- Frontend: `npm run test:run` (RTL + MSW, jsdom), including
-  the delete-confirmation dialog (`alertdialog` wiring, confirm / cancel / Escape /
-  backdrop-click, pending lock, focus moved to the safe action),
-  drag-and-drop, **single-photo picking** (a multi-file selection uploads only the first file,
-  replace/remove flows, one preview, no `photo_paths` in the create payload), the logo-specific
-  422 error box, real Axios upload-progress callbacks,
-  all four live processing labels, the animated
-  indeterminate bar, read-only detected-species text (rabbit over raw `cat`, ambiguous cat+dog,
-  re-detect on re-upload), breed/color prefill at ≥0.80 with only the "Not detected" placeholder
-  below threshold (no confidence badges anywhere), the wizard staying on the photo step until
-  **Next** and posting `photo_path`, the found-pet wizard flow (`?mode=found`, no pet-name/age
-  fields, `age: null` + a single `photo_path` in the create payload, no
-  location/date/description, `location_lat/lng: null` from the fallback input),
-  the gallery Found filter, found rendering on detail/cards, per-mode resolve labels,
-  `LocationPicker` map mode (fake `leaflet` via `src/test/fake-leaflet.ts`: pin drop + drag
-  reverse-geocode through MSW-mocked Nominatim, address-suggestion dropdown) and its
-  map-init-failure fallback, the `/map` page (Leaflet photo pins + popup, pin-list fallback,
-  empty/error states, species filter pills derived from `pet.species` + mode×species
-  combination + clear-filters reset), and `src/lib/maps.ts` helper tests (OSM tile layer,
-  pin icons, Nominatim search/reverse incl. failure fallback);
-  `npm run test:coverage` enforces thresholds 70/60/70/70.
-  `npx tsc -b --noEmit` clean; `npm run build` green.
-- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **8 journeys /
-  11 tests**, fully self-contained: the Django backend on :8010 with `PAWPRINT_TESTING=1`
-  (eager Celery, locmem, local PG :5433; private media is rooted at `backend/.test-media`
-  and served only through signed `/private-media/` URLs) and the Vite dev server on :5173
-  proxying `/api`, `/private-media` and `/ws` to :8010. Journeys:
-  ① guest browse → filter → search → detail+QR, ② register → logout → login with wrong-password
-  retry, ③ create an emergency flyer through the 3-step wizard (YOLO-World-gated upload →
-  preview → **Next** → read-only detected species) → public detail page, ④ landscape photo +
-  flat logo → 422 `no_pet_detected` retry UX → dog photo passes → preview → **Next**, ⑤ open the
-  flyer's `qr_target_value` like a scanner → public detail page with SVG QR, ⑥ profile settings →
-  avatar upload + display name/phone save → header avatar, profile restored afterwards,
-  ⑦ guest pet map (Leaflet/OSM map — `/api/flyers/map` pins seeded Bruno lost + Miso found
-  with coords; tap Bruno's photo pin → popup card → open his flyer → "View on map" link
-  back), ⑦b same-spot stacking (a second flyer pinned at Bruno's exact coords stacks into a
-  ×N card deck — newest on top with the green/red ring, oldest peeking behind — and tapping
-  the stack opens a popup listing every stacked flyer; the test cleans up after itself),
-  ⑧ found-pet flow
-  (`/builder?mode=found` → photo gate → **Next** → no pet-name/age/tags fields → publish →
-  unnamed "Found pet" detail, mode `found`; guests get the register prompt).
-- Static analysis: `mypy apps`, `ruff check .`, `npm run lint` (tsc), `npm run build`
-  (0 TS errors). All of the above run in GitHub Actions (`.github/workflows/ci.yml`):
-  `backend-lint` (ruff + mypy, no DB), `backend-test` (pytest + coverage against a
-  `postgres:16` service container, coverage artifacts uploaded), `frontend-test`
-  (`npm ci` + tsc + vitest coverage thresholds + build), and `e2e` (Playwright with a
-  `postgres:16` service on :5433, migrate, cached YOLO-World weights,
-  Playwright report artifact). Runs on push/PR to `main` + manual dispatch.
-- Performance spot-check (Phase 7, local PG :5433): `EXPLAIN ANALYZE` on the public gallery
-  query shows an index scan on `flyer_status_created_idx` + PK lookups for pet/owner/creator —
-  **0.21 ms execution, 14 shared buffer hits** at seed scale; FTS uses the
-  `pet_search_vector_gin` GIN index (planner seq-scans the 2-row seed table, switches to the
-  bitmap index at scale).
+Automated backend, frontend, and browser test suites have been removed. The repository
+retains static and build checks: `ruff check .` and `mypy apps` in `backend/`, plus
+`npm run lint` and `npm run build` in `frontend/`. GitHub Actions runs those checks on
+pushes and pull requests. Runtime Playwright remains a backend dependency because the
+flyer export task uses it to render A4 PNGs; it is not used as an E2E test runner.
 
 ## 12. Tutorial (Living Build Log)
+
+- **Dark-mode usability review** — Added a compact avatar account menu for Profile settings and
+  Log out; corrected dark-theme action contrast, map popup surfaces and map tiles, and photo-viewer
+  close control contrast.
+
+- **Dark-mode gallery and map fixes** — Flyer cards now fall back to the local pet image when a
+  photo URL fails; map selects use one Lucide chevron instead of a repeating CSS image.
+
+- **Dark theme contrast pass** — Rebalanced the dark palette around charcoal and warm ivory, and
+  updated badges, buttons, forms, dialogs, cards, map suggestions, and navigation selected states
+  so labels remain legible in dark mode.
+
+- **Theme controls** — Kept the interactive-map selects side by side with refined control-only
+  styling, and added a persistent light/dark toggle in the main navigation with Sun/Moon icons.
+
+- **Map select styling** — Set the filter controls in a warm surface tray with a sage dropdown
+  cue, refined borders, and consistent hover and keyboard focus states.
+
+- **Flyer photo framing** — Changed the detail photo frame to a landscape 4:3 crop and nudged
+  the focal point upward so the pet stays more comfortably in frame.
+
+- **Flyer browsing clarity** — Styled the interactive-map selects with PawPrint paper, ink, and
+  sage focus states; added count-bearing Lost, Found, and Adoptable tabs to My Flyers.
+
+- **Interactive map filters** — Replaced the mode and species filter chips with labeled native
+  select controls, retaining flyer counts and the lost/found pin color cues.
+
+- **Lost mode label** — Simplified the lost flyer label to “Lost”; crimson styling continues to
+  distinguish the mode without repeating urgency in the copy.
+
+- **Flyer creator byline** — Public flyer details now include the creator's signed profile
+  avatar URL and render it beside a clear “Posted by” identity/date line, with the existing
+  initial fallback when no profile photo is available.
 
 - **Phase 0** — Repo initialized. `pawprint` skill created at `.opencode/skills/pawprint/SKILL.md`;
   `AGENTS.md` points to it and the `taste` skill (`.agents/skills/design-taste-frontend`).
@@ -1293,6 +1249,7 @@ Instagram / X / WhatsApp, copy link, QR modal with PNG download);
 resolving a flyer (reunited / returned home / adopted) requires a double click;
 `npm run docs:pdf` regenerated.
 
+
 - **Phase 51** — Full fund/reward removal. Deleted the `rewards` and `webhooks` Django apps,
   reward/webhook API routes, payment drivers, webhook tasks, reward migrations, the Payments
   section, and the frontend reward feature, checkout modals, success/cancel pages, MSW mocks,
@@ -1328,3 +1285,40 @@ resolving a flyer (reunited / returned home / adopted) requires a double click;
   rows still need their bytes re-uploaded/backfilled because no local copy exists.
   Verified: **175 pytest passed @ 96.34%**, **121 Vitest** passed, `tsc -b --noEmit` clean,
   ruff + mypy clean, schema + `schema.d.ts` + PDF regenerated.
+
+- **Phase 53** — One-photo flyer presentation + editorial A4 PDF ($design-taste-frontend,
+  $pawprint). The detail page now leads with a single large 5:4 photo (`PhotoGallery.tsx`):
+  a mode-tinted frame, one-time entrance, 2 px card lift + 1.03 photo zoom on hover, and a
+  focus-visible full-screen viewer. The multi-angle thumbnail strip, arrow navigation and
+  every "1 / 1" / "photo 1 of N" label are gone — the backend already caps uploads at one
+  photo. The **Print A4 flyer** and **Download PNG** controls were removed; the generated
+  A4 PDF (now labelled "Download PDF") is the single export. The obsolete print-only
+  duplicate photo/QR block and `.print-sheet` styles were replaced by a minimal browser
+  print fallback; the QR is reached through the Share menu modal and the PDF.
+  Both A4 templates were rebuilt as one photo-led editorial system: equal 15 mm edges,
+  one Iowan/Palatino display face plus one sans body face, one accent per mode (crimson/
+  amber for lost & found, sage/teal/terracotta for adoption), a 180 × 118 mm hero photo with
+  no caption, a single card recipe for the detail facts, a strong QR + phone footer and a
+  quiet `pawprint.example` strip. The four deterministic per-flyer variants only shift the
+  accent, never the layout. WeasyPrint confirms **exactly one A4 page in both modes**;
+  SVG fallback colour moved to an SVG attribute because WeasyPrint ignores CSS `fill`.
+  Tests: flyer-detail suite now asserts the single photo, absence of counter/thumbnails/
+  arrows, focus return after closing the viewer, and absence of Print/PNG with the PDF link
+  intact; e2e journey ① checks the PDF + share QR instead of the removed Print button;
+  a backend template test pins the shared A4 system across all three modes.
+  Verified: **176 pytest passed @ 96.34%**, **121 Vitest** passed, `tsc -b --noEmit` +
+  `vite build` clean, ruff + mypy clean.
+
+- **Phase 54** — Removed automated tests across the repository at the user's request.
+  Deleted Django unit/integration tests, React/Vitest tests and helpers, Playwright E2E
+  specs and fixtures, test factories, test-only settings, and test-runner dependencies.
+  CI now runs Ruff/mypy and frontend type-check/build only. Kept Playwright in the backend
+  runtime because A4 flyer rendering imports it. Historical phase entries below and above
+  record what existed when those phases were built; the current verification setup is the
+  one in §11.
+
+**Current status:** automated tests and test-runner infrastructure have been removed at
+user direction. CI runs backend lint (ruff + mypy) and frontend type-check/build; verify
+locally with `cd backend && .venv/bin/ruff check . && .venv/bin/mypy apps` and
+`cd frontend && npm run lint && npm run build`. Runtime Playwright remains for flyer PNG
+rendering. Application data and schema are unchanged; only test-mode settings and infrastructure were removed.
