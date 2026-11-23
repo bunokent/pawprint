@@ -22,6 +22,14 @@ export interface PhotoUploadResult {
 /** Confidence at/above which an auto-detected breed/color is prefilled (else blank). */
 export const HIGH_CONFIDENCE = 0.8;
 
+/** Private-storage folder for each flyer mode: flyers/{user_id}/{category}/. */
+export const PHOTO_CATEGORY_BY_MODE = {
+  emergency: "losts",
+  found: "found",
+  outreach: "adoptions",
+} as const;
+export type PhotoCategory = (typeof PHOTO_CATEGORY_BY_MODE)[keyof typeof PHOTO_CATEGORY_BY_MODE];
+
 export interface PetCreateInput {
   name: string;
   species: string;
@@ -37,14 +45,16 @@ export interface PetCreateInput {
 
 interface PhotoUploadInput {
   file: File;
+  category: PhotoCategory;
   onProgress: (percentage: number) => void;
 }
 
 export function useUploadPetPhoto() {
   return useMutation({
-    mutationFn: async ({ file, onProgress }: PhotoUploadInput) => {
+    mutationFn: async ({ file, category, onProgress }: PhotoUploadInput) => {
       const form = new FormData();
       form.append("photo", file);
+      form.append("category", category);
       const { data } = await api.post<PhotoUploadResult>("/pets/photos", form, {
         ...multipartConfig(),
         onUploadProgress: (event) => {

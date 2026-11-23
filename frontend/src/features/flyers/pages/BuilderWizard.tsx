@@ -10,7 +10,13 @@ import { FieldShell, Input, Textarea } from "@/components/ui/field";
 import { ErrorBox } from "@/components/ui/feedback";
 import { PhotoUpload, type LocalPhotoUploadResult } from "@/features/pets/components/PhotoUpload";
 import { LocationPicker } from "@/components/maps/LocationPicker";
-import { useCreatePet, HIGH_CONFIDENCE, type Pet, type PhotoUploadResult } from "@/features/pets/api";
+import {
+  PHOTO_CATEGORY_BY_MODE,
+  useCreatePet,
+  HIGH_CONFIDENCE,
+  type Pet,
+  type PhotoUploadResult,
+} from "@/features/pets/api";
 import { useCreateFlyer, type Flyer, type Mode } from "@/features/flyers/api";
 import { FlyerCard } from "@/components/FlyerCard";
 
@@ -240,6 +246,7 @@ function StepPhotoMode({
           onUploaded={onUploaded}
           onRemove={onRemove}
           uploaded={photos}
+          category={PHOTO_CATEGORY_BY_MODE[mode]}
         />
       </FieldShell>
       {photos.length > 0 && (

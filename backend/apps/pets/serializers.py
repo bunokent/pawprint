@@ -47,6 +47,12 @@ class PetCreateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Pet.Status.choices, default=Pet.Status.ADOPTABLE)
 
 
+class PhotoUploadRequestSerializer(serializers.Serializer):
+    photo = serializers.FileField()
+    # Destination folder under flyers/{user_id}/ — never a free-form path.
+    category = serializers.ChoiceField(choices=storage.FLYER_CATEGORIES, required=False, default="losts")
+
+
 class PhotoUploadResponseSerializer(serializers.Serializer):
     key = serializers.CharField()
     url = serializers.CharField()

@@ -12,27 +12,34 @@ from rest_framework.views import APIView
 
 from apps.common.throttles import UploadThrottle
 
-from .serializers import PetCreateSerializer, PetSerializer, PhotoUploadResponseSerializer
+from .serializers import (
+    PetCreateSerializer,
+    PetSerializer,
+    PhotoUploadRequestSerializer,
+    PhotoUploadResponseSerializer,
+)
 from .services import PetPhotoService, PetService
 
 
 class PhotoUploadView(APIView):
-    """POST /api/pets/photos — YOLO-World-gated pet photo upload (10/min)."""
+    """POST /api/pets/photos — YOLO-World-gated upload into the user's flyer folder (10/min)."""
 
     permission_classes = [IsAuthenticated]
     throttle_classes = [UploadThrottle]
     throttle_scope = "upload"
     parser_classes = [MultiPartParser, FormParser]
 
-    @extend_schema(responses={201: PhotoUploadResponseSerializer})
+    @extend_schema(request=PhotoUploadRequestSerializer, responses={201: PhotoUploadResponseSerializer})
     def post(self, request: Request) -> Response:
-        upload = request.FILES.get("photo")
-        if upload is None:
-            return Response(
-                {"error": {"code": "validation_error", "message": "Field 'photo' is required."}},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        result = PetPhotoService.upload(request.user, upload.name or "photo.jpg", upload.read())
+        serializer = PhotoUploadRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        upload = serializer.validated_data["photo"]
+        result = PetPhotoService.upload(
+            request.user,
+            upload.name or "photo.jpg",
+            upload.read(),
+            serializer.validated_data["category"],
+        )
         return Response(PhotoUploadResponseSerializer(result).data, status=status.HTTP_201_CREATED)
 
 

@@ -1,7 +1,36 @@
-"""Storage helpers — all objects are PRIVATE (Cloudinary private delivery); access via signed URLs."""
+"""Storage helpers — every object is PRIVATE; access only via signed expiring URLs."""
+
+from __future__ import annotations
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import Storage, default_storage
+
+# One folder per flyer kind, under flyers/{user_id}/.
+FLYER_CATEGORIES: tuple[str, ...] = ("losts", "adoptions", "found")
+MODE_TO_CATEGORY: dict[str, str] = {
+    "emergency": "losts",
+    "outreach": "adoptions",
+    "found": "found",
+}
+
+
+def flyer_category(mode: str) -> str:
+    """Map a flyer mode (or an already-correct folder name) to its storage folder."""
+    if mode in FLYER_CATEGORIES:
+        return mode
+    return MODE_TO_CATEGORY.get(mode, "losts")
+
+
+def pet_photo_key(user_id: object, category: str, photo_id: object, *, thumb: bool = False) -> str:
+    """Build flyers/{user_id}/{category}/{uuid}.jpg (or {uuid}_thumb.jpg)."""
+    folder = flyer_category(category)
+    name = f"{photo_id}_thumb.jpg" if thumb else f"{photo_id}.jpg"
+    return f"flyers/{user_id}/{folder}/{name}"
+
+
+def flyer_export_key(user_id: object, category: str, flyer_id: object, extension: str) -> str:
+    """Build flyers/{user_id}/{category}/{flyer_id}/flyer.{pdf|png}."""
+    return f"flyers/{user_id}/{flyer_category(category)}/{flyer_id}/flyer.{extension}"
 
 
 def get_storage() -> Storage:
@@ -9,7 +38,8 @@ def get_storage() -> Storage:
 
 
 def upload_bytes(key: str, data: bytes, content_type: str = "application/octet-stream") -> str:
-    """Upload bytes to the private bucket and return the storage key."""
+    """Upload bytes to private storage and return the storage key."""
+    del content_type  # MIME type is derived from the validated extension by the backend
     storage = get_storage()
     if storage.exists(key):
         storage.delete(key)
@@ -23,12 +53,9 @@ def read_bytes(key: str) -> bytes:
 
 
 def signed_url(key: str, expires: int = 3600) -> str:
-    """Signed URL for a private object (Cloudinary: HMAC-signed; FS backend: media URL)."""
+    """Short-lived HMAC-signed URL for a private object."""
     storage = get_storage()
     url = getattr(storage, "url", None)
     if url is None:
         raise RuntimeError("Storage backend has no url()")
-    try:
-        return url(key, expire=expires)  # type: ignore[call-arg]
-    except TypeError:
-        return url(key)
+    return url(key, expire=expires)  # type: ignore[call-arg]

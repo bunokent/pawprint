@@ -38,8 +38,15 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
   Phase 29).
 - **Frontend**: React 19 + TypeScript + Vite, React Router v7, TanStack Query v5, Axios,
   Zustand, React Hook Form + Zod, Shadcn/UI, Tailwind v4. React Compiler enabled.
-- **Storage**: Cloudinary (private delivery type, HMAC-signed URLs only) via the `cloudinary`
-  SDK, wrapped in a Django `Storage` backend (`apps/common/cloudinary_storage.py`).
+- **Storage**: private local filesystem only — no cloud/object-storage SDK. A Django
+  `Storage` backend (`apps/common/private_storage.py`, `PrivateLocalStorage`) writes under
+  `PRIVATE_STORAGE_ROOT` (default `backend/private`), outside STATIC/MEDIA web roots, with
+  `0700` directories, `0600` files and atomic temp-file replacement. Pet photos and flyer
+  exports are organized as `flyers/{user_id}/{losts,adoptions,found}/...`; avatars stay under
+  `avatars/{user_id}/...`. Reads go exclusively through `GET /private-media/<key>?expires=…&signature=…`,
+  an HMAC-SHA256 signed, expiring URL (dedicated `PRIVATE_MEDIA_SIGNING_KEY`, default
+  `SECRET_KEY`) validated by `PrivateMediaView`. Direct/static access is impossible; unsafe
+  keys (absolute paths, `..`, backslashes, dotfiles, unknown extensions) are rejected.
 - **AI Vision**: Ultralytics YOLO-World (`yolov8s-worldv2.pt`) with 66 configured animal labels as
   the gate/boxer (its best animal `xyxy` box also drives the in-memory species-classification
   crop), plus CLIP ViT-B/32 zero-shot second stages: one names the actual species
@@ -79,11 +86,14 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
   Host-only fallback (no Docker) is still documented in `.env.example`:
   local PostgreSQL 16 on **127.0.0.1:5433**, valkey on **127.0.0.1:6379**, mailpit,
   `python manage.py runserver 8000` + `celery -A config worker ...` + `npm run dev`.
-  Storage is Cloudinary, so no local object storage is needed. Host-side
+  Private media is a named Docker volume shared by `web` and `celery`
+  (`privatemedia:/app/backend/private`), so uploads survive container recreation; set
+  `PRIVATE_STORAGE_ROOT` on both services if you move it. Host-side
   `python manage.py ...` auto-loads the root `.env` via python-dotenv (real env vars
   always win over it). For tests and Playwright E2E, `PAWPRINT_TESTING=1` (or running
   under pytest) switches to locmem cache, in-memory channel layer, eager Celery,
-  `memory://` broker and filesystem storage — no Redis/Cloudinary needed.
+  `memory://` broker and the same private-local backend rooted at `backend/.test-media`
+  — no Redis or external storage needed.
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
   `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
   `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
@@ -179,8 +189,9 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `avatars/{user_id}/{uuid}.jpg`, old avatar object deleted best-effort
   (`AuthService.update_avatar`, `upload` throttle 10/min). `UserSerializer` exposes
   `avatar_path` plus a fresh signed `avatar_url` on every response, so the SPA always
-  has a valid link to the private object. Under `PAWPRINT_TESTING=1` (DEBUG=0) the
-  root urls serve filesystem `/media/` explicitly so e2e can load those URLs.
+  has a valid link to the private object. The root URLconf serves **only** signed
+  `/private-media/` URLs (in every mode, including `PAWPRINT_TESTING=1`); there is no
+  public `/media/` static route.
 
 ## 7. Flyers, QR & A4 Export
 
@@ -192,8 +203,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   block on the sheet.
 - On create/update, `FlyerService` dispatches Celery task `generate_flyer_assets` (queue
   `flyers`): renders the HTML flyer template with WeasyPrint to A4 PDF + Playwright A4@300dpi
-  PNG, uploads to private Cloudinary, marks the flyer `active`, then broadcasts `flyer.generated`
-  over Django Channels (`ws/flyers/`).
+  PNG, saves both privately under `flyers/{creator_id}/{losts|adoptions|found}/{flyer_id}/`,
+  marks the flyer `active`, then broadcasts `flyer.generated` over Django Channels
+  (`ws/flyers/`). The pet photo is inlined as a base64 data URI for A4 rendering, so
+  WeasyPrint/Playwright never need a signed HTTP fetch.
 - `PetCreateSerializer` accepts `photo_paths` (list, max 1 — `MAX_PET_PHOTOS`; `photo_path`
   stays as the cover), and `PetService.create_pet` creates a single `PetPhoto` row. A report
   therefore shows one clear photo of the pet on its flyer; the stored file is always the full,
@@ -292,8 +305,12 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   the image / compose) guarantee no library ever phones home to Hugging Face — this
   supersedes the HF_TOKEN note in the Phase 35 log entry. The lost/found photo-matching
   feature (MegaDescriptor re-ID via timm) was removed in Phase 39.
-- **Pass**: EXIF stripped via Pillow, thumbnail generated, upload to private Cloudinary
-  (delivery type `private`), `PetDetectionLog(passed=True)`, signed preview URL returned.
+- **Pass**: EXIF stripped via Pillow, thumbnail generated, saved privately as
+  `flyers/{user_id}/{losts|adoptions|found}/{uuid}.jpg` (+ `_thumb.jpg`),
+  `PetDetectionLog(passed=True)`, signed preview URL returned. The `category` multipart
+  field (`losts|adoptions|found`; default `losts`) comes from the builder's chosen mode —
+  `emergency → losts`, `found → found`, `outreach → adoptions` — so photos and later A4
+  exports share the same per-user folder.
 - **Fail**: bytes discarded before any storage write, `PetDetectionLog(passed=False)`,
   `NoPetDetectedError` → HTTP 422 `{"error":{"code":"no_pet_detected","message":…,
   "detected_labels":[…]}}` so the user can retry instantly. Zero penalties. A logo caught by
@@ -328,9 +345,12 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 - **Background work**: Celery routes only `flyers` (A4 flyer asset generation) and `images`
   (deferred image work); `docker-compose.yml` runs one worker for both queues with Redis as
   the broker. Tests use eager Celery execution.
-- **Private media**: pet photos and avatars are stripped of EXIF data, stored in private
-  Cloudinary folders, and exposed through short-lived signed URLs; old objects are removed
-  best-effort when replaced.
+- **Private media**: pet photos, thumbnails, A4 exports and avatars are stripped of EXIF
+  data where applicable, stored under `PRIVATE_STORAGE_ROOT` with `0600`/`0700` permissions,
+  and exposed only through short-lived HMAC-signed URLs. Replaced avatars and overwritten
+  objects are deleted/replaced atomically; the old object is removed best-effort. Existing
+  Cloudinary-era rows still carry their old keys — those objects must be re-uploaded (or
+  backfilled) because bytes never existed locally.
 - **QR distribution**: the print sheet renders an SVG QR (`QrImage`), while the Share menu
   renders a downloadable PNG, attaches it to the native Web Share sheet where supported, and
   pre-fills social share intents. No third-party transaction or webhook credentials remain in
@@ -404,11 +424,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
   with full coverage on `services.py`, `apps/vision/services.py`, `apps/pets/serializers.py`,
-  and the Cloudinary storage driver;
+  and the private storage driver / signed-media view;
   `django_assert_max_num_queries` ceilings on list/detail endpoints (map endpoint at 6);
   429 tests for the
   `auth_write` (20/min) and `upload` (10/min) throttles; 422-before-storage tests (non-animal bytes never
-  reach Cloudinary); expanded YOLO-World + CLIP species tests (66 labels,
+  reach private storage); expanded YOLO-World + CLIP species tests (66 labels,
   `conf=0.20` asserted on the predictor call, EXIF-orientation/RGB normalization, stale-path
   fallback, non-World checkpoint rejection, rabbit/fox/frog/crocodile renaming from wrong raw
   labels, CLIP animal-gate fallback for YOLO misses, CLIP singleton/loader paths, ambiguous
@@ -422,8 +442,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   breed lists, other-species empty breed, color always classified, raw confidences on the
   upload response); found-mode + `location_lat`/`location_lng` + `GET /api/flyers/map`
   integration tests; `photo_paths` on `POST /api/pets` + one PetPhoto row (single-photo cap,
-  second photo → 400 field error); Cloudinary
-  driver unit tests (SDK mocked, 100% on the driver);
+  second photo → 400 field error); private-storage driver tests (key validation, path
+  traversal/symlink refusal, `0600`/`0700` permissions, atomic overwrite, HMAC signature
+  + expiry + rotation, signed-view 200/404, no public `/media/` route) and one test per
+  category folder on the upload endpoint;
   profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
   `avatar_url`, signing-failure fallback); `factory-boy` factories.
@@ -451,8 +473,9 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `npx tsc -b --noEmit` clean; `npm run build` green.
 - E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **8 journeys /
   11 tests**, fully self-contained: the Django backend on :8010 with `PAWPRINT_TESTING=1`
-  (eager Celery, locmem, local PG :5433; filesystem `/media/` is served explicitly under
-  TESTING so signed URLs load) and the Vite dev server on :5173 proxying to :8010. Journeys:
+  (eager Celery, locmem, local PG :5433; private media is rooted at `backend/.test-media`
+  and served only through signed `/private-media/` URLs) and the Vite dev server on :5173
+  proxying `/api`, `/private-media` and `/ws` to :8010. Journeys:
   ① guest browse → filter → search → detail+QR, ② register → logout → login with wrong-password
   retry, ③ create an emergency flyer through the 3-step wizard (YOLO-World-gated upload →
   preview → **Next** → read-only detected species) → public detail page, ④ landscape photo +
@@ -1245,10 +1268,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   Updated `schema.yml`, unit/integration/E2E tests (including a logo fixture),
   `docs/DOCUMENTATION.md`, and regenerated the PDF.
 
-**Final status:** backend **179 passed @ 97%** (100% on all services/drivers incl.
+**Final status:** backend **175 passed @ 96.34%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
-frontend **145 vitest tests** @ 88.42/79.51/85.12/89.75 + Playwright coverage extended
+frontend **121 vitest tests** + Playwright coverage extended
 (E2E not re-run locally; needs the full Postgres/Celery/Playwright stack);
+private local storage replaces Cloudinary — see Phase 52;
 `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run via
 `docker compose up` (internal PostgreSQL + Redis, web :8000, celery worker, Vite dev
@@ -1280,3 +1304,27 @@ resolving a flyer (reunited / returned home / adopted) requires a double click;
   while keeping earlier migration history intact. Regenerated `backend/schema.yml`,
   `frontend/src/lib/api/schema.d.ts` and `docs/documentation.pdf`; E2E is now 8 journeys / 11
   tests. Per request, no test suite was run after the removal.
+
+- **Phase 52** — Cloudinary → **private local storage**, organized per user and flyer kind.
+  Removed the `cloudinary` dependency, `apps/common/cloudinary_storage.py` and its SDK-mocked
+  tests. New `PrivateLocalStorage` (`apps/common/private_storage.py`) writes only under
+  `PRIVATE_STORAGE_ROOT` (`backend/private`, `backend/.test-media` under tests): keys are
+  validated relative POSIX paths with an extension allow-list, resolved against the root to
+  block traversal/symlinks, written atomically with `0700` dirs / `0600` files. Reads go only
+  through `GET /private-media/<key>?expires=…&signature=…` (`PrivateMediaView`), verified with
+  HMAC-SHA256 in constant time using `PRIVATE_MEDIA_SIGNING_KEY` (defaults to `SECRET_KEY`);
+  `PRIVATE_MEDIA_URL_EXPIRY` defaults to 3600 s. No public `/media/` route remains. Storage
+  failures map to the existing JSON 502 `storage_unavailable` envelope.
+  Pet photos, thumbnails and A4 exports now live in
+  `flyers/{user_id}/{losts,adoptions,found}/...`: the upload endpoint validates a `category`
+  field (builder modes map `emergency → losts`, `found → found`, `outreach → adoptions`),
+  `storage.pet_photo_key` / `flyer_export_key` build every key, and the E2E API helper sends
+  the same category. A4 rendering inlines the stored photo as a base64 data URI, so
+  WeasyPrint/Playwright need no signed HTTP fetch. Compose shares a `privatemedia` named
+  volume between `web` and `celery`; `.dockerignore` / `.gitignore` keep local private bytes
+  out of images and git. Updated the pawprint skill, `.env.example`, Vite/E2E proxy comments,
+  `backend/schema.yml` and `frontend/src/lib/api/schema.d.ts`. Cloudinary references in
+  earlier phase entries are historical and superseded by this phase; old Cloudinary-era DB
+  rows still need their bytes re-uploaded/backfilled because no local copy exists.
+  Verified: **175 pytest passed @ 96.34%**, **121 Vitest** passed, `tsc -b --noEmit` clean,
+  ruff + mypy clean, schema + `schema.d.ts` + PDF regenerated.

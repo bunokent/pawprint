@@ -28,6 +28,7 @@ export default defineConfig({
       // port (e.g. PAWPRINT_API_URL=http://127.0.0.1:8010) when 8000 is taken.
       "/api": { target: process.env.PAWPRINT_API_URL ?? "http://127.0.0.1:8000", changeOrigin: true },
       "/media": { target: process.env.PAWPRINT_API_URL ?? "http://127.0.0.1:8000", changeOrigin: true },
+      "/private-media": { target: process.env.PAWPRINT_API_URL ?? "http://127.0.0.1:8000", changeOrigin: true },
       "/ws": { target: (process.env.PAWPRINT_API_URL ?? "http://127.0.0.1:8000").replace(/^http/, "ws"), ws: true },
     },
   },

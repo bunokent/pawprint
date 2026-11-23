@@ -23,6 +23,7 @@ db.sqlite3
 media/
 staticfiles/
 backend/.test-media/
+backend/private/
 backend/yolov8n.pt
 backend/yolov8s-worldv2.pt
 /weights/

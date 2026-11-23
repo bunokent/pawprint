@@ -2,12 +2,13 @@
 
 from typing import Any
 
-import cloudinary.exceptions
 from django.http import HttpRequest
 from rest_framework import status
 from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
+
+from .private_storage import StorageUnavailableError
 
 STORAGE_UNAVAILABLE_MESSAGE = "Photo storage is temporarily unavailable. Please try again."
 
@@ -29,9 +30,9 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
     response = drf_exception_handler(exc, context)
     request: HttpRequest | None = context.get("request")
     if response is None:
-        # Storage backend (Cloudinary) failures must surface as JSON, never as an
-        # HTML 500 page — e.g. wrong/placeholder credentials raise AuthorizationRequired.
-        if isinstance(exc, cloudinary.exceptions.Error):
+        # Private-storage filesystem failures must surface as JSON, never as an
+        # HTML 500 page — e.g. a read-only or full disk raises StorageUnavailableError.
+        if isinstance(exc, StorageUnavailableError):
             return Response(
                 {"error": {"code": "storage_unavailable", "message": STORAGE_UNAVAILABLE_MESSAGE}},
                 status=status.HTTP_502_BAD_GATEWAY,
@@ -48,7 +49,9 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
         }
     elif isinstance(detail, dict) and "detail" in detail:
         body = {"error": {"code": getattr(exc, "default_code", "error"), "message": detail["detail"]}}
-    elif isinstance(detail, list):
+    elif isinstance(detail, list) or (
+        isinstance(detail, dict) and response.status_code == status.HTTP_400_BAD_REQUEST
+    ):
         body = {"error": {"code": "validation_error", "message": "Validation failed.", "fields": detail}}
     else:
         body = {"error": {"code": "error", "message": str(detail)}}

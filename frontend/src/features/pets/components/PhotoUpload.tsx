@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ImagePlus, LoaderCircle, X } from "lucide-react";
-import { useUploadPetPhoto, type PhotoUploadResult } from "@/features/pets/api";
+import { useUploadPetPhoto, type PhotoCategory, type PhotoUploadResult } from "@/features/pets/api";
 import { ApiError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 
@@ -14,6 +14,8 @@ interface PhotoUploadProps {
   onUploaded: (result: LocalPhotoUploadResult) => void;
   onRemove: (key: string) => void;
   uploaded: LocalPhotoUploadResult[];
+  /** Private flyer folder; defaults to `losts` for standalone pickers. */
+  category?: PhotoCategory;
 }
 
 const UPLOAD_STAGES = [
@@ -30,7 +32,7 @@ type UploadStage = (typeof UPLOAD_STAGES)[number]["id"];
  * image (including a logo or illustration) gets a 422 "no pet detected" response —
  * never a ban — so the user can pick a different file straight away.
  */
-export function PhotoUpload({ onUploaded, onRemove, uploaded }: PhotoUploadProps) {
+export function PhotoUpload({ onUploaded, onRemove, uploaded, category = "losts" }: PhotoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingUrlRef = useRef<string | null>(null);
   // Every object URL we created, so removed/unmounted previews can be revoked.
@@ -86,6 +88,7 @@ export function PhotoUpload({ onUploaded, onRemove, uploaded }: PhotoUploadProps
     try {
       const result = await upload.mutateAsync({
         file,
+        category,
         onProgress: (percentage) => {
           setUploadProgress(percentage);
           if (percentage === 100) {

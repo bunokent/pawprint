@@ -43,10 +43,10 @@ description: Engineering and UI conventions for PawPrint. Always follow the `tas
   - Zod + React Hook Form for all forms.
 
 ## AI Pet Detection Gatekeeper (YOLO-World gate + CLIP species naming — Replaces Moderation/Bans)
-- Every uploaded pet photo passes `PetDetectionService.validate_pet_image(image_bytes)` BEFORE uploading to private cloud storage (Cloudinary).
+- Every uploaded pet photo passes `PetDetectionService.validate_pet_image(image_bytes)` BEFORE any write to private local storage under `flyers/{user_id}/{losts,adoptions,found}/`.
 - Uses `ultralytics.YOLOWorld("yolov8s-worldv2.pt")`, lazily loaded and cached once per process, with `model.set_classes()` configured for expanded open-vocabulary animal labels; a lazily loaded lock-protected CLIP ViT-B/32 second stage names the actual species (`pet_classes`) while raw YOLO labels stay in `detected_classes`.
 - `ANIMAL_CATEGORY_BY_LABEL` groups specific outputs into Domestic Pet, Zoo / Exotic, Reptile, Amphibian, Small Mammal, Farm Animal, Bird, and Fish categories; acceptance is label-based (never COCO class IDs), with configurable confidence defaulting to `>= 0.20` passed into `predict(conf=...)`.
-- **If a pet is detected**: Strip EXIF metadata via Pillow, generate thumbnail, and upload to private Cloudinary storage (delivery type `private`, signed URLs only).
+- **If a pet is detected**: Strip EXIF metadata via Pillow, generate thumbnail, and save into the private local root with `0600` files / `0700` dirs; reads only via short-lived HMAC-signed `/private-media/` URLs.
 - **If NO pet is detected**: Discard immediately (never saved to storage) and raise `NoPetDetectedError` → HTTP `422 Unprocessable Entity` with clear message (`"No pet detected in the photo. Please upload a clear photo of your pet."`) and detected labels so the user can retry.
 - **Zero penalties**: No user strikes, no suspensions, no banning. Users can immediately select another photo.
 

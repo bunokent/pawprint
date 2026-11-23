@@ -100,10 +100,10 @@ def test_flyer_detail_returns_all_photo_urls(api_client, django_assert_max_num_q
         resp = api_client.get(f"/api/flyers/{flyer.pk}")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["photo_url"].endswith("pets/photos/cover.jpg")
+    assert "pets/photos/cover.jpg?" in body["photo_url"]
     assert len(body["photo_urls"]) == 3
-    assert body["photo_urls"][0].endswith("pets/photos/cover.jpg")
-    assert {u.rsplit("/", 1)[-1] for u in body["photo_urls"]} == {
+    assert "pets/photos/cover.jpg?" in body["photo_urls"][0]
+    assert {u.split("?", 1)[0].rsplit("/", 1)[-1] for u in body["photo_urls"]} == {
         "cover.jpg", "side.jpg", "back.jpg",
     }
 
@@ -116,7 +116,7 @@ def test_flyer_detail_photo_urls_falls_back_to_cover(api_client):
     resp = api_client.get(f"/api/flyers/{flyer.pk}")
     body = resp.json()
     assert len(body["photo_urls"]) == 1
-    assert body["photo_urls"][0].endswith("pets/photos/legacy.jpg")
+    assert "pets/photos/legacy.jpg?" in body["photo_urls"][0]
 
 
 def test_create_requires_auth(api_client):

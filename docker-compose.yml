@@ -4,7 +4,7 @@
 #                             host services, so publishing those would conflict)
 #   web      Django API + migrations   http://localhost:8000
 #   celery   worker on flyers,images,default queues
-#   frontend Vite dev server          http://localhost:5173  (proxies /api,/media,/ws to web)
+#   frontend Vite dev server          http://localhost:5173  (proxies /api,/private-media,/ws to web)
 #
 # Dev email goes to the HOST mailpit (host.docker.internal:1025 — same mailpit the host-only
 # setup uses). On a machine without a host mailpit: `docker compose --profile mailpit up`
@@ -68,6 +68,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend
+      # Private uploads survive container recreation and are shared with celery.
+      - privatemedia:/app/backend/private
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,6 +97,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app/backend
+      - privatemedia:/app/backend/private
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,4 +126,5 @@ services:
 volumes:
   pgdata:
   redisdata:
+  privatemedia:
   frontend-node-modules:

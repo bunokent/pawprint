@@ -635,9 +635,19 @@ paths:
   /api/pets/photos:
     post:
       operationId: pets_photos_create
-      description: POST /api/pets/photos — YOLO-World-gated pet photo upload (10/min).
+      description: POST /api/pets/photos — YOLO-World-gated upload into the user's
+        flyer folder (10/min).
       tags:
       - pets
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PhotoUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PhotoUploadRequest'
+        required: true
       responses:
         '201':
           content:
@@ -648,9 +658,19 @@ paths:
   /api/petsphotos:
     post:
       operationId: petsphotos_create
-      description: POST /api/pets/photos — YOLO-World-gated pet photo upload (10/min).
+      description: POST /api/pets/photos — YOLO-World-gated upload into the user's
+        flyer folder (10/min).
       tags:
       - petsphotos
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PhotoUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PhotoUploadRequest'
+        required: true
       responses:
         '201':
           content:
@@ -660,6 +680,16 @@ paths:
           description: ''
 components:
   schemas:
+    CategoryEnum:
+      enum:
+      - losts
+      - adoptions
+      - found
+      type: string
+      description: |-
+        * `losts` - losts
+        * `adoptions` - adoptions
+        * `found` - found
     Flyer:
       type: object
       properties:
@@ -922,6 +952,18 @@ components:
           allOf:
           - $ref: '#/components/schemas/StatusF90Enum'
           default: adoptable
+    PhotoUploadRequest:
+      type: object
+      properties:
+        photo:
+          type: string
+          format: uri
+        category:
+          allOf:
+          - $ref: '#/components/schemas/CategoryEnum'
+          default: losts
+      required:
+      - photo
     PhotoUploadResponse:
       type: object
       properties:

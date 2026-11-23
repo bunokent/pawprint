@@ -1,11 +1,9 @@
 """Root URL configuration — NO django.contrib.admin (admin is fully removed)."""
 
-from django.conf import settings
-from django.urls import include, path, re_path
-from django.views.static import serve
+from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from apps.common.views import HealthView
+from apps.common.views import HealthView, PrivateMediaView
 
 urlpatterns = [
     path("api/health", HealthView.as_view(), name="health"),
@@ -17,11 +15,7 @@ urlpatterns = [
     path("api/flyers", include("apps.flyers.urls")),
     path("api/schema", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
+    # The ONLY way to read a private object: a short-lived signed URL issued by
+    # storage.signed_url(). Files under PRIVATE_STORAGE_ROOT are never served statically.
+    path("private-media/<path:key>", PrivateMediaView.as_view(), name="private-media"),
 ]
-
-# Serve filesystem media when PAWPRINT_TESTING=1 (DEBUG=0 there) so Playwright e2e can
-# load signed /media/ URLs from local storage; in production Cloudinary serves them.
-if settings.TESTING:
-    urlpatterns += [
-        re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
-    ]

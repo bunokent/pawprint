@@ -100,7 +100,10 @@ export async function createTestFlyer(
   // Upload photo.
   const photoResp = await page.request.post(`${API}/pets/photos`, {
     headers,
-    multipart: { photo: { name: "dog.jpg", mimeType: "image/jpeg", buffer: fs.readFileSync(fixture("dog.jpg")) } },
+    multipart: {
+      photo: { name: "dog.jpg", mimeType: "image/jpeg", buffer: fs.readFileSync(fixture("dog.jpg")) },
+      category: mode === "found" ? "found" : mode === "outreach" ? "adoptions" : "losts",
+    },
   });
   if (photoResp.status() !== 201) throw new Error(`pet photo upload failed: ${photoResp.status()}`);
   const photo = await photoResp.json();

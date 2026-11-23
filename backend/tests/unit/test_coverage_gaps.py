@@ -236,6 +236,34 @@ def test_render_flyer_html_with_photo(monkeypatch):
     assert '<div class="photo-fallback"' not in html
 
 
+def test_render_flyer_html_inlines_existing_private_photo(monkeypatch, settings, tmp_path):
+    """Stored bytes are embedded as a data URI — no HTTP request during A4 rendering."""
+    from django.core.files.base import ContentFile
+    from django.core.files.storage import default_storage
+
+    from apps.flyers.tasks import render_flyer_html
+
+    settings.PRIVATE_STORAGE_ROOT = tmp_path / "private"
+    key = default_storage.save("flyers/u/losts/rex.jpg", ContentFile(b"jpg-bytes"))
+    flyer = FlyerFactory(pet=_pet_with_photo(key), mode=Flyer.Mode.EMERGENCY)
+    monkeypatch.setattr(
+        "apps.common.storage.signed_url",
+        lambda path: (_ for _ in ()).throw(AssertionError("HTTP URL used")),
+    )
+
+    html = render_flyer_html(flyer)
+
+    assert 'src="data:image/jpeg;base64,' in html
+    assert "jpg-bytes" not in html  # base64-encoded, never raw bytes
+    assert 'anBnLWJ5dGVz' in html  # base64("jpg-bytes")
+
+
+def _pet_with_photo(key):
+    from apps.pets.factories import PetFactory
+
+    return PetFactory(photo_path=key)
+
+
 def test_render_flyer_html_without_photo_emergency(monkeypatch):
     """When the pet has no photo, the emergency template renders the SVG fallback."""
     from apps.flyers.factories import FlyerFactory as _FF

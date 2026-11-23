@@ -33,7 +33,7 @@ def _mock_detection_pass(monkeypatch):
     return result
 
 
-def test_upload_pet_photo_success(auth_client, monkeypatch):
+def test_upload_pet_photo_success(auth_client, user, monkeypatch):
     _mock_detection_pass(monkeypatch)
     resp = auth_client.post(
         "/api/pets/photos", {"photo": io.BytesIO(_png_bytes()), "name": "pet.png"},
@@ -42,7 +42,10 @@ def test_upload_pet_photo_success(auth_client, monkeypatch):
     assert resp.status_code == 201
     body = resp.json()
     assert body["pet_classes"] == ["dog"]
-    assert body["key"].startswith("pets/photos/")
+    assert body["key"].startswith(f"flyers/{user.pk}/losts/")
+    assert body["key"].endswith(".jpg")
+    assert body["thumb_key"].startswith(f"flyers/{user.pk}/losts/")
+    assert body["thumb_key"].endswith("_thumb.jpg")
     assert body["url"]
     # Breed/color classifier readout is included for the auto-fill fields.
     assert body["breed"] == "shiba inu"
@@ -51,6 +54,29 @@ def test_upload_pet_photo_success(auth_client, monkeypatch):
     assert body["color_confidence"] == pytest.approx(0.88)
     # detection logged as passed
     assert PetDetectionLog.objects.filter(passed=True).count() == 1
+
+
+@pytest.mark.parametrize("category", ["losts", "found", "adoptions"])
+def test_upload_stores_in_requested_private_folder(auth_client, user, monkeypatch, category):
+    _mock_detection_pass(monkeypatch)
+    resp = auth_client.post(
+        "/api/pets/photos",
+        {"photo": io.BytesIO(_png_bytes()), "name": "pet.png", "category": category},
+        format="multipart",
+    )
+    assert resp.status_code == 201, resp.content
+    assert resp.json()["key"].startswith(f"flyers/{user.pk}/{category}/")
+
+
+def test_upload_rejects_unknown_folder(auth_client, monkeypatch):
+    _mock_detection_pass(monkeypatch)
+    resp = auth_client.post(
+        "/api/pets/photos",
+        {"photo": io.BytesIO(_png_bytes()), "name": "pet.png", "category": "../../etc"},
+        format="multipart",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "validation_error"
 
 
 def test_upload_non_pet_photo_422(auth_client, monkeypatch):
@@ -81,17 +107,17 @@ def test_upload_non_pet_photo_422(auth_client, monkeypatch):
     assert PetDetectionLog.objects.filter(passed=False).count() == 1
     from django.core.files.storage import default_storage
 
-    assert not any(default_storage.listdir("pets")[1]) if default_storage.exists("pets") else True
+    assert not any(default_storage.listdir("flyers")[0]) if default_storage.exists("flyers") else True
 
 
 def test_upload_storage_failure_returns_json_502_not_html(auth_client, monkeypatch):
-    """A Cloudinary failure (e.g. bad credentials) must be a JSON 502, never an HTML 500."""
-    import cloudinary.exceptions
+    """A private-storage filesystem failure must be a JSON 502, never an HTML 500."""
+    from apps.common.private_storage import StorageUnavailableError
 
     _mock_detection_pass(monkeypatch)
 
     def boom(key, data, content_type="application/octet-stream"):
-        raise cloudinary.exceptions.AuthorizationRequired("Invalid Signature")
+        raise StorageUnavailableError("Disk is read-only")
 
     monkeypatch.setattr("apps.common.storage.upload_bytes", boom)
     resp = auth_client.post(

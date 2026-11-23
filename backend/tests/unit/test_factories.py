@@ -29,7 +29,7 @@ def test_pet_photo_factory():
     photo = PetPhotoFactory()
     assert photo.pk is not None
     assert photo.pet is not None
-    assert photo.photo_path.startswith("pets/photos/")
+    assert photo.photo_path.startswith("flyers/test-user/losts/")
 
 
 def test_flyer_factory():

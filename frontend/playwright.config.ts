@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
  *  - Django backend on 127.0.0.1:8010 with PAWPRINT_TESTING=1
  *    (locmem cache, in-memory channel layer, eager Celery, filesystem storage)
  *    against the local PostgreSQL on 127.0.0.1:5433
- *  - Vite dev server on 127.0.0.1:5173 proxying /api + /media to :8010
+ *  - Vite dev server on 127.0.0.1:5173 proxying /api + /private-media to :8010
  *
  * Port 8010 is used because 8000 is commonly taken on dev machines.
  */

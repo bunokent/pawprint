@@ -526,7 +526,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description POST /api/pets/photos — YOLO-World-gated pet photo upload (10/min). */
+        /** @description POST /api/pets/photos — YOLO-World-gated upload into the user's flyer folder (10/min). */
         post: operations["pets_photos_create"];
         delete?: never;
         options?: never;
@@ -543,7 +543,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description POST /api/pets/photos — YOLO-World-gated pet photo upload (10/min). */
+        /** @description POST /api/pets/photos — YOLO-World-gated upload into the user's flyer folder (10/min). */
         post: operations["petsphotos_create"];
         delete?: never;
         options?: never;
@@ -555,6 +555,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description * `losts` - losts
+         *     * `adoptions` - adoptions
+         *     * `found` - found
+         * @enum {string}
+         */
+        CategoryEnum: "losts" | "adoptions" | "found";
         Flyer: {
             /** Format: uuid */
             readonly id: string;
@@ -660,6 +667,12 @@ export interface components {
             photo_paths?: string[];
             /** @default adoptable */
             status: components["schemas"]["StatusF90Enum"];
+        };
+        PhotoUploadRequest: {
+            /** Format: uri */
+            photo: string;
+            /** @default losts */
+            category: components["schemas"]["CategoryEnum"];
         };
         PhotoUploadResponse: {
             key: string;
@@ -1453,7 +1466,12 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["PhotoUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PhotoUploadRequest"];
+            };
+        };
         responses: {
             201: {
                 headers: {
@@ -1472,7 +1490,12 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["PhotoUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PhotoUploadRequest"];
+            };
+        };
         responses: {
             201: {
                 headers: {

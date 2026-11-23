@@ -2,8 +2,8 @@
 
 Environment-driven with dev defaults. When running under pytest (or with
 PAWPRINT_TESTING=1, e.g. for Playwright E2E) the settings switch to
-in-memory channel layer, eager Celery, local filesystem storage and locmem cache so the
-suite never needs Redis/Cloudinary.
+in-memory channel layer, eager Celery, private local storage and locmem cache so the
+suite never needs Redis or an external storage provider.
 """
 
 import os
@@ -202,28 +202,24 @@ CELERY_TASK_ROUTES = {
 CELERY_TASK_DEFAULT_QUEUE = "default"
 
 # ---------------------------------------------------------------------------
-# Storage — Cloudinary private delivery (signed URLs). Filesystem under TESTING.
+# Storage — PRIVATE local filesystem, read only through signed URLs.
+# The root is outside STATIC_ROOT and is never served as a static directory.
+# Pet photos/exports live under flyers/{user_id}/{losts|adoptions|found}/...
 # ---------------------------------------------------------------------------
-CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")  # cloudinary://<key>:<secret>@<cloud_name>
-CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
-CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
-CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
+_default_private_root = BASE_DIR / (".test-media" if TESTING else "private")
+_private_root = Path(os.environ.get("PRIVATE_STORAGE_ROOT", str(_default_private_root)))
+PRIVATE_STORAGE_ROOT = (_private_root if _private_root.is_absolute() else BASE_DIR / _private_root).resolve()
+# Dedicated signing key; defaults to SECRET_KEY but may be rotated independently.
+PRIVATE_MEDIA_SIGNING_KEY = os.environ.get("PRIVATE_MEDIA_SIGNING_KEY", SECRET_KEY)
+PRIVATE_MEDIA_URL_EXPIRY = int(os.environ.get("PRIVATE_MEDIA_URL_EXPIRY", "3600"))
 
-if TESTING:
-    STORAGES = {
-        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
-    MEDIA_ROOT = BASE_DIR / ".test-media"
-else:
-    STORAGES = {
-        "default": {"BACKEND": "apps.common.cloudinary_storage.CloudinaryStorage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
+STORAGES = {
+    "default": {"BACKEND": "apps.common.private_storage.PrivateLocalStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "/media/"
 
 # ---------------------------------------------------------------------------
 # Frontend (QR target URLs)

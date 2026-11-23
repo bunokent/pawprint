@@ -24,4 +24,4 @@ class PetPhotoFactory(factory.django.DjangoModelFactory):
         model = PetPhoto
 
     pet = factory.SubFactory(PetFactory)
-    photo_path = factory.Sequence(lambda n: f"pets/photos/angle-{n}.jpg")
+    photo_path = factory.Sequence(lambda n: f"flyers/test-user/losts/angle-{n}.jpg")

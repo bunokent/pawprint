@@ -1,6 +1,6 @@
 """PetDetectionService — YOLO-World animal gate + CLIP species naming.
 
-Every uploaded pet photo is validated BEFORE any Cloudinary write. YOLO-World proves an animal is
+Every uploaded pet photo is validated BEFORE any private-storage write. YOLO-World proves an animal is
 present; CLIP ViT-B/32 then names the actual species for `pet_classes` while raw YOLO labels stay in
 `detected_classes`. Non-animal photos are discarded immediately and raise NoPetDetectedError
 (HTTP 422). There are no strikes and no bans — the user can simply pick another photo.

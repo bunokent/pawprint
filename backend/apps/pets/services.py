@@ -57,16 +57,16 @@ class PetService:
 
 
 class PetPhotoService:
-    """Photo upload pipeline: YOLO-World gate → EXIF strip → private S3 → thumbnail task."""
+    """Photo upload pipeline: YOLO-World gate → EXIF strip → private local storage → thumbnail task."""
 
     detection = PetDetectionService()
 
     @classmethod
-    def upload(cls, user, filename: str, image_bytes: bytes) -> UploadedPhoto:
-        """NOT wrapped in a transaction: a rejected photo must still leave its audit log."""
-        """Validate + store a pet photo. Raises NoPetDetectedError (422) for non-pet images.
+    def upload(cls, user, filename: str, image_bytes: bytes, category: str = "losts") -> UploadedPhoto:
+        """Validate + store a pet photo under flyers/{user_id}/{category}/.
 
-        The bytes are NEVER written to S3 when detection fails.
+        NOT wrapped in a transaction: a rejected photo must still leave its audit log.
+        Raises NoPetDetectedError (422) for non-pet images; those bytes are NEVER stored.
         """
         try:
             detection = cls.detection.validate_pet_image(image_bytes)
@@ -80,8 +80,8 @@ class PetPhotoService:
         # detection only); the UI blanks anything below its confidence threshold.
         attributes = PetAttributeService.classify_attributes(load_image(image_bytes), detection.pet_classes)
         photo_id = uuid.uuid4()
-        key = f"pets/photos/{user.pk}/{photo_id}.jpg"
-        thumb_key = f"pets/photos/{user.pk}/{photo_id}_thumb.jpg"
+        key = storage.pet_photo_key(user.pk, category, photo_id)
+        thumb_key = storage.pet_photo_key(user.pk, category, photo_id, thumb=True)
         storage.upload_bytes(key, clean, content_type="image/jpeg")
         from .tasks import generate_thumbnail
 

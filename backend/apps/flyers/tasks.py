@@ -7,14 +7,17 @@ Renders the A4 flyer HTML template to PDF (WeasyPrint) and PNG (Playwright scree
 
 from __future__ import annotations
 
+import base64
 import logging
 import uuid
+from mimetypes import guess_type
 
 from celery import shared_task
 from django.conf import settings
 from django.template.loader import render_to_string
 
 from apps.common import storage
+from apps.common.private_storage import StorageUnavailableError
 
 from .consumers import broadcast_flyer_generated
 from .qr import QrService
@@ -25,13 +28,30 @@ logger = logging.getLogger(__name__)
 A4_300DPI_PX = (2480, 3508)  # 210mm x 297mm at 300dpi
 
 
+def photo_for_export(path: str) -> str:
+    """Inline the stored private photo so A4 rendering needs no signed HTTP request.
+
+    Inlining also avoids a relative /private-media/ URL resolving against the
+    frontend origin inside WeasyPrint/Playwright. Falls back to a signed URL for
+    legacy objects whose bytes were never migrated into local storage.
+    """
+    if not path:
+        return ""
+    try:
+        data = storage.read_bytes(path)
+    except (OSError, StorageUnavailableError):
+        return storage.signed_url(path)
+    mime = guess_type(path)[0] or "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
 def render_flyer_html(flyer) -> str:  # noqa: ANN001
     template = "flyers/outreach.html" if flyer.mode == "outreach" else "flyers/emergency.html"
     target = flyer.qr_target_value or QrService.target_url(str(flyer.pk), settings.FRONTEND_BASE_URL)
     qr_svg = QrService.svg_for_url(target)
     # Deterministic design variant per flyer ID so every printed flyer looks unique.
     variant = int(flyer.pk.hex[:8], 16) % 4 + 1
-    photo_url = storage.signed_url(flyer.pet.photo_path) if flyer.pet and flyer.pet.photo_path else ""
+    photo_url = photo_for_export(flyer.pet.photo_path) if flyer.pet and flyer.pet.photo_path else ""
     return render_to_string(
         template,
         {
@@ -74,8 +94,8 @@ def generate_flyer_assets(self, flyer_id: str) -> dict:
     html = render_flyer_html(flyer)
     pdf_bytes = render_flyer_pdf(html)
     png_bytes = render_flyer_png(html)
-    pdf_key = f"flyers/{flyer.pk}/flyer.pdf"
-    png_key = f"flyers/{flyer.pk}/flyer.png"
+    pdf_key = storage.flyer_export_key(flyer.creator_id, flyer.mode, flyer.pk, "pdf")
+    png_key = storage.flyer_export_key(flyer.creator_id, flyer.mode, flyer.pk, "png")
     storage.upload_bytes(pdf_key, pdf_bytes, content_type="application/pdf")
     storage.upload_bytes(png_key, png_bytes, content_type="image/png")
     from .models import Flyer
