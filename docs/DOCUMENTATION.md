@@ -1211,6 +1211,20 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `redis://redis:6379/0`, and inside the web container both `_get_model()` (YOLOWorld) and
   `_get_clip_model()` (CLIP) load from `/opt/weights` with `HF_TOKEN` absent — **5 guard
   tests pass**, download script re-run verifies both cached weights.
+- **Phase 48** — Fix CI (was red on the two pushes before this one too, so pre-existing,
+  not caused by Phase 47): the GitHub runner presets `VIRTUAL_ENV` to a repo-root
+  `.venv`, so `uv pip install '.[dev]'` landed there and `backend/.venv/bin/{ruff,pytest,
+  python}` stayed missing (exit 127 in backend-lint/backend-test; `No module named
+  'django'` at the E2E migrate step). All three backend install steps now use
+  `uv pip install --python .venv/bin/python '.[dev]'`, pinning the target venv. The E2E
+  job also runs `backend/scripts/download_weights.sh` **before** the weights cache step
+  (the old cache path `backend/weights/` never matched — weights live at repo-root
+  `weights/` now) and sets `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1` on migrate and
+  `test:e2e`, keeping CI tokenless end to end. Guard test
+  `test_ci_pins_uv_install_to_backend_venv_and_downloads_weights_directly` pins the
+  `--python .venv/bin/python` fix, the direct weight download, and the offline flags.
+  Verified: **6 tests pass** in `test_weight_downloads.py`, ruff + mypy clean, ci.yml
+  parses as valid YAML.
 
 **Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
@@ -1220,6 +1234,8 @@ CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run via
 `docker compose up` (internal PostgreSQL + Redis, web :8000, celery worker, Vite dev
 :5173, host mailpit via host.docker.internal — host-only fallback documented in
 `.env.example`); vision weights download directly with no Hugging Face token;
+CI pins `uv pip install --python .venv/bin/python` (runner `VIRTUAL_ENV` would otherwise
+capture the install into a root `.venv`);
 vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
 no notifications feature; no seed/demo data — all E2E journeys are self-contained;
 `/map` has mode + DB-species filters;

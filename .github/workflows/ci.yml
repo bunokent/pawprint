@@ -22,7 +22,9 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Install dependencies
-        run: cd backend && uv venv && uv pip install '.[dev]'
+        # --python pins the target venv: runners preset VIRTUAL_ENV to a root .venv,
+        # which would otherwise capture `uv pip install` and leave backend/.venv empty.
+        run: cd backend && uv venv && uv pip install --python .venv/bin/python '.[dev]'
       - name: ruff
         run: cd backend && .venv/bin/ruff check .
       - name: mypy
@@ -53,7 +55,9 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Install dependencies
-        run: cd backend && uv venv && uv pip install '.[dev]'
+        # --python pins the target venv: runners preset VIRTUAL_ENV to a root .venv,
+        # which would otherwise capture `uv pip install` and leave backend/.venv empty.
+        run: cd backend && uv venv && uv pip install --python .venv/bin/python '.[dev]'
       - name: Run pytest
         run: cd backend && .venv/bin/pytest --cov-fail-under=80 --cov-report=xml
         env:
@@ -129,17 +133,21 @@ jobs:
       - name: Install system deps (pango for WeasyPrint)
         run: sudo apt-get update && sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0
       - name: Install backend dependencies
-        run: cd backend && uv venv && uv pip install '.[dev]'
+        # --python pins the target venv: runners preset VIRTUAL_ENV to a root .venv,
+        # which would otherwise capture `uv pip install` and leave backend/.venv empty.
+        run: cd backend && uv venv && uv pip install --python .venv/bin/python '.[dev]'
       - name: Install frontend dependencies
         run: cd frontend && npm ci
       - name: Install Playwright chromium
         run: cd frontend && npx playwright install --with-deps chromium
+      - name: Download vision weights (direct GitHub/OpenAI, no HF token)
+        run: sh backend/scripts/download_weights.sh
       - name: Cache YOLO-World model weights
         uses: actions/cache@v4
         with:
           path: |
             backend/yolov8s-worldv2.pt
-            backend/weights/
+            weights/
           key: yolo-weights-${{ hashFiles('backend/pyproject.toml') }}
       - name: Migrate database
         run: |
@@ -152,8 +160,14 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: pawprint
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
       - name: Run Playwright E2E
         run: cd frontend && npm run test:e2e
+        env:
+          PAWPRINT_TESTING: "1"
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -53,6 +53,16 @@ def test_docker_compose_runs_web_celery_and_frontend():
     assert "--host" in frontend_dockerfile and "0.0.0.0" in frontend_dockerfile
 
 
+def test_ci_pins_uv_install_to_backend_venv_and_downloads_weights_directly():
+    ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    # Runners preset VIRTUAL_ENV to a root .venv — without --python, uv pip install
+    # lands there and backend/.venv/bin/{ruff,pytest,python} stay missing (exit 127).
+    assert ci.count("uv pip install --python .venv/bin/python") >= 3
+    # E2E downloads the vision weights directly (no HF token) before caching them.
+    assert "download_weights.sh" in ci
+    assert 'HF_HUB_OFFLINE: "1"' in ci
+
+
 def test_backend_dockerfile_bakes_weights_directly_and_disables_hf():
     dockerfile = (ROOT / "backend/Dockerfile").read_text()
     assert "download_weights.sh" in dockerfile  # baked at build time, direct download
