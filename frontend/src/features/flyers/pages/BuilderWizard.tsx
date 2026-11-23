@@ -212,7 +212,7 @@ function StepPhotoMode({
           aria-pressed={mode === "emergency"}
           onClick={() => setMode("emergency")}
         >
-          Lost — urgent
+          Lost
         </Button>
         <Button
           type="button"

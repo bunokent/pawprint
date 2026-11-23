@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router";
+import { ChevronDown, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { useAuth } from "@/stores/auth";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,32 @@ function PawMark() {
 
 export function AppShell() {
   const { user, logout } = useAuth();
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const [darkMode, setDarkMode] = useState(() => {
+    const enabled = localStorage.getItem("pawprint-theme") === "dark";
+    if (enabled) document.documentElement.dataset.theme = "dark";
+    return enabled;
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    localStorage.setItem("pawprint-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [accountMenuOpen]);
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <header className="nav no-print">
@@ -30,17 +58,30 @@ export function AppShell() {
             {user ? (
               <>
                 <NavLink className="nav-link" to="/builder">New flyer</NavLink>
-                <NavLink
-                  className="nav-link"
-                  to="/settings"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-                >
-                  <Avatar src={user.avatar_url} name={user.display_name || user.email} size={26} decorative />
-                  <span className="t-small" style={{ color: "inherit" }}>{user.display_name || user.email}</span>
-                </NavLink>
-                <Button variant="secondary" style={{ height: 36, padding: "0 16px" }} onClick={() => void logout()}>
-                  Log out
-                </Button>
+                <div className="account-menu" ref={accountMenuRef}>
+                  <button
+                    type="button"
+                    className="account-menu__trigger"
+                    aria-expanded={accountMenuOpen}
+                    aria-haspopup="menu"
+                    aria-label={`Account menu for ${user.display_name || user.email}`}
+                    onClick={() => setAccountMenuOpen((open) => !open)}
+                  >
+                    <Avatar src={user.avatar_url} name={user.display_name || user.email} size={28} decorative />
+                    <span>{user.display_name || user.email}</span>
+                    <ChevronDown size={15} className={accountMenuOpen ? "account-menu__chevron account-menu__chevron--open" : "account-menu__chevron"} aria-hidden="true" />
+                  </button>
+                  {accountMenuOpen && (
+                    <div className="account-menu__panel" role="menu" aria-label="Account options">
+                      <NavLink to="/settings" role="menuitem" onClick={() => setAccountMenuOpen(false)}>
+                        <Settings size={16} aria-hidden="true" /> Profile settings
+                      </NavLink>
+                      <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); void logout(); }}>
+                        <LogOut size={16} aria-hidden="true" /> Log out
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -50,6 +91,16 @@ export function AppShell() {
                 </Button>
               </>
             )}
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() => setDarkMode((current) => !current)}
+              aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`}
+              title={`Switch to ${darkMode ? "light" : "dark"} mode`}
+            >
+              <span className="theme-toggle__icon" aria-hidden="true">{darkMode ? <Sun size={17} /> : <Moon size={17} />}</span>
+              <span className="theme-toggle__text">{darkMode ? "Light" : "Dark"}</span>
+            </button>
           </nav>
         </div>
       </header>

@@ -4,85 +4,115 @@
 <meta charset="utf-8">
 <title>{% if flyer.mode == "found" %}FOUND PET{% else %}LOST PET{% endif %}{% if flyer.pet.name %} — {{ flyer.pet.name }}{% endif %}</title>
 <style>
-  /* A4 @300dpi print fidelity: 210mm x 297mm, guaranteed single page */
+  /* A4 @300dpi print fidelity: 210mm x 297mm, guaranteed single page.
+     One system: equal 15mm edges, one editorial serif display face, one accent,
+     one card recipe. The single photo leads; no caption sits under it. */
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 210mm; height: 297mm; }
   body {
+    --ink: #241512;
+    --muted: #6b4b42;
+    --accent: #8f1d17;
+    --soft: #fbf0ec;
+    --rule: #e7cbc3;
+    --ground: #fffdf9;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    background: #ffffff; color: #1a1410;
-    display: flex; flex-direction: column;
-    overflow: hidden;
+    color: var(--ink); background: var(--ground);
+    display: flex; flex-direction: column; overflow: hidden;
   }
-  /* ---------- Header band ---------- */
-  .band {
-    background: #7f1d1d; color: #ffffff;
-    padding: 10mm 14mm; display: flex; justify-content: space-between; align-items: center;
+  /* Deterministic per-flyer variant: accent only, never a second design system. */
+  .v1 { --accent: #8f1d17; --soft: #fbf0ec; --rule: #e7cbc3; }
+  .v2 { --accent: #a33a12; --soft: #fcf1e8; --rule: #ecd3bf; }
+  .v3 { --accent: #7f1d1d; --soft: #faf0ef; --rule: #e5c9c7; }
+  .v4 { --accent: #92580a; --soft: #fdf6e7; --rule: #e9d9b5; }
+
+  /* ---------- Masthead ---------- */
+  .masthead { padding: 11mm 15mm 7mm; border-bottom: 1pt solid var(--rule); }
+  .kicker {
+    display: flex; align-items: center; gap: 3mm;
+    font-size: 8.5pt; font-weight: 800; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--accent);
   }
-  .band h1 { font-size: 34pt; font-weight: 900; letter-spacing: 0.04em; line-height: 1.05; }
-  .band .sub { font-size: 12pt; font-weight: 600; opacity: 0.94; line-height: 1.3; }
-  .corner-accent {
-    position: absolute; width: 13mm; height: 13mm; border-radius: 50%; top: 7mm; right: 11mm;
-    z-index: 0; opacity: 0.55;
+  .kicker::before { content: ""; display: block; width: 9mm; height: 1.5pt; background: var(--accent); }
+  .headline {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 38pt; line-height: 1; letter-spacing: -0.02em; margin-top: 3mm;
   }
-  .corner-accent.v1 { background: #f59e0b; }
-  .corner-accent.v2 { background: #b45309; }
-  .corner-accent.v3 { background: #be185d; }
-  .corner-accent.v4 { background: #991b1b; }
-  .band > * { position: relative; z-index: 1; }
+  .lede { font-size: 11pt; color: var(--muted); margin-top: 2mm; }
+
   /* ---------- Hero photo (no caption) ---------- */
-  .photo { padding: 8mm 14mm 3mm; text-align: center; }
+  .photo { padding: 7mm 15mm 4mm; }
   .photo img {
-    width: 118mm; height: 118mm; object-fit: cover; border-radius: 5mm;
-    border: 3mm solid #7f1d1d; box-shadow: 0 1mm 3mm rgba(0,0,0,0.18);
+    display: block; width: 180mm; height: 118mm; object-fit: cover;
+    border-radius: 2mm; border: 2.5mm solid #fff;
+    box-shadow: 0 0 0 1pt var(--rule), 0 2mm 6mm rgba(36, 21, 18, 0.16);
   }
-  /* ---------- Photo fallback (no pet photo uploaded) ---------- */
   .photo-fallback {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 118mm; height: 118mm; border-radius: 5mm;
-    border: 3mm solid #7f1d1d; box-shadow: 0 1mm 3mm rgba(0,0,0,0.18);
-    background: #fff7f6;
+    display: flex; align-items: center; justify-content: center;
+    width: 180mm; height: 118mm; border-radius: 2mm; border: 2.5mm solid #fff;
+    background: var(--soft); box-shadow: 0 0 0 1pt var(--rule), 0 2mm 6mm rgba(36, 21, 18, 0.12);
   }
-  .photo-fallback svg { width: 68mm; height: 68mm; opacity: 0.22; }
-  /* ---------- Name ---------- */
-  .name { text-align: center; font-size: 32pt; font-weight: 900; letter-spacing: 0.02em; padding: 1mm 0 1mm; text-transform: uppercase; }
-  .meta { text-align: center; font-size: 12.5pt; color: #4a3f38; padding-bottom: 3mm; }
+  .photo-fallback svg { width: 62mm; height: 62mm; opacity: 0.24; }
+
+  /* ---------- Identity ---------- */
+  .identity { padding: 0 15mm 5mm; text-align: center; }
+  .name {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 30pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .meta { font-size: 10.5pt; color: var(--muted); margin-top: 1mm; }
+
   /* ---------- Detail cards ---------- */
-  .grid { display: flex; gap: 7mm; padding: 0 14mm; page-break-inside: avoid; }
-  .card { flex: 1; border: 1.5pt solid #7f1d1d; border-radius: 3mm; padding: 5mm 7mm; background: #fff7f6; page-break-inside: avoid; }
-  .card h2 { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.09em; color: #7f1d1d; margin-bottom: 1.5mm; }
-  .card p { font-size: 12pt; line-height: 1.5; color: #1a1410; }
-  /* ---------- Footer: QR + contact ---------- */
+  .grid { display: flex; gap: 6mm; padding: 0 15mm; page-break-inside: avoid; }
+  .card { flex: 1; border-top: 1.5pt solid var(--accent); background: var(--soft); padding: 4mm 5mm 5mm; min-height: 25mm; page-break-inside: avoid; }
+  .card h2 { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent); margin-bottom: 2mm; }
+  .card p { font-size: 11pt; line-height: 1.45; }
+
+  /* ---------- QR + contact ---------- */
   .footer {
-    margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between;
-    padding: 5mm 14mm 8mm; page-break-inside: avoid;
+    margin-top: auto; display: flex; align-items: flex-end; gap: 8mm;
+    padding: 6mm 15mm; border-top: 1pt solid var(--rule); page-break-inside: avoid;
   }
-  .seal {
-    width: 10mm; height: 10mm; border: 1.2pt solid #7f1d1d; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; font-size: 6.5pt;
-    font-weight: 900; color: #7f1d1d; margin-left: 5mm;
-  }
+  .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 2mm; width: 38mm; flex: 0 0 38mm; }
   .qr { width: 32mm; height: 32mm; }
-  .contact { text-align: right; }
-  .contact h2 { font-size: 12pt; color: #7f1d1d; font-weight: 800; margin-bottom: 1mm; }
-  .contact p { font-size: 12pt; line-height: 1.5; color: #1a1410; }
-  /* ---------- Bottom strip ---------- */
-  .strip { background: #1a1410; color: #ffffff; font-size: 8pt; text-align: center; padding: 2mm; letter-spacing: 0.04em; }
+  .qr-note { font-size: 7.5pt; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); text-align: center; }
+  .seal {
+    width: 10mm; height: 10mm; border: 1pt solid var(--accent); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 7pt; font-weight: 800; color: var(--accent); margin-bottom: 2mm;
+  }
+  .call { flex: 1; text-align: right; }
+  .call h2 { font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+  .call .phone {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 20pt; font-weight: 700; line-height: 1.1;
+  }
+  .call .email { font-size: 9.5pt; color: var(--muted); margin-top: 1mm; }
+
+  /* ---------- Footer strip ---------- */
+  .strip {
+    background: var(--ink); color: #fff; font-size: 7.5pt; letter-spacing: 0.14em;
+    text-transform: uppercase; text-align: center; padding: 2.5mm 15mm;
+  }
 </style>
 </head>
-<body>
-  <div class="band">
-    <div class="corner-accent v{{ design_variant }}"></div>
-    <div>
-      <h1>{% if flyer.mode == "found" %}FOUND PET{% else %}LOST PET{% endif %}</h1>
-      <div class="sub">{% if flyer.mode == "found" %}Help {{ flyer.pet.name|default:"this pet" }} get back home{% else %}Help {{ flyer.pet.name }} come home{% endif %}</div>
-    </div>
-  </div>
+<body class="v{{ design_variant }}">
+  <header class="masthead">
+    <p class="kicker">PawPrint</p>
+    <h1 class="headline">{% if flyer.mode == "found" %}FOUND PET{% else %}LOST PET{% endif %}</h1>
+    <p class="lede">{% if flyer.mode == "found" %}Help {{ flyer.pet.name|default:"this pet" }} get back home{% else %}Help {{ flyer.pet.name|default:"this pet" }} come home{% endif %}</p>
+  </header>
+
   <div class="photo">
-    {% if photo_url %}<img src="{{ photo_url }}" alt="{{ flyer.pet.name }}">{% else %}<div class="photo-fallback" role="img" aria-label="No photo uploaded"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="#7f1d1d"><ellipse cx="27" cy="22" rx="8" ry="11"/><ellipse cx="50" cy="15" rx="8" ry="11"/><ellipse cx="73" cy="22" rx="8" ry="11"/><ellipse cx="13" cy="45" rx="6.5" ry="9"/><path d="M50 35c-13 0-24 8-24 20 0 10 7 18 24 26 17-8 24-16 24-26 0-12-11-20-24-20z"/></svg></div>{% endif %}
+    {% if photo_url %}<img src="{{ photo_url }}" alt="{{ flyer.pet.name }}">{% else %}<div class="photo-fallback" role="img" aria-label="No photo uploaded"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="#8f1d17"><ellipse cx="27" cy="22" rx="8" ry="11"/><ellipse cx="50" cy="15" rx="8" ry="11"/><ellipse cx="73" cy="22" rx="8" ry="11"/><ellipse cx="13" cy="45" rx="6.5" ry="9"/><path d="M50 35c-13 0-24 8-24 20 0 10 7 18 24 26 17-8 24-16 24-26 0-12-11-20-24-20z"/></svg></div>{% endif %}
   </div>
-  <div class="name">{% if flyer.pet.name %}{{ flyer.pet.name|upper }}{% elif flyer.mode == "found" %}FOUND PET{% endif %}</div>
-  <div class="meta">{{ flyer.pet.get_species_display }} · {{ flyer.pet.breed }} · {{ flyer.pet.color }}{% if flyer.pet.age %} · {{ flyer.pet.age }} yrs{% endif %}</div>
+
+  <div class="identity">
+    <div class="name">{% if flyer.pet.name %}{{ flyer.pet.name|upper }}{% elif flyer.mode == "found" %}FOUND PET{% endif %}</div>
+    <div class="meta">{{ flyer.pet.get_species_display }} · {{ flyer.pet.breed }} · {{ flyer.pet.color }}{% if flyer.pet.age %} · {{ flyer.pet.age }} yrs{% endif %}</div>
+  </div>
+
   <div class="grid">
     <div class="card">
       <h2>{% if flyer.mode == "found" %}Found at{% else %}Last seen{% endif %}</h2>
@@ -93,14 +123,19 @@
       <p>{{ flyer.distinctive_markings|default:"—" }}</p>
     </div>
   </div>
+
   <div class="footer">
-    <div class="qr">{{ qr_svg|safe }}</div>
+    <div class="qr-wrap">
+      <div class="qr">{{ qr_svg|safe }}</div>
+      <p class="qr-note">Scan for the live alert</p>
+    </div>
     <div class="seal">{{ design_variant }}</div>
-    <div class="contact">
-      <h2>{% if flyer.mode == "found" %}FOUND {{ flyer.pet.name|default:"PET"|upper }}? CALL{% else %}SEEN {{ flyer.pet.name|upper }}? CALL{% endif %}</h2>
-      <p>{{ flyer.contact_phone }}<br>{{ flyer.contact_email }}</p>
+    <div class="call">
+      <h2>{% if flyer.mode == "found" %}Is this your pet? Call{% else %}Seen this pet? Call{% endif %}</h2>
+      <div class="phone">{{ flyer.contact_phone }}</div>
+      <div class="email">{{ flyer.contact_email }}</div>
     </div>
   </div>
-  <div class="strip">PawPrint · Scan the QR code for the live alert · pawprint.example</div>
+  <div class="strip">PawPrint · pawprint.example</div>
 </body>
 </html>

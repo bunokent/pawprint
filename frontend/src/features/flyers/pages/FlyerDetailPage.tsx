@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Printer, Download, MapPin } from "lucide-react";
+import { Download, MapPin } from "lucide-react";
 import { flyerDetailQuery, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-dialog";
 import { ModeBadge, StatusBadge } from "@/components/ui/badge";
 import { ErrorBox, Skeleton } from "@/components/ui/feedback";
-import { QrImage } from "@/components/QrImage";
 import { PhotoGallery } from "@/components/PhotoGallery";
 import { ShareMenu } from "@/components/ShareMenu";
+import { Avatar } from "@/components/Avatar";
 import { formatDate, petDisplayName } from "@/lib/utils";
 
 export function FlyerDetailPage() {
@@ -50,7 +50,7 @@ export function FlyerDetailPage() {
     return (
       <section style={{ padding: "64px 0" }}>
         <div className="wrap split-2">
-          <Skeleton className="photo-frame" style={{ aspectRatio: "4 / 3", borderRadius: 20 }} />
+          <Skeleton className="flyer-photo" style={{ aspectRatio: "5 / 4" }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Skeleton style={{ height: 40, width: "70%" }} />
             <Skeleton style={{ height: 20, width: "50%" }} />
@@ -80,12 +80,11 @@ export function FlyerDetailPage() {
   const emergency = flyer.mode === "emergency";
   const found = flyer.mode === "found";
   const isOwner = Boolean(user && flyer.creator === user.id);
-  const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-found-deep)" : "var(--color-sage-deep)";
   const hasPin = flyer.location_lat != null && flyer.location_lng != null;
   const displayName = petDisplayName(flyer.pet, flyer.mode);
   const photoKind = emergency ? "lost pet" : found ? "found pet" : "adoptable pet";
-  // Every uploaded angle, cover first — falls back to the legacy single cover URL.
-  const galleryPhotos = flyer.photo_urls?.length ? flyer.photo_urls : flyer.photo_url ? [flyer.photo_url] : [];
+  // One photo per pet; photo_urls is kept for legacy responses but only the cover is shown.
+  const photoUrl = flyer.photo_url || flyer.photo_urls?.[0] || "";
   const shareUrl = qrTarget || window.location.href;
   const shareTitle = `${emergency ? "Lost pet" : found ? "Found pet" : "Up for adoption"}${flyer.pet.name?.trim() ? `: ${flyer.pet.name}` : ""}`;
   const shareText = `${shareTitle} — ${flyer.pet.species}${flyer.last_seen_location ? ` · ${flyer.last_seen_location}` : ""}. See the PawPrint flyer:`;
@@ -94,9 +93,6 @@ export function FlyerDetailPage() {
     <section style={{ padding: "48px 0 64px" }}>
       <div className="wrap">
         <div className="no-print btn-row" style={{ marginBottom: 24, flexWrap: "wrap" }}>
-          <Button variant="secondary" style={{ height: 40 }} onClick={() => window.print()}>
-            <Printer size={16} /> Print A4 flyer
-          </Button>
           <ShareMenu
             info={{
               url: shareUrl,
@@ -109,14 +105,7 @@ export function FlyerDetailPage() {
           {flyer.export_pdf_url && (
             <Button variant="secondary" style={{ height: 40 }} asChild>
               <a href={flyer.export_pdf_url} download>
-                <Download size={16} /> PDF
-              </a>
-            </Button>
-          )}
-          {flyer.export_png_url && (
-            <Button variant="secondary" style={{ height: 40 }} asChild>
-              <a href={flyer.export_png_url} download>
-                <Download size={16} /> PNG
+                <Download size={16} /> Download PDF
               </a>
             </Button>
           )}
@@ -158,38 +147,18 @@ export function FlyerDetailPage() {
 
         {deleteFlyer.isError && <div style={{ marginBottom: 16 }}><ErrorBox message="Could not delete the flyer. Please try again." /></div>}
 
-        {/* Print sheet — A4 at 300dpi via @media print (.print-sheet) */}
-        <article className="card print-sheet" style={{ padding: 32 }} data-testid="flyer-sheet">
-          <div className="split-2">
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {/* Screen: full gallery — every uploaded angle, with a lightbox viewer. */}
-              <div className="no-print" style={{ flex: 1 }}>
-                <PhotoGallery photos={galleryPhotos} alt={`${displayName} — ${photoKind} photo`} printSrc={flyer.photo_url || "/pet-fallback.webp"} />
-              </div>
-              {/* Print: the A4 sheet keeps the single cover photo + scannable QR. */}
-              <div className="print-only" style={{ gap: 16, alignItems: "flex-start" }}>
-                <div className="photo-frame" style={{ aspectRatio: "4 / 3", borderRadius: 20, background: "var(--color-surface)", border: "1px solid var(--color-line)", flex: 1 }}>
-                  <img
-                    src={flyer.photo_url || "/pet-fallback.webp"}
-                    alt={flyer.photo_url ? `${displayName} — ${photoKind} photo` : ""}
-                    aria-hidden={!flyer.photo_url ? true : undefined}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
-                </div>
-                {qrTarget && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 150 }}>
-                    <p className="t-label" style={{ textAlign: "center" }}>Scan to open this flyer</p>
-                    <QrImage value={qrTarget} size={150} alt={`QR code linking to ${displayName}'s flyer`} />
-                  </div>
-                )}
-              </div>
+        {/* One large photo, one clear column of facts. The A4 download keeps the same hierarchy. */}
+        <article className="card flyer-sheet" data-mode={flyer.mode} style={{ padding: 32 }} data-testid="flyer-sheet">
+          <div className="flyer-sheet__grid">
+            <div className="flyer-sheet__media">
+              <PhotoGallery src={photoUrl} alt={`${displayName} — ${photoKind} photo`} />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div className="flyer-sheet__body">
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <ModeBadge mode={flyer.mode} />
                 <StatusBadge status={flyer.status} />
               </div>
-              <h1 className="t-h1" style={{ color: accent, fontSize: "clamp(32px, 4.5vw, 48px)" }}>
+              <h1 className="t-h1 flyer-sheet__title">
                 {emergency ? "Lost pet" : found ? "Found pet" : "Up for adoption"}
                 {flyer.pet.name?.trim() ? `: ${flyer.pet.name}` : ""}
               </h1>
@@ -229,9 +198,18 @@ export function FlyerDetailPage() {
                   {flyer.contact_phone || "—"}
                   {flyer.contact_email ? ` · ${flyer.contact_email}` : ""}
                 </p>
-                <p className="t-small" style={{ color: "var(--color-muted)" }}>
-                  Posted by {flyer.creator_display_name || "a PawPrint member"} · {formatDate(flyer.created_at)}
-                </p>
+                <div className="flyer-byline">
+                  <Avatar
+                    src={flyer.creator_avatar_url}
+                    name={flyer.creator_display_name || "PawPrint member"}
+                    size={38}
+                    decorative
+                  />
+                  <p className="t-small" style={{ color: "var(--color-muted)" }}>
+                    Posted by <strong>{flyer.creator_display_name || "a PawPrint member"}</strong>
+                    <span className="flyer-byline__date">{formatDate(flyer.created_at)}</span>
+                  </p>
+                </div>
               </div>
             </div>
           </div>

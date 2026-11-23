@@ -13,6 +13,7 @@ from .models import Flyer
 class FlyerSerializer(serializers.ModelSerializer[Flyer]):
     pet = PetSerializer(read_only=True)
     creator_display_name = serializers.CharField(source="creator.display_name", read_only=True)
+    creator_avatar_url = serializers.SerializerMethodField()
     photo_url = serializers.SerializerMethodField()
     photo_urls = serializers.SerializerMethodField()
     export_png_url = serializers.SerializerMethodField()
@@ -21,7 +22,7 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
     class Meta:
         model = Flyer
         fields = [
-            "id", "mode", "status", "pet", "creator", "creator_display_name",
+            "id", "mode", "status", "pet", "creator", "creator_display_name", "creator_avatar_url",
             "last_seen_location", "last_seen_date", "location_lat", "location_lng",
             "distinctive_markings",
             "contact_phone", "contact_email", "qr_target_type", "qr_target_value",
@@ -34,6 +35,9 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
         if obj.pet and obj.pet.photo_path:
             return storage.signed_url(obj.pet.photo_path)
         return ""
+
+    def get_creator_avatar_url(self, obj: Flyer) -> str:
+        return storage.signed_url(obj.creator.avatar_path) if obj.creator.avatar_path else ""
 
     def get_photo_urls(self, obj: Flyer) -> list[str]:
         """Signed URL of the pet's single photo (pet.photos is prefetched)."""

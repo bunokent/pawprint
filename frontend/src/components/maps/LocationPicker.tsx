@@ -45,8 +45,8 @@ function PlainAddressField({ id, label, hint, error, placeholder, value, onChang
  * Location field with an embedded Leaflet (OpenStreetMap) map: Nominatim
  * address search on the text input plus a draggable pin; dropping the pin
  * reverse-geocodes the address and reports lat/lng. If the map cannot be
- * created (e.g. jsdom in unit tests) it degrades to a plain address input
- * under the same id — forms and e2e keep working, coordinates stay null.
+ * created (e.g. map unavailable) it degrades to a plain address input
+ * under the same id — forms keep working, coordinates stay null.
  */
 export function LocationPicker(props: LocationPickerProps) {
   const { id, label, hint, error, placeholder, value, onChange } = props;

@@ -571,6 +571,7 @@ export interface components {
             /** Format: uuid */
             readonly creator: string;
             readonly creator_display_name: string;
+            readonly creator_avatar_url: string;
             last_seen_location?: string;
             /** Format: date-time */
             last_seen_date?: string | null;

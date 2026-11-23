@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Calendar, MapPin } from "lucide-react";
 import type { Flyer } from "@/features/flyers/api";
@@ -19,6 +20,8 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
     : "var(--color-sage)";
 
   const displayName = petDisplayName(flyer.pet, flyer.mode);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const hasPhoto = Boolean(flyer.photo_url) && !photoFailed;
 
   return (
     <Link
@@ -34,10 +37,11 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
     >
       <div className="photo-frame flyer-card__photo">
         <img
-          src={flyer.photo_url || "/pet-fallback.webp"}
-          alt={flyer.photo_url ? displayName : ""}
+          src={hasPhoto ? flyer.photo_url : "/pet-fallback.webp"}
+          alt={hasPhoto ? displayName : ""}
           loading="lazy"
-          aria-hidden={!flyer.photo_url ? true : undefined}
+          aria-hidden={!hasPhoto ? true : undefined}
+          onError={() => setPhotoFailed(true)}
         />
       </div>
 

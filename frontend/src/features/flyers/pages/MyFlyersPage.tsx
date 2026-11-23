@@ -12,6 +12,7 @@ export function MyFlyersPage() {
   const navigate = useNavigate();
   const { user, checked } = useAuth();
   const query = useQuery(myFlyersQuery());
+  const [modeFilter, setModeFilter] = useState<"all" | Flyer["mode"]>("all");
 
   useEffect(() => {
     if (checked && !user) {
@@ -24,6 +25,13 @@ export function MyFlyersPage() {
   }
 
   const results: Flyer[] = query.data?.results ?? [];
+  const visibleResults = results.filter((flyer) => modeFilter === "all" || flyer.mode === modeFilter);
+  const modeTabs: Array<{ id: "all" | Flyer["mode"]; label: string; count: number }> = [
+    { id: "all", label: "All flyers", count: results.length },
+    { id: "emergency", label: "Lost", count: results.filter((flyer) => flyer.mode === "emergency").length },
+    { id: "found", label: "Found", count: results.filter((flyer) => flyer.mode === "found").length },
+    { id: "outreach", label: "Adoptable", count: results.filter((flyer) => flyer.mode === "outreach").length },
+  ];
 
   return (
     <section style={{ padding: "64px 0" }}>
@@ -62,11 +70,36 @@ export function MyFlyersPage() {
         )}
 
         {results.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24 }}>
-            {results.map((flyer) => (
-              <OwnerFlyerCard key={flyer.id} flyer={flyer} />
-            ))}
-          </div>
+          <>
+            <div className="flyer-mode-tabs" role="tablist" aria-label="Filter my flyers">
+              {modeTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  id={`my-flyers-tab-${tab.id}`}
+                  aria-selected={modeFilter === tab.id}
+                  aria-controls="my-flyers-panel"
+                  className={`flyer-mode-tab${modeFilter === tab.id ? " flyer-mode-tab--active" : ""}`}
+                  data-mode={tab.id}
+                  onClick={() => setModeFilter(tab.id)}
+                >
+                  <span>{tab.label}</span><span className="flyer-mode-tab__count">{tab.count}</span>
+                </button>
+              ))}
+            </div>
+            <div id="my-flyers-panel" role="tabpanel" aria-labelledby={`my-flyers-tab-${modeFilter}`}>
+              {visibleResults.length > 0 ? (
+                <div className="my-flyers-grid">
+                  {visibleResults.map((flyer) => <OwnerFlyerCard key={flyer.id} flyer={flyer} />)}
+                </div>
+              ) : (
+                <EmptyState title={`No ${modeFilter === "emergency" ? "lost" : modeFilter === "outreach" ? "adoptable" : "found"} flyers`}>
+                  <p>Flyers of this type will appear here.</p>
+                </EmptyState>
+              )}
+            </div>
+          </>
         )}
 
       </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
 /**
- * QR rendered as an SVG data-URL — no canvas needed, works in browsers and jsdom.
+ * QR rendered as an SVG data-URL — no canvas needed, works in every browser.
  */
 export function QrImage({ value, size = 200, alt }: { value: string; size?: number; alt: string }) {
   const [src, setSrc] = useState("");

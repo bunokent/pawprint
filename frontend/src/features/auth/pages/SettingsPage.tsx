@@ -130,7 +130,7 @@ export function SettingsPage() {
                     alignItems: "center",
                     justifyContent: "center",
                     borderRadius: 999,
-                    background: "rgb(255 253 248 / 0.82)",
+                    background: "color-mix(in srgb, var(--color-paper) 88%, transparent)",
                     fontWeight: 600,
                   }}
                 >

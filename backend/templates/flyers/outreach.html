@@ -4,107 +4,140 @@
 <meta charset="utf-8">
 <title>ADOPT {{ flyer.pet.name }}</title>
 <style>
-  /* A4 @300dpi print fidelity: 210mm x 297mm, guaranteed single page */
+  /* A4 @300dpi print fidelity: 210mm x 297mm, guaranteed single page.
+     One system: equal 15mm edges, one editorial serif display face, one accent,
+     one card recipe. The single photo leads; no caption sits under it. */
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 210mm; height: 297mm; }
   body {
+    --ink: #243128;
+    --muted: #5f6f61;
+    --accent: #2f6f5e;
+    --soft: #f3f1e6;
+    --rule: #d9dfd2;
+    --ground: #fffdf7;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    background: #ffffff; color: #25312a;
-    display: flex; flex-direction: column;
-    overflow: hidden;
+    color: var(--ink); background: var(--ground);
+    display: flex; flex-direction: column; overflow: hidden;
   }
-  /* ---------- Header band ---------- */
-  .band {
-    background: #2f6f5e; color: #ffffff;
-    padding: 10mm 14mm; display: flex; justify-content: space-between; align-items: center;
-    position: relative;
+  /* Deterministic per-flyer variant: accent only, never a second design system. */
+  .v1 { --accent: #2f6f5e; --soft: #f3f1e6; --rule: #d9dfd2; }
+  .v2 { --accent: #4d6b3f; --soft: #f2f1e4; --rule: #d8dfcd; }
+  .v3 { --accent: #a4552f; --soft: #faf1e9; --rule: #ead6c5; }
+  .v4 { --accent: #256b6e; --soft: #ecf3f1; --rule: #cfdfdc; }
+
+  /* ---------- Masthead ---------- */
+  .masthead { padding: 11mm 15mm 7mm; border-bottom: 1pt solid var(--rule); }
+  .kicker {
+    display: flex; align-items: center; gap: 3mm;
+    font-size: 8.5pt; font-weight: 800; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--accent);
   }
-  .band h1 { font-size: 34pt; font-weight: 900; letter-spacing: 0.04em; line-height: 1.05; }
-  .band .sub { font-size: 12pt; font-weight: 600; opacity: 0.94; line-height: 1.3; }
-  .tag { background: #c96f4a; color: #ffffff; font-weight: 800; font-size: 12pt;
-    padding: 3mm 8mm; border-radius: 22mm; text-align: center; white-space: nowrap; }
-  .corner-accent {
-    position: absolute; width: 13mm; height: 13mm; border-radius: 50%; top: 7mm; right: 11mm;
-    z-index: 0; opacity: 0.55;
+  .kicker::before { content: ""; display: block; width: 9mm; height: 1.5pt; background: var(--accent); }
+  .headline {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 38pt; line-height: 1; letter-spacing: -0.02em; margin-top: 3mm;
   }
-  .corner-accent.v1 { background: #2f6f5e; }
-  .corner-accent.v2 { background: #4d7c5f; }
-  .corner-accent.v3 { background: #c96f4a; }
-  .corner-accent.v4 { background: #587d4a; }
-  .band > * { position: relative; z-index: 1; }
+  .lede { font-size: 11pt; color: var(--muted); margin-top: 2mm; }
+
   /* ---------- Hero photo (no caption) ---------- */
-  .photo { padding: 8mm 14mm 3mm; text-align: center; }
+  .photo { padding: 7mm 15mm 4mm; }
   .photo img {
-    width: 118mm; height: 118mm; object-fit: cover; border-radius: 59mm;
-    border: 3mm solid #2f6f5e; box-shadow: 0 1mm 3mm rgba(0,0,0,0.18);
+    display: block; width: 180mm; height: 118mm; object-fit: cover;
+    border-radius: 2mm; border: 2.5mm solid #fff;
+    box-shadow: 0 0 0 1pt var(--rule), 0 2mm 6mm rgba(36, 49, 40, 0.14);
   }
-  /* ---------- Photo fallback (no pet photo uploaded) ---------- */
   .photo-fallback {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 118mm; height: 118mm; border-radius: 59mm;
-    border: 3mm solid #2f6f5e; box-shadow: 0 1mm 3mm rgba(0,0,0,0.18);
-    background: #fbfaf5;
+    display: flex; align-items: center; justify-content: center;
+    width: 180mm; height: 118mm; border-radius: 2mm; border: 2.5mm solid #fff;
+    background: var(--soft); box-shadow: 0 0 0 1pt var(--rule), 0 2mm 6mm rgba(36, 49, 40, 0.1);
   }
-  .photo-fallback svg { width: 68mm; height: 68mm; opacity: 0.22; }
-  /* ---------- Name ---------- */
-  .name { text-align: center; font-size: 32pt; font-weight: 900; letter-spacing: 0.02em; padding: 1mm 0 1mm; text-transform: uppercase; }
-  .meta { text-align: center; font-size: 12.5pt; color: #5c6b60; padding-bottom: 3mm; }
-  /* ---------- Chips ---------- */
-  .chips { display: flex; justify-content: center; gap: 3mm; padding-bottom: 3mm; flex-wrap: wrap; page-break-inside: avoid; }
-  .chip { background: #e9e2d0; color: #25312a; border-radius: 22mm; padding: 1.5mm 6mm; font-size: 10.5pt; font-weight: 700; }
+  .photo-fallback svg { width: 62mm; height: 62mm; opacity: 0.24; }
+
+  /* ---------- Identity ---------- */
+  .identity { padding: 0 15mm 3mm; text-align: center; }
+  .name {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 30pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .meta { font-size: 10.5pt; color: var(--muted); margin-top: 1mm; }
+
+  /* ---------- Personality chips ---------- */
+  .chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 2mm; padding: 0 15mm 4mm; page-break-inside: avoid; }
+  .chip { border: 1pt solid var(--rule); background: var(--soft); color: var(--ink); border-radius: 20mm; padding: 1.3mm 5mm; font-size: 9.5pt; font-weight: 700; }
+
   /* ---------- About card ---------- */
-  .card { margin: 0 14mm; border: 1.5pt solid #2f6f5e; border-radius: 3mm; padding: 6mm 8mm; background: #fbfaf5; page-break-inside: avoid; }
-  .card h2 { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.09em; color: #2f6f5e; margin-bottom: 1.5mm; }
-  .card p { font-size: 12pt; line-height: 1.5; color: #25312a; }
-  /* ---------- Footer: QR + contact ---------- */
+  .card { margin: 0 15mm; border-top: 1.5pt solid var(--accent); background: var(--soft); padding: 4mm 5mm 5mm; min-height: 22mm; page-break-inside: avoid; }
+  .card h2 { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent); margin-bottom: 2mm; }
+  .card p { font-size: 11pt; line-height: 1.45; }
+
+  /* ---------- QR + contact ---------- */
   .footer {
-    margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between;
-    padding: 5mm 14mm 8mm; page-break-inside: avoid;
+    margin-top: auto; display: flex; align-items: flex-end; gap: 8mm;
+    padding: 6mm 15mm; border-top: 1pt solid var(--rule); page-break-inside: avoid;
   }
-  .seal {
-    width: 10mm; height: 10mm; border: 1.2pt solid #2f6f5e; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; font-size: 6.5pt;
-    font-weight: 900; color: #2f6f5e; margin-left: 5mm;
-  }
+  .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 2mm; width: 38mm; flex: 0 0 38mm; }
   .qr { width: 32mm; height: 32mm; }
-  .contact { text-align: right; }
-  .contact h2 { font-size: 12pt; color: #c96f4a; font-weight: 800; margin-bottom: 1mm; }
-  .contact p { font-size: 12pt; line-height: 1.5; color: #25312a; }
-  /* ---------- Bottom strip ---------- */
-  .strip { background: #25312a; color: #ffffff; font-size: 8pt; text-align: center; padding: 2mm; letter-spacing: 0.04em; }
+  .qr-note { font-size: 7.5pt; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); text-align: center; }
+  .seal {
+    width: 10mm; height: 10mm; border: 1pt solid var(--accent); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 7pt; font-weight: 800; color: var(--accent); margin-bottom: 2mm;
+  }
+  .call { flex: 1; text-align: right; }
+  .call h2 { font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+  .call .phone {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 20pt; font-weight: 700; line-height: 1.1;
+  }
+  .call .email { font-size: 9.5pt; color: var(--muted); margin-top: 1mm; }
+
+  /* ---------- Footer strip ---------- */
+  .strip {
+    background: var(--ink); color: #fff; font-size: 7.5pt; letter-spacing: 0.14em;
+    text-transform: uppercase; text-align: center; padding: 2.5mm 15mm;
+  }
 </style>
 </head>
-<body>
-  <div class="band">
-    <div class="corner-accent v{{ design_variant }}"></div>
-    <div>
-      <h1>ADOPTABLE</h1>
-      <div class="sub">Meet {{ flyer.pet.name }} — a forever home awaits</div>
-    </div>
-    <div class="tag">ADOPT ME</div>
-  </div>
+<body class="v{{ design_variant }}">
+  <header class="masthead">
+    <p class="kicker">PawPrint</p>
+    <h1 class="headline">ADOPTABLE</h1>
+    <p class="lede">Meet {{ flyer.pet.name }} — a forever home awaits</p>
+  </header>
+
   <div class="photo">
     {% if photo_url %}<img src="{{ photo_url }}" alt="{{ flyer.pet.name }}">{% else %}<div class="photo-fallback" role="img" aria-label="No photo uploaded"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="#2f6f5e"><path d="M50 20c-5.5 0-10 4.5-10 10 0 3.6 1.9 6.8 4.7 8.6C37.4 41.5 33 47.3 33 54c0 9.4 7.6 17 17 17s17-7.6 17-17c0-6.7-4.4-12.5-10.7-15.4 2.8-1.8 4.7-5 4.7-8.6C61 24.5 55.5 20 50 20z"/><ellipse cx="31" cy="23" rx="6" ry="8"/><ellipse cx="69" cy="23" rx="6" ry="8"/><ellipse cx="20" cy="42" rx="5" ry="7"/><ellipse cx="80" cy="42" rx="5" ry="7"/></svg></div>{% endif %}
   </div>
-  <div class="name">{{ flyer.pet.name|upper }}</div>
-  <div class="meta">{{ flyer.pet.get_species_display }} · {{ flyer.pet.breed }} · {{ flyer.pet.color }}{% if flyer.pet.age %} · {{ flyer.pet.age }} yrs{% endif %}</div>
+
+  <div class="identity">
+    <div class="name">{{ flyer.pet.name|upper }}</div>
+    <div class="meta">{{ flyer.pet.get_species_display }} · {{ flyer.pet.breed }} · {{ flyer.pet.color }}{% if flyer.pet.age %} · {{ flyer.pet.age }} yrs{% endif %}</div>
+  </div>
+
   <div class="chips">
     {% for tag in flyer.pet.temperament_tags %}<span class="chip">{{ tag }}</span>{% endfor %}
     {% for tag in flyer.pet.health_tags %}<span class="chip">{{ tag }}</span>{% endfor %}
   </div>
+
   <div class="card">
     <h2>About {{ flyer.pet.name }}</h2>
     <p>{{ flyer.distinctive_markings|default:"A wonderful companion looking for a loving home." }}</p>
   </div>
+
   <div class="footer">
-    <div class="qr">{{ qr_svg|safe }}</div>
+    <div class="qr-wrap">
+      <div class="qr">{{ qr_svg|safe }}</div>
+      <p class="qr-note">Scan for the full profile</p>
+    </div>
     <div class="seal">{{ design_variant }}</div>
-    <div class="contact">
-      <h2>MEET {{ flyer.pet.name|upper }}?</h2>
-      <p>{{ flyer.contact_phone }}<br>{{ flyer.contact_email }}</p>
+    <div class="call">
+      <h2>Meet {{ flyer.pet.name|upper }}? Call</h2>
+      <div class="phone">{{ flyer.contact_phone }}</div>
+      <div class="email">{{ flyer.contact_email }}</div>
     </div>
   </div>
-  <div class="strip">PawPrint · Scan the QR code to see the full adoption profile · pawprint.example</div>
+  <div class="strip">PawPrint · pawprint.example</div>
 </body>
 </html>

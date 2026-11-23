@@ -124,7 +124,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-/** Render the QR payload as a PNG File (for Web Share file attachment). Null when unsupported (e.g. jsdom). */
+/** Render the QR payload as a PNG File (for Web Share file attachment). Null when unsupported. */
 export async function qrCodePngFile(value: string, filename = "pawprint-flyer-qr.png"): Promise<File | null> {
   try {
     const dataUrl = await QRCode.toDataURL(value, {

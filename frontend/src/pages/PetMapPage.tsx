@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
-import { MapPin, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { flyerMapQuery, type Flyer } from "@/features/flyers/api";
 import { Button } from "@/components/ui/button";
 import { ModeBadge, StatusBadge } from "@/components/ui/badge";
 import { EmptyState, ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { createMap, groupPins, petPinIcon, pinRingColor, stackPinIcon, type PinGroup } from "@/lib/maps";
-import { cn, formatDate, petDisplayName } from "@/lib/utils";
+import { formatDate, petDisplayName } from "@/lib/utils";
 
 /** "cat" → "Cat" — species are stored lowercase in the DB. */
 function speciesLabel(species: string): string {
@@ -52,56 +52,33 @@ export function PetMapPage() {
         <p className="t-lead" data-enter="2" style={{ marginBottom: 20, maxWidth: 640 }}>
           Every active lost or found pet with a pinned location — tap a photo pin to see the details.
         </p>
-        <div className="btn-row" data-enter="3" style={{ marginBottom: 24, flexWrap: "wrap", gap: 8 }} aria-label="Pin legend">
-          <button
-            type="button"
-            onClick={() => setFilterMode("all")}
-            className={cn("badge badge--neutral map-filter-btn", filterMode === "all" && "map-filter-btn--active")}
-            style={{ border: "none" }}
-          >
-            All pets ({allFlyers.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterMode(filterMode === "emergency" ? "all" : "emergency")}
-            className={cn("badge badge--emergency map-filter-btn", filterMode === "emergency" && "map-filter-btn--active")}
-            style={{ border: "none" }}
-          >
-            <MapPin size={13} /> Lost — red pin ({lostCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterMode(filterMode === "found" ? "all" : "found")}
-            className={cn("badge badge--found map-filter-btn", filterMode === "found" && "map-filter-btn--active")}
-            style={{ border: "none" }}
-          >
-            <MapPin size={13} /> Found — green pin ({foundCount})
-          </button>
+        <div className="map-filters" data-enter="3" aria-label="Map filters">
+          <label className="field map-filter">
+            <span>Show</span>
+            <span className="map-filter__control">
+              <select className="select map-filter__select" value={filterMode} onChange={(event) => setFilterMode(event.target.value as typeof filterMode)}>
+                <option value="all">All pets ({allFlyers.length})</option>
+                <option value="emergency">Lost · red pins ({lostCount})</option>
+                <option value="found">Found · green pins ({foundCount})</option>
+              </select>
+              <ChevronDown className="map-filter__chevron" size={17} aria-hidden="true" />
+            </span>
+          </label>
+          {speciesOptions.length > 0 && (
+            <label className="field map-filter">
+              <span>Species</span>
+              <span className="map-filter__control">
+                <select className="select map-filter__select" value={filterSpecies} onChange={(event) => setFilterSpecies(event.target.value)}>
+                  <option value="all">All species ({allFlyers.length})</option>
+                  {speciesOptions.map(([species, count]) => (
+                    <option key={species} value={species}>{speciesLabel(species)} ({count})</option>
+                  ))}
+                </select>
+                <ChevronDown className="map-filter__chevron" size={17} aria-hidden="true" />
+              </span>
+            </label>
+          )}
         </div>
-        {speciesOptions.length > 0 && (
-          <div className="btn-row" data-enter="3" style={{ marginBottom: 24, flexWrap: "wrap", gap: 8 }} aria-label="Species filter">
-            <button
-              type="button"
-              onClick={() => setFilterSpecies("all")}
-              className={cn("badge badge--neutral map-filter-btn", filterSpecies === "all" && "map-filter-btn--active")}
-              style={{ border: "none" }}
-            >
-              All species ({allFlyers.length})
-            </button>
-            {speciesOptions.map(([species, count]) => (
-              <button
-                key={species}
-                type="button"
-                data-testid={`species-filter-${species}`}
-                onClick={() => setFilterSpecies(filterSpecies === species ? "all" : species)}
-                className={cn("badge badge--neutral map-filter-btn", filterSpecies === species && "map-filter-btn--active")}
-                style={{ border: "none" }}
-              >
-                {speciesLabel(species)} ({count})
-              </button>
-            ))}
-          </div>
-        )}
 
         {query.isLoading && <Skeleton style={{ height: 480, borderRadius: 20 }} />}
         {query.isError && <ErrorBox message="Could not load the pet map. Please try again." />}
@@ -134,7 +111,7 @@ export function PetMapPage() {
  * Leaflet (OpenStreetMap) map with one circular photo pin per flyer; pins at
  * the same spot (or within ~30 m) stack into a card deck with a ×N badge.
  * Clicking a pin opens a popup card (all stacked flyers for a stack).
- * Falls back to the pin list when the map cannot be created (e.g. jsdom).
+ * Falls back to the pin list when the map cannot be created (e.g. no WebGL/DOM).
  */
 function LeafletPins({ flyers }: { flyers: Flyer[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -206,7 +183,7 @@ function LeafletPins({ flyers }: { flyers: Flyer[] }) {
           bottom: 16,
           left: 16,
           zIndex: 10,
-          background: "rgb(255 253 248 / 0.94)",
+          background: "var(--color-paper)",
           backdropFilter: "blur(8px)",
           border: "1px solid var(--color-line)",
           borderRadius: 999,
@@ -259,7 +236,7 @@ function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () =>
         borderRadius: "var(--radius-lg)",
         boxShadow: "var(--shadow-lift)",
         border: "1.5px solid var(--color-line)",
-        background: "rgb(255 253 248 / 0.98)",
+        background: "var(--color-paper)",
         backdropFilter: "blur(12px)",
       }}
     >
@@ -371,7 +348,7 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
         borderRadius: "var(--radius-lg)",
         boxShadow: "var(--shadow-lift)",
         border: "1.5px solid var(--color-line)",
-        background: "rgb(255 253 248 / 0.98)",
+        background: "var(--color-paper)",
         backdropFilter: "blur(12px)",
         padding: 0,
         display: "flex",
@@ -399,7 +376,7 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
               height: 28,
               borderRadius: "50%",
               border: "1px solid var(--color-line)",
-              background: "rgb(255 253 248 / 0.88)",
+              background: "var(--color-paper)",
               backdropFilter: "blur(6px)",
               cursor: "pointer",
               color: "var(--color-ink)",

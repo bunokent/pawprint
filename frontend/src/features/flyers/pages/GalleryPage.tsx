@@ -44,7 +44,7 @@ export function GalleryPage() {
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 24 }}>
           <div className="btn-row" role="group" aria-label="Filter by mode">
             <Button variant={mode === undefined ? "primary" : "secondary"} style={{ height: 40 }} onClick={() => setMode(undefined)}>All</Button>
-            <Button variant={mode === "emergency" ? "emergency" : "secondary"} style={{ height: 40 }} onClick={() => setMode("emergency")}>Lost — urgent</Button>
+            <Button variant={mode === "emergency" ? "emergency" : "secondary"} style={{ height: 40 }} onClick={() => setMode("emergency")}>Lost</Button>
             <Button variant={mode === "found" ? "found" : "secondary"} style={{ height: 40 }} onClick={() => setMode("found")}>Found</Button>
             <Button variant={mode === "outreach" ? "sage" : "secondary"} style={{ height: 40 }} onClick={() => setMode("outreach")}>Adoptable</Button>
           </div>

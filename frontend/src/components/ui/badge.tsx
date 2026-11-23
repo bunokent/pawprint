@@ -14,7 +14,7 @@ export function ModeBadge({ mode, className }: { mode?: Mode } & HTMLAttributes<
         className,
       )}
     >
-      {emergency ? "Lost — urgent" : found ? "Found pet" : mode === "outreach" ? "Adoptable" : "Flyer"}
+      {emergency ? "Lost" : found ? "Found pet" : mode === "outreach" ? "Adoptable" : "Flyer"}
     </span>
   );
 }
