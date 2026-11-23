@@ -16,7 +16,6 @@ test("guest can browse, filter, search and open a flyer", async ({ page }) => {
     location: "Brgy. Poblacion, Makati",
     locationLat: 14.5547,
     locationLng: 121.0244,
-    rewardAmountCents: 500000,
   });
 
   try {
@@ -52,10 +51,8 @@ test("guest can browse, filter, search and open a flyer", async ({ page }) => {
     await page.getByRole("link", { name: new RegExp(petName) }).first().click();
     await page.waitForURL(/\/flyers\/[0-9a-f-]{36}$/);
     await expect(page.getByRole("heading", { name: `Lost pet: ${petName}` })).toBeVisible();
-    await expect(page.getByText(/Reward for safe return/)).toBeVisible();
     await expect(page.getByRole("button", { name: /Print A4 flyer/ })).toBeVisible();
     await expect(page.locator('img[alt^="QR code linking to"]')).toBeVisible();
-    await expect(page.getByRole("link", { name: "Log in to fund reward" })).toBeVisible();
   } finally {
     // Log back in as the creator to clean up.
     await login(page, creds.email, creds.password);

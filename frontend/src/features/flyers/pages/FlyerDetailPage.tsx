@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Printer, Download, Coins, MapPin } from "lucide-react";
+import { Printer, Download, MapPin } from "lucide-react";
 import { flyerDetailQuery, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-dialog";
-import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
+import { ModeBadge, StatusBadge } from "@/components/ui/badge";
 import { ErrorBox, Skeleton } from "@/components/ui/feedback";
-import { RewardCheckoutModal } from "@/features/rewards/components/RewardCheckoutModal";
 import { QrImage } from "@/components/QrImage";
 import { PhotoGallery } from "@/components/PhotoGallery";
 import { ShareMenu } from "@/components/ShareMenu";
-import { formatDate, formatMoney, petDisplayName } from "@/lib/utils";
+import { formatDate, petDisplayName } from "@/lib/utils";
 
 export function FlyerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +20,6 @@ export function FlyerDetailPage() {
   const query = useQuery(flyerDetailQuery(id ?? ""));
   const updateFlyer = useUpdateFlyer(id ?? "");
   const deleteFlyer = useDeleteFlyer(id ?? "");
-  const [rewardOpen, setRewardOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // "Mark reunited / returned home" is a life-changing state change — it requires a
   // deliberate second click (armed for 4 s) instead of resolving on a single tap.
@@ -83,7 +81,6 @@ export function FlyerDetailPage() {
   const found = flyer.mode === "found";
   const isOwner = Boolean(user && flyer.creator === user.id);
   const accent = emergency ? "var(--color-emergency-deep)" : found ? "var(--color-found-deep)" : "var(--color-sage-deep)";
-  const canReward = flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0;
   const hasPin = flyer.location_lat != null && flyer.location_lng != null;
   const displayName = petDisplayName(flyer.pet, flyer.mode);
   const photoKind = emergency ? "lost pet" : found ? "found pet" : "adoptable pet";
@@ -123,16 +120,6 @@ export function FlyerDetailPage() {
               </a>
             </Button>
           )}
-          {canReward &&
-            (user ? (
-              <Button variant="primary" style={{ height: 40 }} onClick={() => setRewardOpen(true)}>
-                <Coins size={16} /> Fund reward
-              </Button>
-            ) : (
-              <Button variant="primary" style={{ height: 40 }} asChild>
-                <Link to="/auth/login">Log in to fund reward</Link>
-              </Button>
-            ))}
           {hasPin && (
             <Button variant="secondary" style={{ height: 40 }} asChild>
               <Link to="/map">
@@ -200,7 +187,6 @@ export function FlyerDetailPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <ModeBadge mode={flyer.mode} />
-                {canReward && <RewardBadge amount={flyer.reward_amount_cents ?? 0} currency={flyer.reward_currency ?? "PHP"} />}
                 <StatusBadge status={flyer.status} />
               </div>
               <h1 className="t-h1" style={{ color: accent, fontSize: "clamp(32px, 4.5vw, 48px)" }}>
@@ -237,11 +223,6 @@ export function FlyerDetailPage() {
                   ))}
                 </div>
               )}
-              {canReward && (
-                <p className="t-body" style={{ fontWeight: 700, color: "var(--color-emergency-deep)" }}>
-                  Reward for safe return: {formatMoney(flyer.reward_amount_cents ?? 0, flyer.reward_currency ?? "PHP")}
-                </p>
-              )}
               <div style={{ borderTop: "1px solid var(--color-line)", paddingTop: 14, marginTop: 4 }}>
                 <p className="t-label">{found ? "If this is your pet, contact" : "If found, contact"}</p>
                 <p className="t-body" style={{ fontWeight: 600 }}>
@@ -257,7 +238,6 @@ export function FlyerDetailPage() {
         </article>
       </div>
 
-      <RewardCheckoutModal flyer={flyer} open={rewardOpen} onClose={() => setRewardOpen(false)} />
       {isOwner && (
         <ConfirmDeleteDialog
           open={confirmOpen}

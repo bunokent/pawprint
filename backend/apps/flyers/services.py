@@ -32,8 +32,7 @@ class FlyerService:
     def create_flyer(creator, *, pet_id: uuid.UUID, mode: str, last_seen_location: str = "",
                      last_seen_date=None, location_lat: float | None = None,
                      location_lng: float | None = None, distinctive_markings: str = "",
-                     contact_phone: str = "", contact_email: str = "", reward_enabled: bool = False,
-                     reward_amount_cents: int = 0, reward_currency: str = "PHP") -> Flyer:
+                     contact_phone: str = "", contact_email: str = "") -> Flyer:
         pet = get_pet_by_id(pet_id)
         if pet is None:
             raise FlyerError("Pet not found.")
@@ -50,9 +49,6 @@ class FlyerService:
             distinctive_markings=distinctive_markings,
             contact_phone=contact_phone,
             contact_email=contact_email or creator.email,
-            reward_enabled=reward_enabled,
-            reward_amount_cents=reward_amount_cents,
-            reward_currency=reward_currency,
             qr_target_type="flyer_url",
             qr_target_value="",
             status=Flyer.Status.ACTIVE,

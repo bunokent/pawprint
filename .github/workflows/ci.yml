@@ -101,9 +101,9 @@ jobs:
           path: frontend/coverage/
           retention-days: 7
 
-  # ── Playwright E2E (self-contained: PG + Django + Vite + PayMongo stub) ──
+  # ── Playwright E2E (self-contained: PG + Django + Vite) ──
   e2e:
-    name: E2E (Playwright, 7 journeys)
+    name: E2E (Playwright, 8 journeys)
     runs-on: ubuntu-latest
     services:
       postgres:

@@ -3,8 +3,7 @@
 PawPrint is a lost-pet alert, found-pet posting and adoption flyer platform. Guests can browse
 alerts, open the interactive pet map and scan QR codes; one unified registered account (email
 or Google/Gmail OAuth) can post lost-pet emergencies, publish found pets and adoptable pets,
-generate print-ready A4 flyers, and fund rewards via Stripe (test mode) or GCash/QR Ph via
-PayMongo.
+and generate print-ready A4 flyers.
 
 ---
 
@@ -14,9 +13,9 @@ PawPrint helps a lost pet come home and helps a shelter pet find one. Two modes 
 product:
 
 - **Emergency Lost-Pet Mode** — urgent, high-contrast alerts with last-seen details,
-  distinctive markings, an optional reward, and a scannable QR code on a print-ready A4 flyer.
+  distinctive markings, and a scannable QR code on a print-ready A4 flyer.
 - **Found-Pet Mode** — a terracotta-accented posting for a pet someone found: photo, species,
-  location found (map pin), date, description and contact details — no reward.
+  location found (map pin), date, description and contact details.
 - **Adoption Outreach Mode** — warm, welcoming adoption flyers with personality tags and
   shelter/foster framing.
 
@@ -41,7 +40,6 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
   Zustand, React Hook Form + Zod, Shadcn/UI, Tailwind v4. React Compiler enabled.
 - **Storage**: Cloudinary (private delivery type, HMAC-signed URLs only) via the `cloudinary`
   SDK, wrapped in a Django `Storage` backend (`apps/common/cloudinary_storage.py`).
-- **Payments**: Stripe Python SDK (test mode) + PayMongo REST via httpx (GCash Checkout, QR Ph).
 - **AI Vision**: Ultralytics YOLO-World (`yolov8s-worldv2.pt`) with 66 configured animal labels as
   the gate/boxer (its best animal `xyxy` box also drives the in-memory species-classification
   crop), plus CLIP ViT-B/32 zero-shot second stages: one names the actual species
@@ -65,7 +63,7 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
   whose entrypoint waits for PostgreSQL, runs `manage.py migrate` (only on `web`;
   `celery` sets `PAWPRINT_MIGRATE=0` so the two never race on a fresh DB), then
   `python manage.py runserver 0.0.0.0:8000` on **:8000**, **`celery`** — same image
-  running `celery -A config worker -Q flyers,webhooks,images,default -l info`, and
+  running `celery -A config worker -Q flyers,images,default -l info`, and
   **`frontend`** — `node:24-slim` running `npm run dev -- --host 0.0.0.0` (Vite) on
   **http://localhost:5173**, with the server-side proxy `PAWPRINT_API_URL=http://web:8000`
   so `/api`, `/media`, `/ws` reach the `web` service inside the compose network. Dev email
@@ -89,7 +87,7 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push/PR to
   `main`: `backend-lint` (ruff + mypy), `backend-test` (pytest `-n auto` with
   `--cov-fail-under=80` against a `postgres:16` service), `frontend-test` (`npm ci` →
-  `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 9
+  `tsc` → `vitest --coverage` with thresholds → `vite build`), and `e2e` (Playwright 8
   journeys against a `postgres:16` service on :5433, with migrate and cached
   YOLO-World weights). Coverage HTML/XML and Playwright reports upload as artifacts.
 
@@ -104,19 +102,18 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
 | Download / print A4 flyer exports | ✅ (active flyers) | ✅ |
 | Create / edit / delete own flyers (lost, found, adoptable) | ❌ | ✅ |
 | Upload pet photos (YOLO-World-gated) | ❌ | ✅ |
-| Fund rewards (Stripe / GCash) | ❌ | ✅ |
 
 There is **no admin role, no staff flag, no strike/ban system**. Object-level mutations are
 restricted to the creator via `IsOwnerOrReadOnly`. The frontend enforces the same split in
 the UI: guests see browse/scan/map actions, registered users additionally see New flyer, My
-flyers, photo upload and Fund reward.
+flyers and photo upload.
 
 ## 4. Backend — Models & ORM
 
-Apps under `backend/apps/`: `users`, `pets`, `flyers`, `rewards`, `webhooks`, `vision`.
+Apps under `backend/apps/`: `users`, `pets`, `flyers`, `vision`.
 
 - `users.User` — AbstractUser, UUID PK, email login, `display_name`, `phone`, `avatar_path`,
-  `google_id` (nullable unique), `email_verified`, `stripe_customer_id`.
+  `google_id` (nullable unique), `email_verified`.
 - `pets.Pet` — UUID PK, `owner` FK, species/breed/color/age, `temperament_tags` & `health_tags`
   JSON (GIN indexes), `photo_path` (cover photo), `status` (`lost|found|adoptable|reunited|adopted`),
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
@@ -125,20 +122,16 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `rewards`, `webhooks`, `v
   A report carries exactly **one** photo (`MAX_PET_PHOTOS = 1`), mirrored on `Pet.photo_path`
   as the cover. The stored file is always the full, uncropped display image.
 - `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
-  fields, `location_lat`/`location_lng` floats (the map pin), contact fields, reward fields, QR
-  target, export paths, `status` (`draft|generating|active|resolved`); indexes
-  `(mode, status, created_at)`, `(creator, mode)`, and `flyer_status_location_idx`
-  `(status, location_lat, location_lng)` for the pet map.
-- `rewards.RewardTransaction` — UUID PK, `flyer`/`user` FKs, `provider` (`stripe|gcash`),
-  unique `provider_reference`, `amount_cents`, `currency`, `status`, `metadata` JSON.
-- `webhooks.WebhookEvent` — `UniqueConstraint(provider, event_id)` for idempotency.
+  fields, `location_lat`/`location_lng` floats (the map pin), contact fields, QR target, export
+  paths, `status` (`draft|generating|active|resolved`); indexes `(mode, status, created_at)`,
+  `(creator, mode)`, and `flyer_status_location_idx` `(status, location_lat, location_lng)` for
+  the pet map.
 - `vision.PetDetectionLog` — detection audit trail (classes, max confidence, passed).
 
 Layering: `selectors/` (all reads, optimized QuerySets, SearchVector FTS, cursor pagination),
 `services/` (all writes in `@transaction.atomic`, external calls, task dispatch), thin views
 (≤15 lines, zero raw ORM). Verified with `EXPLAIN ANALYZE` (see §11): gallery list runs on
-`flyer_status_created_idx` in ~0.2 ms; FTS uses `pet_search_vector_gin`; reward writes use
-`select_for_update` + the unique `provider_reference` for idempotency.
+`flyer_status_created_idx` in ~0.2 ms and FTS uses `pet_search_vector_gin`.
 
 ## 5. API Reference (OpenAPI)
 
@@ -162,10 +155,6 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `GET /api/flyers/mine` | Auth | Creator's own flyers |
 | `POST /api/pets/photos` | Auth | YOLO-World-gated photo upload (10/min); response also carries CLIP `breed`/`breed_confidence`/`color`/`color_confidence` |
 | `POST /api/pets` | Auth | Create pet record (links an uploaded photo) |
-| `POST /api/rewards` | Auth | Create reward payment (Stripe/GCash) → checkout URL / QR payload |
-| `GET /api/rewards/{id}/status` | Auth (payer/creator) | Poll payment status |
-| `GET /api/rewards/mine` | Auth | Own reward history |
-| `POST /api/webhooks/stripe` / `POST /api/webhooks/paymongo` | Signature | Idempotent webhooks |
 | `GET /api/health` | Public | Liveness probe |
 | `GET /api/schema` | Public | drf-spectacular OpenAPI schema |
 
@@ -218,8 +207,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `.no-print` chrome hidden): emergency mode uses crimson/amber high-contrast scannability;
   outreach mode uses sage/teal/terracotta warmth. The detail page's Print button uses the
   same sheet.
-- **Found mode**: `Flyer.Mode.FOUND` + `Pet.Status.FOUND` mirror the lost flow without a
-  reward; the A4 emergency template is mode-aware (FOUND PET header, "Found at", description).
+- **Found mode**: `Flyer.Mode.FOUND` + `Pet.Status.FOUND` mirror the lost flow; the A4
+  emergency template is mode-aware (FOUND PET header, "Found at", description).
   Found pets are **unnamed** (`Pet.name` blank — the finder doesn't know the owner's pet; the
   builder hides the name/tags fields in found mode and the UI falls back to "Found pet").
   Flyers can carry a map pin (`location_lat`/`location_lng`, indexed via
@@ -334,22 +323,21 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   passes as refined `dog` (raw `cat` @ 0.717 + `dog` @ 0.655 stay in `detected_classes`),
   `landscape.jpg` → 422, and the reported `logo.jpg` → 422 with the logo-specific message.
 
-## 9. Payments — Rewards (Stripe Test + GCash / QR Ph)
+## 9. Cross-Cutting Infrastructure
 
-- `PaymentDriver` protocol with `StripeDriver` (SDK, test mode) and `PayMongoDriver`
-  (httpx Basic auth; GCash Checkout + QR Ph Payment Intent).
-- `RewardService` creates `RewardTransaction(status='pending')` atomically with
-  `select_for_update`, then delegates to the driver.
-- Webhooks (`/api/webhooks/stripe`, `/api/webhooks/paymongo`) are CSRF-exempt, signature-
-  verified (Stripe `Stripe-Signature`; PayMongo HMAC-SHA256 of `{t}.{payload}` in
-  `Paymongo-Signature: t=…,te=…`), deduplicated via `WebhookEvent(provider, event_id)`, and
-  acknowledged with 200 in <50 ms while `process_reward_webhook` runs on the `webhooks`
-  Celery queue with `select_for_update`.
-- Frontend UX: `RewardCheckoutModal` (amount + provider) → Stripe redirects off-site, or
-  GCash shows the QR payload in `GcashQrModal` and polls `GET /api/rewards/{id}/status` every
-  2 s until terminal, showing "Payment received — thank you!" on `succeeded`.
-  `POST /api/webhooks/paymongo` is exercised end-to-end in E2E journey ⑤ against a local stub
-  (valid signature → 200 + `succeeded`; forged signature → 400).
+- **Background work**: Celery routes only `flyers` (A4 flyer asset generation) and `images`
+  (deferred image work); `docker-compose.yml` runs one worker for both queues with Redis as
+  the broker. Tests use eager Celery execution.
+- **Private media**: pet photos and avatars are stripped of EXIF data, stored in private
+  Cloudinary folders, and exposed through short-lived signed URLs; old objects are removed
+  best-effort when replaced.
+- **QR distribution**: the print sheet renders an SVG QR (`QrImage`), while the Share menu
+  renders a downloadable PNG, attaches it to the native Web Share sheet where supported, and
+  pre-fills social share intents. No third-party transaction or webhook credentials remain in
+  `.env.example`, CI, or the Docker compose services.
+- **Schema drift**: cleanup migrations drop the retired reward and webhook tables plus their
+  stale `django_migrations` records while preserving earlier migration history. `schema.yml`
+  and `src/lib/api/schema.d.ts` are regenerated from the remaining API surface.
 
 ## 10. Frontend (React 19 + TS) Guide
 
@@ -368,14 +356,14 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   same pins as a list), `/flyers/:id` Public Flyer + **photo gallery** (main frame + thumbnail strip + lightbox viewer, `components/PhotoGallery.tsx`, fed by `flyer.photo_urls`) + **Share flyer** menu (`components/ShareMenu.tsx` + `lib/share.ts`: native Web Share API with the QR PNG attached where supported, Facebook/X/WhatsApp share intents, Instagram via native image share or copy-caption-and-open, copy-link, and a QR modal with PNG download — browsers cannot auto-post to social accounts, the intents/share sheet pre-fill the composer instead; the QR itself is print/modal-only) + print/export + owner resolve (now a deliberate **double click** — "Click again to confirm", armed 4 s, disarmed on blur — on both the detail page and the owner card) / delete
   (delete opens the custom `ConfirmDeleteDialog` — `src/components/ui/confirm-dialog.tsx`,
   an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`)
-  + reward checkout (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
+  (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
   urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
   the photo step stays open until **Next** with exactly one photo (picking several files keeps
   only the first) and going back with an uploaded photo shows **Next** to continue without
   re-uploading; the pet is created with `photo_path` = that single photo). Found mode hides
   **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
-  `/rewards/success`, `/rewards/cancel`, `/auth/login`
+  `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
   settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
   name/phone, read-only email). The header nav links Flyers, **Pet map**, the avatar + display
@@ -390,7 +378,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `leaflet` npm dependency (+ `@types/leaflet`, `leaflet/dist/leaflet.css`), OSM tile-layer
   `createMap`, Nominatim `searchAddress`/`reverseGeocode`, circular photo `divIcon` pins
   (`petPinIcon`) and the draggable teardrop (`createDropMarker`) — no API key. Found mode
-  shows Location found / Date & time found / Description and hides the reward toggle entirely.
+  shows Location found / Date & time found / Description.
   Auth forms use icon inputs
   (`IconInput` in `components/ui/field.tsx`): a Mail icon on email fields, a Lock icon
   plus an Eye/EyeOff **show/hide password toggle** (a real button with an accessible name
@@ -400,7 +388,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 - React 19 idioms: `useActionState` forms (dispatch wrapped in `startTransition` so `pending`
   works), `useOptimistic` publishing card on flyer create, ref-as-prop, React Compiler in
   `vite.config.ts` (disabled under Vitest so coverage maps to source). TanStack Query
-  `queryOptions` factories; reward status polls every 2 s while `pending`. Zod + RHF forms.
+  `queryOptions` factories. Zod + RHF forms.
   QR codes rendered as SVG data-URLs (`src/components/QrImage.tsx`) and as shareable/downloadable PNGs via the `qrcode` package (`src/lib/share.ts`, used by the Share menu's QR modal and Web Share file attachment).
   `@media print` A4-exact stylesheet (`@page { size: A4 }`, `.print-sheet`, `.no-print`, `.print-only` — the A4 sheet keeps the single cover photo + QR while the screen shows the full gallery) +
   Print button.
@@ -415,12 +403,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 ## 11. Testing & Coverage
 
 - Backend: `cd backend && .venv/bin/python -m pytest tests/ -q --cov=apps --cov-fail-under=80`
-  → **179 passed, 97% total** (100% on all `services.py`, `drivers.py`,
-  `apps/vision/services.py`, `apps/pets/serializers.py`, and the Cloudinary storage driver);
+  with full coverage on `services.py`, `apps/vision/services.py`, `apps/pets/serializers.py`,
+  and the Cloudinary storage driver;
   `django_assert_max_num_queries` ceilings on list/detail endpoints (map endpoint at 6);
   429 tests for the
-  `auth_write` (20/min) and `upload` (10/min) throttles; webhook idempotency tests (duplicate
-  `(provider, event_id)` → single processing); 422-before-storage tests (non-animal bytes never
+  `auth_write` (20/min) and `upload` (10/min) throttles; 422-before-storage tests (non-animal bytes never
   reach Cloudinary); expanded YOLO-World + CLIP species tests (66 labels,
   `conf=0.20` asserted on the predictor call, EXIF-orientation/RGB normalization, stale-path
   fallback, non-World checkpoint rejection, rabbit/fox/frog/crocodile renaming from wrong raw
@@ -439,9 +426,8 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   driver unit tests (SDK mocked, 100% on the driver);
   profile/avatar tests (PATCH partial + validation, avatar 400s for missing/non-image/oversize
   file, EXIF-stripped ≤512px JPEG stored privately, old object deleted best-effort, signed
-  `avatar_url`, signing-failure fallback); `responses`/MockTransport for Stripe/PayMongo HTTP;
-  `factory-boy` factories.
-- Frontend: `npm run test:run` → **145 Vitest tests, 12 files** (RTL + MSW, jsdom), including
+  `avatar_url`, signing-failure fallback); `factory-boy` factories.
+- Frontend: `npm run test:run` (RTL + MSW, jsdom), including
   the delete-confirmation dialog (`alertdialog` wiring, confirm / cancel / Escape /
   backdrop-click, pending lock, focus moved to the safe action),
   drag-and-drop, **single-photo picking** (a multi-file selection uploads only the first file,
@@ -453,7 +439,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   below threshold (no confidence badges anywhere), the wizard staying on the photo step until
   **Next** and posting `photo_path`, the found-pet wizard flow (`?mode=found`, no pet-name/age
   fields, `age: null` + a single `photo_path` in the create payload, no
-  reward toggle, location/date/description, `location_lat/lng: null` from the fallback input),
+  location/date/description, `location_lat/lng: null` from the fallback input),
   the gallery Found filter, found rendering on detail/cards, per-mode resolve labels,
   `LocationPicker` map mode (fake `leaflet` via `src/test/fake-leaflet.ts`: pin drop + drag
   reverse-geocode through MSW-mocked Nominatim, address-suggestion dropdown) and its
@@ -461,30 +447,26 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   empty/error states, species filter pills derived from `pet.species` + mode×species
   combination + clear-filters reset), and `src/lib/maps.ts` helper tests (OSM tile layer,
   pin icons, Nominatim search/reverse incl. failure fallback);
-  `npm run test:coverage` → **88.42% stmts / 79.51% branches / 85.12% funcs / 89.75% lines**
-  (thresholds 70/60/70/70) with **`src/features/rewards/**` at 100%** (per-glob threshold).
+  `npm run test:coverage` enforces thresholds 70/60/70/70.
   `npx tsc -b --noEmit` clean; `npm run build` green.
-- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **10 journeys /
-  12 tests, all green**, fully self-contained: a stub PayMongo API (`e2e/stub-paymongo.mjs` on
-  :9100), the Django backend on :8010 with `PAWPRINT_TESTING=1` (eager Celery, locmem, local
-  PG :5433; filesystem `/media/` is served explicitly under TESTING so signed URLs load),
-  and the Vite dev server on :5173 proxying to :8010. Journeys: ① guest browse →
-  filter → search → detail+QR, ② register → logout → login (demo account), ③ create an
-  emergency flyer through the 3-step wizard (YOLO-World-gated upload → preview → **Next** →
-  read-only detected species) → public detail page, ④ landscape photo + flat logo → 422
-  `no_pet_detected` retry UX → dog photo passes → preview → **Next**, ⑤ GCash reward checkout → QR modal →
-  HMAC-signed PayMongo webhook flips
-  status to `succeeded` (and a forged signature is 400), ⑥ open the flyer's
-  `qr_target_value` like a scanner → public detail page with SVG QR, ⑦ profile settings →
+- E2E: `npm run test:e2e` (Playwright, `frontend/playwright.config.ts`) → **8 journeys /
+  11 tests**, fully self-contained: the Django backend on :8010 with `PAWPRINT_TESTING=1`
+  (eager Celery, locmem, local PG :5433; filesystem `/media/` is served explicitly under
+  TESTING so signed URLs load) and the Vite dev server on :5173 proxying to :8010. Journeys:
+  ① guest browse → filter → search → detail+QR, ② register → logout → login with wrong-password
+  retry, ③ create an emergency flyer through the 3-step wizard (YOLO-World-gated upload →
+  preview → **Next** → read-only detected species) → public detail page, ④ landscape photo +
+  flat logo → 422 `no_pet_detected` retry UX → dog photo passes → preview → **Next**, ⑤ open the
+  flyer's `qr_target_value` like a scanner → public detail page with SVG QR, ⑥ profile settings →
   avatar upload + display name/phone save → header avatar, profile restored afterwards,
-  ⑧ guest pet map (Leaflet/OSM map — `/api/flyers/map` pins seeded Bruno lost + Miso found
+  ⑦ guest pet map (Leaflet/OSM map — `/api/flyers/map` pins seeded Bruno lost + Miso found
   with coords; tap Bruno's photo pin → popup card → open his flyer → "View on map" link
-  back), ⑧b same-spot stacking (a second flyer pinned at Bruno's exact coords stacks into a
+  back), ⑦b same-spot stacking (a second flyer pinned at Bruno's exact coords stacks into a
   ×N card deck — newest on top with the green/red ring, oldest peeking behind — and tapping
   the stack opens a popup listing every stacked flyer; the test cleans up after itself),
-  ⑨ found-pet flow
+  ⑧ found-pet flow
   (`/builder?mode=found` → photo gate → **Next** → no pet-name/age/tags fields → publish →
-  unnamed "Found pet" detail, mode `found`, no reward; guests get the register prompt).
+  unnamed "Found pet" detail, mode `found`; guests get the register prompt).
 - Static analysis: `mypy apps`, `ruff check .`, `npm run lint` (tsc), `npm run build`
   (0 TS errors). All of the above run in GitHub Actions (`.github/workflows/ci.yml`):
   `backend-lint` (ruff + mypy, no DB), `backend-test` (pytest + coverage against a
@@ -496,8 +478,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   query shows an index scan on `flyer_status_created_idx` + PK lookups for pet/owner/creator —
   **0.21 ms execution, 14 shared buffer hits** at seed scale; FTS uses the
   `pet_search_vector_gin` GIN index (planner seq-scans the 2-row seed table, switches to the
-  bitmap index at scale); the reward webhook path holds `select_for_update` inside a short
-  transaction and dedupes on the unique `(provider, event_id)`.
+  bitmap index at scale).
 
 ## 12. Tutorial (Living Build Log)
 
@@ -1287,3 +1268,15 @@ the on-screen QR is replaced by a Share flyer menu (native share w/ QR PNG, Face
 Instagram / X / WhatsApp, copy link, QR modal with PNG download);
 resolving a flyer (reunited / returned home / adopted) requires a double click;
 `npm run docs:pdf` regenerated.
+
+- **Phase 51** — Full fund/reward removal. Deleted the `rewards` and `webhooks` Django apps,
+  reward/webhook API routes, payment drivers, webhook tasks, reward migrations, the Payments
+  section, and the frontend reward feature, checkout modals, success/cancel pages, MSW mocks,
+  unit tests and Playwright reward journey plus its PayMongo stub. Removed `reward_*` fields
+  from `Flyer`, `stripe_customer_id` from `User`, reward copy/badges/actions from the builder,
+  detail, My Flyers and pet map, and reward/provider settings from Docker, `.env.example`, Vite,
+  Playwright and CI. Added cleanup migrations (`flyers/0004`, `users/0002`) that drop the legacy
+  `rewards_rewardtransaction` and `webhooks_webhookevent` tables and delete stale migration rows
+  while keeping earlier migration history intact. Regenerated `backend/schema.yml`,
+  `frontend/src/lib/api/schema.d.ts` and `docs/documentation.pdf`; E2E is now 8 journeys / 11
+  tests. Per request, no test suite was run after the removal.

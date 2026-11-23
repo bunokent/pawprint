@@ -78,8 +78,6 @@ describe("FlyerDetailPage", () => {
     expect(screen.getByAltText(/QR code linking to Bento/).closest(".print-only")).not.toBeNull();
     expect(screen.getByRole("button", { name: /Print A4 flyer/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /PDF/ })).toHaveAttribute("href", mockFlyer().export_pdf_url);
-    // Guest cannot fund the reward directly — gets a login link instead.
-    expect(screen.getByRole("link", { name: /Log in to fund reward/ })).toBeInTheDocument();
     // Guests see the finder contact block.
     expect(screen.getByText(/0917 000 0000/)).toBeInTheDocument();
 
@@ -162,14 +160,6 @@ describe("FlyerDetailPage", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /Photo \d of 3/ })).not.toBeInTheDocument());
   });
 
-  it("shows the fund-reward button to a logged-in non-owner and opens the checkout modal", async () => {
-    useAuth.setState({ user: mockUser({ id: "99999999-9999-9999-9999-999999999999" }), checked: true });
-    const user = userEvent.setup();
-    renderDetail("33333333-3333-3333-3333-333333333333");
-    await user.click(await screen.findByRole("button", { name: /Fund reward/ }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent("Fund the reward for Bento");
-  });
-
   it("requires a double click to mark reunited — one click only arms the button", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     const patchCalls: Array<Record<string, unknown>> = [];
@@ -222,7 +212,7 @@ describe("FlyerDetailPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be loaded");
   });
 
-  it("renders a found-pet flyer with Found at / Description and a map link (no reward)", async () => {
+  it("renders a found-pet flyer with Found at / Description and a map link", async () => {
     mswServer.use(
       http.get("*/api/flyers/:id", () => HttpResponse.json(mockFoundFlyer({ id: "33333333-3333-3333-3333-333333333333" }))),
     );
@@ -231,7 +221,6 @@ describe("FlyerDetailPage", () => {
     expect(screen.getByText("Found at")).toBeInTheDocument();
     expect(screen.getByText(/Near the market, Manila/)).toBeInTheDocument();
     expect(screen.getByText("Description")).toBeInTheDocument();
-    expect(screen.queryByText(/Reward for safe return/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View on map/ })).toHaveAttribute("href", "/map");
     expect(screen.getByText("If this is your pet, contact")).toBeInTheDocument();
     expect(screen.getByText("Found pet")).toBeInTheDocument(); // mode badge
@@ -278,20 +267,16 @@ describe("BuilderWizard", () => {
     await user.type(screen.getByLabelText("Breed"), "Shiba Inu");
     await user.type(screen.getByLabelText("Personality tags"), "friendly, good with kids");
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(await screen.findByRole("heading", { name: "Flyer details & reward" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Flyer details" })).toBeInTheDocument();
 
-    // Step 3 — flyer details + reward
+    // Step 3 — flyer details
     await user.type(screen.getByLabelText("Last seen location"), "Barangay hall, Quezon City");
-    await user.type(screen.getByLabelText("Reward amount (PHP)"), "5000");
     await user.click(screen.getByRole("button", { name: "Publish flyer" }));
 
     await waitFor(() => expect(createdFlyers).toHaveLength(1));
     expect(createdFlyers[0]).toMatchObject({
       mode: "emergency",
       last_seen_location: "Barangay hall, Quezon City",
-      reward_enabled: true,
-      reward_amount_cents: 500000,
-      reward_currency: "PHP",
     });
     // Lands on the new flyer's detail page.
     expect(await screen.findByTestId("flyer-sheet")).toBeInTheDocument();
@@ -500,26 +485,7 @@ describe("BuilderWizard", () => {
     expect(screen.getByLabelText("Color")).toHaveValue("black");
   });
 
-  it("blocks publish when the reward is enabled but empty", async () => {
-    useAuth.setState({ user: mockUser(), checked: true });
-    const user = userEvent.setup();
-    renderWithProviders(<BuilderWizard />, { route: "/builder?mode=outreach" });
-    fireEvent.change(screen.getByLabelText("Choose a pet photo"), {
-      target: { files: [new File(["img"], "mochi.jpg", { type: "image/jpeg" })] },
-    });
-    await screen.findByAltText("Uploaded pet preview");
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByRole("heading", { name: "Tell us about the pet" });
-    await user.type(screen.getByLabelText("Pet name"), "Mochi");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByRole("heading", { name: "Flyer details" });
-    // outreach defaults reward off; turn it on without an amount
-    await user.click(screen.getByLabelText(/Offer a finder's reward/));
-    await user.click(screen.getByRole("button", { name: "Publish flyer" }));
-    expect(await screen.findByText("Enter a reward amount above zero.")).toBeInTheDocument();
-  });
-
-  it("posts a found-pet flyer via ?mode=found — location, date found, description, no reward", async () => {
+  it("posts a found-pet flyer via ?mode=found — location, date found and description", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     const user = userEvent.setup();
     const createdPets: Array<Record<string, unknown>> = [];
@@ -571,9 +537,8 @@ describe("BuilderWizard", () => {
       }),
     );
 
-    // Step 3 — found fields: location picker (fallback input without a Maps key), date, description. No reward toggle.
+    // Step 3 — found fields: location picker (fallback input without a Maps key), date, description.
     expect(await screen.findByRole("heading", { name: "Found-pet details" })).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Offer a finder's reward/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Last seen location")).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Location found"), "Near the market, Manila");
     await user.type(screen.getByLabelText("Description"), "Orange tabby, very friendly");
@@ -584,8 +549,6 @@ describe("BuilderWizard", () => {
       mode: "found",
       last_seen_location: "Near the market, Manila",
       distinctive_markings: "Orange tabby, very friendly",
-      reward_enabled: false,
-      reward_amount_cents: 0,
       // Fallback location input reports no coordinates.
       location_lat: null,
       location_lng: null,
@@ -667,21 +630,17 @@ describe("MyFlyersPage", () => {
     expect(await screen.findByText("LOGIN PAGE")).toBeInTheDocument();
   });
 
-  it("lists my flyers and my reward payments for a logged-in user", async () => {
+  it("lists my flyers for a logged-in user", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     renderWithProviders(<MyFlyersPage />, { route: "/my-flyers" });
     expect(await screen.findByText("Bento")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Reward payments" })).toBeInTheDocument();
-    expect(await screen.findByText(/via gcash/)).toBeInTheDocument();
   });
 
   it("shows the empty state with a CTA when there are no flyers", async () => {
     mswServer.use(http.get("*/api/flyers/mine", () => HttpResponse.json({ results: [], next: null, previous: null })));
-    mswServer.use(http.get("*/api/rewards/mine", () => HttpResponse.json([])));
     useAuth.setState({ user: mockUser(), checked: true });
     renderWithProviders(<MyFlyersPage />, { route: "/my-flyers" });
     expect(await screen.findByText("No flyers yet")).toBeInTheDocument();
-    expect(screen.getByText("No reward payments yet.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Create your first flyer" })).toBeInTheDocument();
   });
 
@@ -709,9 +668,8 @@ describe("MyFlyersPage", () => {
     await screen.findByRole("heading", { name: "Tell us about the pet" });
     await user.type(screen.getByLabelText("Pet name"), "Bento");
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByRole("heading", { name: "Flyer details & reward" });
+    await screen.findByRole("heading", { name: "Flyer details" });
     await user.type(screen.getByLabelText("Last seen location"), "Barangay hall");
-    await user.type(screen.getByLabelText("Reward amount (PHP)"), "5000");
     await user.click(screen.getByRole("button", { name: "Publish flyer" }));
     // While the create call is in flight, the optimistic card is visible.
     expect(await screen.findByTestId("publishing")).toBeInTheDocument();
@@ -770,13 +728,12 @@ describe("MyFlyersPage", () => {
 });
 
 describe("FlyerCard content", () => {
-  it("renders mode, reward and status badges", async () => {
+  it("renders mode and status badges", async () => {
     useAuth.setState({ user: mockUser(), checked: true });
     renderWithProviders(<MyFlyersPage />, { route: "/my-flyers" });
     const card = await screen.findByText("Bento");
     const cardEl = card.closest("a") as HTMLElement;
     expect(within(cardEl).getByText("Lost — urgent")).toBeInTheDocument();
-    expect(within(cardEl).getByText(/Reward ₱5,000/)).toBeInTheDocument();
     expect(within(cardEl).getByText("active")).toBeInTheDocument();
     expect(within(cardEl).getByText(/last seen Barangay hall/)).toBeInTheDocument();
   });

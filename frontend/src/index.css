@@ -153,7 +153,6 @@ a.card:hover, .card--link:hover { transform: translateY(-2px); box-shadow: var(-
 .badge--emergency { background: rgb(179 38 30 / 0.1); color: var(--color-emergency-deep); }
 .badge--found { background: rgb(46 158 99 / 0.14); color: var(--color-found-deep); }
 .badge--outreach { background: rgb(47 111 94 / 0.12); color: var(--color-sage-deep); }
-.badge--reward { background: var(--color-amber); color: #2b1a00; }
 .badge--neutral { background: var(--color-surface); color: var(--color-muted); }
 .badge--active {
   box-shadow: 0 0 0 2px var(--color-ink);

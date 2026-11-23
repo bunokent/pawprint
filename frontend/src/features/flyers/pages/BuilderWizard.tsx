@@ -58,25 +58,13 @@ function petSchemaFor(mode: Mode) {
   });
 }
 
-const flyerSchema = z
-  .object({
-    last_seen_location: z.string().max(255).optional().or(z.literal("")),
-    last_seen_date: z.string().optional().or(z.literal("")),
-    distinctive_markings: z.string().max(1000).optional().or(z.literal("")),
-    contact_phone: z.string().max(32).optional().or(z.literal("")),
-    contact_email: z.email("Enter a valid email.").optional().or(z.literal("")),
-    reward_enabled: z.boolean(),
-    reward_pesos: z
-      .string()
-      .regex(/^\d+(\.\d{1,2})?$/, "Enter an amount in pesos, e.g. 5000.")
-      .optional()
-      .or(z.literal("")),
-  })
-  .superRefine((v, ctx) => {
-    if (v.reward_enabled && (!v.reward_pesos || Number(v.reward_pesos) <= 0)) {
-      ctx.addIssue({ code: "custom", path: ["reward_pesos"], message: "Enter a reward amount above zero." });
-    }
-  });
+const flyerSchema = z.object({
+  last_seen_location: z.string().max(255).optional().or(z.literal("")),
+  last_seen_date: z.string().optional().or(z.literal("")),
+  distinctive_markings: z.string().max(1000).optional().or(z.literal("")),
+  contact_phone: z.string().max(32).optional().or(z.literal("")),
+  contact_email: z.email("Enter a valid email.").optional().or(z.literal("")),
+});
 type FlyerValues = z.infer<typeof flyerSchema>;
 
 interface StepState {
@@ -115,9 +103,6 @@ function draftFlyer(
     distinctive_markings: values.distinctive_markings,
     contact_phone: values.contact_phone,
     contact_email: values.contact_email,
-    reward_enabled: values.reward_enabled,
-    reward_amount_cents: Math.round(Number(values.reward_pesos || 0) * 100),
-    reward_currency: "PHP",
     qr_target_type: "flyer_url",
     qr_target_value: "",
     photo_url: photo.url,
@@ -177,7 +162,7 @@ export function BuilderWizard() {
         <h1 className="t-h1" data-enter="2" style={{ fontSize: "clamp(28px, 4vw, 42px)", marginBottom: 32 }}>
           {step === 0 && (mode === "emergency" ? "Report a lost pet" : mode === "found" ? "Report a found pet" : "Post an adoptable pet")}
           {step === 1 && (mode === "found" ? "Describe the found pet" : "Tell us about the pet")}
-          {step === 2 && (mode === "emergency" ? "Flyer details & reward" : mode === "found" ? "Found-pet details" : "Flyer details")}
+          {step === 2 && (mode === "found" ? "Found-pet details" : "Flyer details")}
         </h1>
 
         {step === 0 && (
@@ -242,7 +227,7 @@ function StepPhotoMode({
       </div>
       <p className="t-body" style={{ color: "var(--color-muted)" }}>
         {mode === "emergency"
-          ? "We'll build a scannable, print-ready alert with last-seen details and an optional reward."
+          ? "We'll build a scannable, print-ready alert with the last-seen details and your contact info."
           : mode === "found"
             ? "We'll post a found-pet flyer with the location, photo and your contact details so the owner can find them."
             : "We'll build a warm adoption flyer with personality tags and contact details."}
@@ -407,7 +392,6 @@ function StepFlyer({
   const navigate = useNavigate();
   const createFlyer = useCreateFlyer();
   const found = mode === "found";
-  const [rewardOn, setRewardOn] = useState(mode === "emergency");
   // Pin coordinates from the LocationPicker map (null when only text was typed).
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const form = useForm<FlyerValues>({
@@ -418,8 +402,6 @@ function StepFlyer({
       distinctive_markings: "",
       contact_phone: "",
       contact_email: userEmail,
-      reward_enabled: mode === "emergency",
-      reward_pesos: "",
     },
   });
 
@@ -444,10 +426,6 @@ function StepFlyer({
         distinctive_markings: values.distinctive_markings || undefined,
         contact_phone: values.contact_phone || undefined,
         contact_email: values.contact_email || undefined,
-        // Found-pet flyers never carry a reward.
-        reward_enabled: found ? false : values.reward_enabled,
-        reward_amount_cents: !found && values.reward_enabled ? Math.round(Number(values.reward_pesos) * 100) : 0,
-        reward_currency: "PHP",
       });
       navigate(`/flyers/${flyer.id}`);
       return { error: null };
@@ -470,7 +448,7 @@ function StepFlyer({
   return (
     <div className="card" style={{ padding: 28 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span className="t-label" style={{ color: "var(--color-muted)" }}>{found ? "Found-pet details" : "Flyer details & reward"}</span>
+        <span className="t-label" style={{ color: "var(--color-muted)" }}>{found ? "Found-pet details" : "Flyer details"}</span>
         <Button type="button" variant="secondary" onClick={onBack}>
           ← Back
         </Button>
@@ -534,34 +512,6 @@ function StepFlyer({
             />
           </FieldShell>
         </div>
-
-        {!found && (
-          <div className="field">
-            <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                style={{ width: 20, height: 20, accentColor: mode === "emergency" ? "var(--color-emergency)" : "var(--color-sage)" }}
-                checked={rewardOn}
-                onChange={(e) => {
-                  setRewardOn(e.target.checked);
-                  form.setValue("reward_enabled", e.target.checked);
-                }}
-              />
-              <span style={{ fontWeight: 600, fontSize: 14 }}>Offer a finder's reward</span>
-            </label>
-            {rewardOn && (
-              <FieldShell label="Reward amount (PHP)" htmlFor="flyer-reward" error={form.formState.errors.reward_pesos?.message}>
-                <Input
-                  id="flyer-reward"
-                  inputMode="decimal"
-                  placeholder="e.g. 5000"
-                  aria-invalid={Boolean(form.formState.errors.reward_pesos)}
-                  {...form.register("reward_pesos")}
-                />
-              </FieldShell>
-            )}
-          </div>
-        )}
 
         {state.error && <ErrorBox message={state.error} />}
         <div className="btn-row">

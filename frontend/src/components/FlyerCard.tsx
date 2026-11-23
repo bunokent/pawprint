@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { ArrowRight, Calendar, MapPin } from "lucide-react";
 import type { Flyer } from "@/features/flyers/api";
-import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
+import { ModeBadge, StatusBadge } from "@/components/ui/badge";
 import { formatDate, petDisplayName } from "@/lib/utils";
 
 export function FlyerCard({ flyer }: { flyer: Flyer }) {
@@ -44,9 +44,6 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
       <div style={{ padding: "18px 18px 16px", display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <ModeBadge mode={flyer.mode} />
-          {flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0 && (
-            <RewardBadge amount={flyer.reward_amount_cents ?? 0} currency={flyer.reward_currency ?? "PHP"} />
-          )}
           <StatusBadge status={flyer.status} />
         </div>
 

@@ -51,7 +51,7 @@ def test_docker_compose_runs_web_celery_and_frontend():
     # python run server
     assert "runserver 0.0.0.0:8000" in compose
     # celery worker on the routed queues
-    assert re.search(r"celery -A config worker -Q flyers,webhooks,images,default", compose)
+    assert re.search(r"celery -A config worker -Q flyers,images,default", compose)
     # npm run dev (Vite) for the frontend service
     frontend_dockerfile = (ROOT / "frontend/Dockerfile").read_text()
     assert '"npm", "run", "dev"' in frontend_dockerfile

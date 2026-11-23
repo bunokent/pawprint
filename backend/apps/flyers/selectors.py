@@ -21,7 +21,6 @@ def select_flyer_queryset() -> QuerySet[Flyer]:
             "id", "mode", "status", "last_seen_location", "last_seen_date",
             "location_lat", "location_lng",
             "distinctive_markings", "contact_phone", "contact_email",
-            "reward_enabled", "reward_amount_cents", "reward_currency",
             "qr_target_type", "qr_target_value", "export_png_path", "export_pdf_path",
             "created_at", "updated_at",
             "pet__id", "pet__name", "pet__species", "pet__breed", "pet__color", "pet__age",

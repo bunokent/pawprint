@@ -13,9 +13,9 @@ from apps.vision.services import PetAttributeService, PetDetectionService, load_
 
 from .models import Pet, PetPhoto
 
-# One photo per pet: the flyer, the detector readout and the reward flow all key off a
-# single clear cover image. The upload endpoint also accepts one file per request and
-# the frontend PhotoUpload caps at the same number.
+# One photo per pet: the flyer and the detector readout key off a single clear cover
+# image. The upload endpoint also accepts one file per request and the frontend
+# PhotoUpload caps at the same number.
 MAX_PET_PHOTOS = 1
 
 

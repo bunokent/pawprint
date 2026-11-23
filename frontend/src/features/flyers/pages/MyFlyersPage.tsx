@@ -2,20 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { myFlyersQuery, useDeleteFlyer, useUpdateFlyer, type Flyer } from "@/features/flyers/api";
-import { myRewardsQuery } from "@/features/rewards/api";
 import { FlyerCard } from "@/components/FlyerCard";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-dialog";
-import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState, ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { useAuth } from "@/stores/auth";
-import { formatDate, formatMoney } from "@/lib/utils";
 
 export function MyFlyersPage() {
   const navigate = useNavigate();
   const { user, checked } = useAuth();
   const query = useQuery(myFlyersQuery());
-  const rewards = useQuery(myRewardsQuery());
 
   useEffect(() => {
     if (checked && !user) {
@@ -73,34 +69,6 @@ export function MyFlyersPage() {
           </div>
         )}
 
-        <section style={{ marginTop: 56 }} aria-labelledby="my-rewards">
-          <h2 className="t-h2" id="my-rewards" style={{ marginBottom: 16 }}>
-            Reward payments
-          </h2>
-          {rewards.isLoading && <Skeleton style={{ height: 20, width: "40%" }} />}
-          {rewards.data && rewards.data.length === 0 && (
-            <p className="t-body" style={{ color: "var(--color-muted)" }}>
-              No reward payments yet.
-            </p>
-          )}
-          {rewards.data && rewards.data.length > 0 && (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {rewards.data.map((tx) => (
-                <li
-                  key={tx.id}
-                  className="card"
-                  style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
-                >
-                  <StatusBadge status={tx.status ?? "pending"} />
-                  <strong>{formatMoney(tx.amount_cents, tx.currency ?? "PHP")}</strong>
-                  <span className="t-small" style={{ color: "var(--color-muted)" }}>
-                    via {tx.provider} · {formatDate(tx.created_at)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
       </div>
     </section>
   );

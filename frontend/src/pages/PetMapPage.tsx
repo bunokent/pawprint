@@ -5,7 +5,7 @@ import L from "leaflet";
 import { MapPin, X } from "lucide-react";
 import { flyerMapQuery, type Flyer } from "@/features/flyers/api";
 import { Button } from "@/components/ui/button";
-import { ModeBadge, RewardBadge, StatusBadge } from "@/components/ui/badge";
+import { ModeBadge, StatusBadge } from "@/components/ui/badge";
 import { EmptyState, ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { createMap, groupPins, petPinIcon, pinRingColor, stackPinIcon, type PinGroup } from "@/lib/maps";
 import { cn, formatDate, petDisplayName } from "@/lib/utils";
@@ -418,9 +418,6 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <ModeBadge mode={flyer.mode} />
           <StatusBadge status={flyer.status} />
-          {flyer.reward_enabled && (flyer.reward_amount_cents ?? 0) > 0 && (
-            <RewardBadge amount={flyer.reward_amount_cents ?? 0} currency={flyer.reward_currency ?? "PHP"} />
-          )}
           {!flyer.photo_url && (
             <button
               type="button"

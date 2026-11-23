@@ -24,8 +24,7 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
             "id", "mode", "status", "pet", "creator", "creator_display_name",
             "last_seen_location", "last_seen_date", "location_lat", "location_lng",
             "distinctive_markings",
-            "contact_phone", "contact_email", "reward_enabled", "reward_amount_cents",
-            "reward_currency", "qr_target_type", "qr_target_value",
+            "contact_phone", "contact_email", "qr_target_type", "qr_target_value",
             "photo_url", "photo_urls", "export_png_url", "export_pdf_url", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "creator", "status", "created_at", "updated_at",
@@ -37,7 +36,7 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
         return ""
 
     def get_photo_urls(self, obj: Flyer) -> list[str]:
-        """Signed URLs of every uploaded angle, cover first (pet.photos is prefetched)."""
+        """Signed URL of the pet's single photo (pet.photos is prefetched)."""
         pet = obj.pet
         if not pet:
             return []
@@ -67,14 +66,6 @@ class FlyerCreateSerializer(serializers.Serializer):
     distinctive_markings = serializers.CharField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
-    reward_enabled = serializers.BooleanField(required=False, default=False)
-    reward_amount_cents = serializers.IntegerField(min_value=0, required=False, default=0)
-    reward_currency = serializers.CharField(max_length=8, required=False, default="PHP")
-
-    def validate(self, attrs: dict) -> dict:
-        if attrs.get("reward_enabled") and not attrs.get("reward_amount_cents"):
-            raise serializers.ValidationError("reward_amount_cents must be > 0 when reward_enabled.")
-        return attrs
 
 
 class FlyerUpdateSerializer(serializers.Serializer):
@@ -86,7 +77,4 @@ class FlyerUpdateSerializer(serializers.Serializer):
     distinctive_markings = serializers.CharField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
-    reward_enabled = serializers.BooleanField(required=False)
-    reward_amount_cents = serializers.IntegerField(min_value=0, required=False)
-    reward_currency = serializers.CharField(max_length=8, required=False)
     status = serializers.ChoiceField(choices=[Flyer.Status.ACTIVE, Flyer.Status.RESOLVED], required=False)

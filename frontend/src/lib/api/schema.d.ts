@@ -551,104 +551,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rewards": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["rewards_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rewards/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["rewards_create_2"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rewards{id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Poll payment status — payer or flyer creator only. */
-        get: operations["rewards_status_retrieve_2"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rewards/{id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Poll payment status — payer or flyer creator only. */
-        get: operations["rewards_status_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rewards/mine": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["rewards_mine_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rewardsmine": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["rewardsmine_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -672,13 +574,10 @@ export interface components {
             distinctive_markings?: string;
             contact_phone?: string;
             contact_email?: string;
-            reward_enabled?: boolean;
-            reward_amount_cents?: number;
-            reward_currency?: string;
             qr_target_type?: string;
             qr_target_value?: string;
             readonly photo_url: string;
-            /** @description Signed URLs of every uploaded angle, cover first (pet.photos is prefetched). */
+            /** @description Signed URL of the pet's single photo (pet.photos is prefetched). */
             readonly photo_urls: string[];
             readonly export_png_url: string;
             readonly export_pdf_url: string;
@@ -784,54 +683,6 @@ export interface components {
             password: string;
             display_name?: string;
         };
-        RewardCreate: {
-            /** Format: uuid */
-            flyer_id: string;
-            provider: components["schemas"]["RewardCreateProviderEnum"];
-            amount_cents?: number;
-            currency?: string;
-        };
-        /**
-         * @description * `stripe` - stripe
-         *     * `gcash` - gcash
-         * @enum {string}
-         */
-        RewardCreateProviderEnum: "stripe" | "gcash";
-        RewardInit: {
-            /** Format: uuid */
-            transaction_id: string;
-            provider: string;
-            status: string;
-            amount_cents: number;
-            currency: string;
-            checkout_url: string;
-            qr_payload: string;
-        };
-        RewardStatus: {
-            /** Format: uuid */
-            readonly id: string;
-            provider: components["schemas"]["RewardStatusProviderEnum"];
-            status?: components["schemas"]["RewardStatusStatusEnum"];
-            amount_cents: number;
-            currency?: string;
-            provider_reference: string;
-            /** Format: date-time */
-            readonly created_at: string;
-        };
-        /**
-         * @description * `stripe` - Stripe (test mode)
-         *     * `gcash` - GCash (PayMongo)
-         * @enum {string}
-         */
-        RewardStatusProviderEnum: "stripe" | "gcash";
-        /**
-         * @description * `pending` - Pending
-         *     * `succeeded` - Succeeded
-         *     * `failed` - Failed
-         *     * `refunded` - Refunded
-         * @enum {string}
-         */
-        RewardStatusStatusEnum: "pending" | "succeeded" | "failed" | "refunded";
         /**
          * @description * `dog` - Dog
          *     * `cat` - Cat
@@ -1629,136 +1480,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PhotoUploadResponse"];
-                };
-            };
-        };
-    };
-    rewards_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RewardCreate"];
-                "application/x-www-form-urlencoded": components["schemas"]["RewardCreate"];
-                "multipart/form-data": components["schemas"]["RewardCreate"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RewardInit"];
-                };
-            };
-        };
-    };
-    rewards_create_2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RewardCreate"];
-                "application/x-www-form-urlencoded": components["schemas"]["RewardCreate"];
-                "multipart/form-data": components["schemas"]["RewardCreate"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RewardInit"];
-                };
-            };
-        };
-    };
-    rewards_status_retrieve_2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RewardStatus"];
-                };
-            };
-        };
-    };
-    rewards_status_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RewardStatus"];
-                };
-            };
-        };
-    };
-    rewards_mine_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RewardStatus"][];
-                };
-            };
-        };
-    };
-    rewardsmine_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RewardStatus"][];
                 };
             };
         };

@@ -2,7 +2,6 @@ import { defineConfig } from "@playwright/test";
 
 /**
  * Playwright E2E — fully self-contained (no docker needed):
- *  - stub PayMongo API on 127.0.0.1:9100        (e2e/stub-paymongo.mjs)
  *  - Django backend on 127.0.0.1:8010 with PAWPRINT_TESTING=1
  *    (locmem cache, in-memory channel layer, eager Celery, filesystem storage)
  *    against the local PostgreSQL on 127.0.0.1:5433
@@ -28,12 +27,6 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: [
     {
-      command: "node e2e/stub-paymongo.mjs",
-      url: "http://127.0.0.1:9100/health",
-      reuseExistingServer: false,
-      timeout: 15_000,
-    },
-    {
       command: ".venv/bin/python manage.py runserver 127.0.0.1:8010 --noreload",
       cwd: "../backend",
       url: `${API}/api/health`,
@@ -46,9 +39,6 @@ export default defineConfig({
         POSTGRES_USER: "postgres",
         POSTGRES_PASSWORD: "postgres",
         POSTGRES_DB: "pawprint",
-        PAYMONGO_BASE_URL: "http://127.0.0.1:9100",
-        PAYMONGO_WEBHOOK_SECRET: "whsec_dev",
-        STRIPE_WEBHOOK_SECRET: "whsec_dev",
         FRONTEND_BASE_URL: "http://127.0.0.1:5173",
       },
     },

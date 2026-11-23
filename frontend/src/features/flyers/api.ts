@@ -16,9 +16,6 @@ export interface FlyerCreateInput {
   distinctive_markings?: string;
   contact_phone?: string;
   contact_email?: string;
-  reward_enabled?: boolean;
-  reward_amount_cents?: number;
-  reward_currency?: string;
 }
 
 export const flyerKeys = {

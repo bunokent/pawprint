@@ -135,9 +135,6 @@ def test_create_flyer_dispatches_assets_and_activates(auth_client, user):
             "pet_id": str(pet.pk),
             "mode": "emergency",
             "last_seen_location": "Makati",
-            "reward_enabled": True,
-            "reward_amount_cents": 500000,
-            "reward_currency": "PHP",
         },
         format="json",
     )
@@ -155,16 +152,6 @@ def test_create_flyer_dispatches_assets_and_activates(auth_client, user):
 def test_create_flyer_unknown_pet_400(auth_client):
     resp = auth_client.post(
         "/api/flyers/new", {"pet_id": str(uuid.uuid4()), "mode": "emergency"}, format="json"
-    )
-    assert resp.status_code == 400
-
-
-def test_create_flyer_reward_validation(auth_client, user):
-    pet = PetFactory(owner=user)
-    resp = auth_client.post(
-        "/api/flyers/new",
-        {"pet_id": str(pet.pk), "mode": "emergency", "reward_enabled": True, "reward_amount_cents": 0},
-        format="json",
     )
     assert resp.status_code == 400
 

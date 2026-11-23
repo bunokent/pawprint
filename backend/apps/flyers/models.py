@@ -3,7 +3,7 @@
 import uuid
 
 from django.db import models
-from django.db.models import CheckConstraint, Index, Q, UniqueConstraint
+from django.db.models import Index, UniqueConstraint
 
 
 class Flyer(models.Model):
@@ -31,9 +31,6 @@ class Flyer(models.Model):
     distinctive_markings = models.TextField(blank=True)
     contact_phone = models.CharField(max_length=32, blank=True)
     contact_email = models.EmailField(blank=True)
-    reward_enabled = models.BooleanField(default=False)
-    reward_amount_cents = models.PositiveIntegerField(default=0)
-    reward_currency = models.CharField(max_length=8, default="PHP")
     # What the QR code points at (usually the public flyer URL).
     qr_target_type = models.CharField(max_length=32, default="flyer_url")
     qr_target_value = models.URLField(max_length=512, blank=True)
@@ -46,11 +43,6 @@ class Flyer(models.Model):
     class Meta:
         db_table = "flyers_flyer"
         constraints = [
-            # Reward amount must be positive when rewards are enabled.
-            CheckConstraint(
-                condition=Q(reward_enabled=False) | Q(reward_amount_cents__gt=0),
-                name="flyer_reward_amount_positive",
-            ),
             # One active flyer per pet at a time is a product rule enforced in services;
             # here we keep the DB honest about unique QR targets per flyer row.
             UniqueConstraint(fields=["id"], name="flyer_unique_id"),

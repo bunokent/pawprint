@@ -91,7 +91,6 @@ export async function createTestFlyer(
     location?: string;
     locationLat?: number;
     locationLng?: number;
-    rewardAmountCents?: number;
   } = {},
 ): Promise<string> {
   const mode = opts.mode ?? "emergency";
@@ -131,11 +130,6 @@ export async function createTestFlyer(
   if (opts.location) flyerPayload.last_seen_location = opts.location;
   if (opts.locationLat !== undefined) flyerPayload.location_lat = opts.locationLat;
   if (opts.locationLng !== undefined) flyerPayload.location_lng = opts.locationLng;
-  if (opts.rewardAmountCents) {
-    flyerPayload.reward_enabled = true;
-    flyerPayload.reward_amount_cents = opts.rewardAmountCents;
-    flyerPayload.reward_currency = "PHP";
-  }
   const flyerResp = await page.request.post(`${API}/flyers/new`, {
     headers: { ...headers, "Content-Type": "application/json" },
     data: JSON.stringify(flyerPayload),

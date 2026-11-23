@@ -4,9 +4,7 @@ import pytest
 
 from apps.flyers.factories import FlyerFactory
 from apps.pets.factories import PetFactory, PetPhotoFactory
-from apps.rewards.factories import RewardTransactionFactory
 from apps.users.factories import UserFactory
-from apps.webhooks.factories import WebhookEventFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -38,14 +36,3 @@ def test_flyer_factory():
     flyer = FlyerFactory()
     assert flyer.pet is not None
     assert flyer.creator == flyer.pet.owner
-
-
-def test_reward_transaction_factory():
-    tx = RewardTransactionFactory()
-    assert tx.amount_cents > 0
-    assert tx.provider_reference
-
-
-def test_webhook_event_factory():
-    event = WebhookEventFactory()
-    assert event.event_id

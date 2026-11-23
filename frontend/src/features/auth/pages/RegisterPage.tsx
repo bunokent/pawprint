@@ -70,7 +70,7 @@ export function RegisterPage() {
           Register free
         </h1>
         <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
-          One account to post lost-pet alerts, share adoptable pets, and fund rewards.
+          One account to post lost-pet alerts and share adoptable pets.
         </p>
 
         <div className="card" style={{ padding: 28 }} data-enter="3">

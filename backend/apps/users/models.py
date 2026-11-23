@@ -23,7 +23,6 @@ class User(AbstractUser):
     avatar_path = models.CharField(max_length=512, blank=True)
     google_id = models.CharField(max_length=64, unique=True, null=True, blank=True)
     email_verified = models.BooleanField(default=False)
-    stripe_customer_id = models.CharField(max_length=128, unique=True, null=True, blank=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []  # type: ignore[misc]

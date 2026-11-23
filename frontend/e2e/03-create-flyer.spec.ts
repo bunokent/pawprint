@@ -3,9 +3,9 @@ import { API, fixture, login } from "./helpers";
 
 /**
  * Journey 3 — create an emergency flyer end-to-end:
- * login → builder (photo gate → pet form → details/reward) → publish → detail page.
+ * login → builder (photo gate → pet form → details) → publish → detail page.
  */
-test("registered user publishes a lost-pet flyer with a reward", async ({ page }) => {
+test("registered user publishes a lost-pet flyer", async ({ page }) => {
   await login(page);
 
   await page.goto("/builder?mode=emergency");
@@ -34,26 +34,22 @@ test("registered user publishes a lost-pet flyer with a reward", async ({ page }
   await page.locator("#pet-age").fill("3");
   await page.locator("#pet-tags").fill("friendly, good with kids");
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("heading", { name: "Flyer details & reward" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Flyer details" })).toBeVisible();
 
-  // Step 3 — flyer details + reward (checkbox is on by default for emergency mode).
+  // Step 3 — flyer details.
   await page.locator("#flyer-loc").fill("Makati City");
   await page.locator("#flyer-marks").fill("White patch on chest");
   await page.locator("#flyer-phone").fill("09171234567");
-  await expect(page.locator("#flyer-reward")).toBeVisible();
-  await page.locator("#flyer-reward").fill("1500");
   await page.getByRole("button", { name: "Publish flyer" }).click();
 
   // Lands on the new flyer's public detail page.
   await page.waitForURL(/\/flyers\/[0-9a-f-]{36}$/, { timeout: 60_000 });
   await expect(page.getByRole("heading", { name: "Lost pet: Rex E2E" })).toBeVisible();
   await expect(page.getByText("Makati City")).toBeVisible();
-  await expect(page.getByText(/Reward for safe return/)).toBeVisible();
   await expect(page.getByRole("button", { name: /Share flyer/ })).toBeVisible();
   // Owner-only controls are visible to the creator (delete is unconditional;
   // "Mark reunited" appears once the async A4 export flips status to active).
   await expect(page.getByRole("button", { name: "Delete flyer" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fund reward" })).toBeVisible();
 
   // The flyer is publicly readable through the API as a guest.
   const id = page.url().split("/flyers/")[1];
@@ -62,6 +58,5 @@ test("registered user publishes a lost-pet flyer with a reward", async ({ page }
   const flyer = await resp.json();
   expect(flyer.pet.name).toBe("Rex E2E");
   expect(flyer.mode).toBe("emergency");
-  expect(flyer.reward_amount_cents).toBe(150_000);
   expect(flyer.qr_target_value).toContain(`/flyers/${id}`);
 });

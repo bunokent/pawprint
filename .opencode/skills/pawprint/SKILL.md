@@ -8,13 +8,13 @@ description: Engineering and UI conventions for PawPrint. Always follow the `tas
 ## UI & Visual Design Mandate (`taste` skill)
 - **Read and enforce the `taste` skill** on every frontend task and A4 flyer layout:
   - Craft an editorial, trustworthy, emotionally resonant aesthetic tailored to pet rescue and emergency recovery.
-  - Maintain clear visual distinction between **Emergency Lost-Pet Mode** (urgent crimson/amber accents, high-contrast scannability, prominent reward & last-seen badges) and **Adoption Outreach Mode** (warm sage/teal/terracotta accents, personality tags, welcoming shelter/foster framing).
+  - Maintain clear visual distinction between **Emergency Lost-Pet Mode** (urgent crimson/amber accents, high-contrast scannability, prominent last-seen badges) and **Adoption Outreach Mode** (warm sage/teal/terracotta accents, personality tags, welcoming shelter/foster framing).
   - Enforce strict typographic hierarchy, balanced padding, accessible contrast ratios, tactile hover/focus states, and clean skeleton/empty/error states.
 
 ## User Access Model (STRICT — 2 Modes Only)
 - **No Admin System**: Do NOT include `django.contrib.admin`, admin dashboards, staff flags, or moderation strike/ban systems.
 - **Guest Mode**: Unauthenticated visitors (`AllowAny` on read-only endpoints) can browse lost/adoptable flyers, search/filter pets, view flyer details, and scan QR codes.
-- **Registered Mode**: Single unified user model (`User`) supporting both standard email registration and **Google/Gmail OAuth 2.0 registration & login**. Any authenticated user (`IsAuthenticated`) can create lost-pet alerts, post adoptable pets (acting as owner, foster, or shelter volunteer), generate flyers, and fund rewards. Object-level mutations (`PATCH`/`DELETE`) are restricted to the flyer's creator (`IsOwnerOrReadOnly`).
+- **Registered Mode**: Single unified user model (`User`) supporting both standard email registration and **Google/Gmail OAuth 2.0 registration & login**. Any authenticated user (`IsAuthenticated`) can create lost-pet alerts, post adoptable pets (acting as owner, foster, or shelter volunteer), and generate flyers. Object-level mutations (`PATCH`/`DELETE`) are restricted to the flyer's creator (`IsOwnerOrReadOnly`).
 
 ## Django 5.2+ & ORM Best Practices (MANDATORY)
 - **Strict Type Annotations (Python 3.12+)**: Type-annotate all services, selectors, DTOs (`@dataclass(frozen=True)`), and views.
@@ -22,9 +22,9 @@ description: Engineering and UI conventions for PawPrint. Always follow the `tas
   - `selectors/` handles ALL database reads using optimized QuerySets: `select_related()` for FKs/OneToOne, `prefetch_related()` for reverse/M2M, `only()`/`defer()` where appropriate, PostgreSQL `SearchVector` + GIN index for full-text search (never `icontains` table scans), and cursor pagination.
   - `services/` handles ALL writes wrapped in `@transaction.atomic`, external API calls, and Celery task dispatches.
   - Views/ViewSets (`APIView` / `GenericViewSet`) stay thin (≤15 lines): validate via Serializer → call Selector/Service → return Serialized response. Zero raw ORM queries in views.
-- **Database Integrity**: Use `UniqueConstraint`, `CheckConstraint`, composite indexes, and `select_for_update()` on financial/idempotency writes.
+- **Database Integrity**: Use `UniqueConstraint`, `CheckConstraint`, and composite indexes; keep all write paths wrapped in atomic transactions.
 - **OpenAPI Schema**: `drf-spectacular` generates `schema.yml` automatically for `openapi-typescript`.
-- **Celery Routing**: Centralized `CELERY_TASK_ROUTES` in `config/settings.py` (`flyers`, `webhooks`, `images`).
+- **Celery Routing**: Centralized `CELERY_TASK_ROUTES` in `config/settings.py` (`flyers`, `images`).
 
 ## React 19 + TypeScript + Axios Best Practices (MANDATORY)
 - **Centralized Axios Instance (`src/lib/api/client.ts`)**:
@@ -56,5 +56,5 @@ description: Engineering and UI conventions for PawPrint. Always follow the `tas
 
 ## Testing & Living Documentation (MANDATORY)
 - Backend: `pytest -n auto --cov=apps --cov-fail-under=80` (100% coverage on Services, Drivers, and `PetDetectionService`). Assert query count ceilings (`django_assert_max_num_queries`) on list/detail endpoints.
-- Frontend: `npm run test:run` (≥70% overall, 100% on `features/rewards`) + Playwright E2E for all 6 critical journeys.
+- Frontend: `npm run test:run` (≥70% overall) + Playwright E2E for all 8 critical journeys.
 - Update all 12 sections of `docs/DOCUMENTATION.md` (including the **Tutorial** build log) and regenerate `docs/documentation.pdf` via `npm run docs:pdf` before committing each phase.

@@ -55,8 +55,6 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.pets",
     "apps.flyers",
-    "apps.rewards",
-    "apps.webhooks",
     "apps.vision",
 ]
 
@@ -198,10 +196,8 @@ CHANNEL_LAYERS = channel_layers
 
 CELERY_TASK_ROUTES = {
     "apps.flyers.tasks.*": {"queue": "flyers"},
-    "apps.webhooks.tasks.*": {"queue": "webhooks"},
     "apps.vision.tasks.*": {"queue": "images"},
     "apps.pets.tasks.*": {"queue": "images"},
-    "apps.rewards.tasks.*": {"queue": "webhooks"},
 }
 CELERY_TASK_DEFAULT_QUEUE = "default"
 
@@ -230,13 +226,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 
 # ---------------------------------------------------------------------------
-# Payments (test mode)
+# Frontend (QR target URLs)
 # ---------------------------------------------------------------------------
-STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_dev")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_dev")
-PAYMONGO_SECRET_KEY = os.environ.get("PAYMONGO_SECRET_KEY", "sk_test_dev")
-PAYMONGO_WEBHOOK_SECRET = os.environ.get("PAYMONGO_WEBHOOK_SECRET", "whsec_dev")
-PAYMONGO_BASE_URL = os.environ.get("PAYMONGO_BASE_URL", "https://api.paymongo.com")
 FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")
 
 # ---------------------------------------------------------------------------

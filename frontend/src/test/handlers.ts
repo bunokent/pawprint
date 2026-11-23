@@ -4,8 +4,6 @@ import type { components } from "@/lib/api/schema";
 type User = components["schemas"]["User"];
 type Pet = components["schemas"]["Pet"];
 type Flyer = components["schemas"]["Flyer"];
-type RewardInit = components["schemas"]["RewardInit"];
-type RewardStatus = components["schemas"]["RewardStatus"];
 
 export const mockUser = (overrides: Partial<User> = {}): User => ({
   id: "11111111-1111-1111-1111-111111111111",
@@ -49,9 +47,6 @@ export const mockFlyer = (overrides: Partial<Flyer> = {}): Flyer => ({
   distinctive_markings: "white patch on left ear",
   contact_phone: "0917 000 0000",
   contact_email: "mia@example.com",
-  reward_enabled: true,
-  reward_amount_cents: 500000,
-  reward_currency: "PHP",
   qr_target_type: "flyer_url",
   qr_target_value: "http://localhost:5173/flyers/33333333-3333-3333-3333-333333333333",
   photo_url: "http://localhost:8000/media/pets/photos/bento.jpg",
@@ -74,8 +69,6 @@ export const mockFoundFlyer = (overrides: Partial<Flyer> = {}): Flyer =>
     last_seen_date: "2026-11-17T07:00:00Z",
     location_lat: 14.5647,
     location_lng: 120.9989,
-    reward_enabled: false,
-    reward_amount_cents: 0,
     photo_url: "http://localhost:8000/media/pets/photos/miso.jpg",
     photo_urls: [
       "http://localhost:8000/media/pets/photos/miso.jpg",
@@ -84,34 +77,6 @@ export const mockFoundFlyer = (overrides: Partial<Flyer> = {}): Flyer =>
     ],
     ...overrides,
   });
-
-export const mockRewardInit = (overrides: Partial<RewardInit> = {}): RewardInit => ({
-  transaction_id: "44444444-4444-4444-4444-444444444444",
-  provider: "gcash",
-  status: "pending",
-  amount_cents: 500000,
-  currency: "PHP",
-  checkout_url: "",
-  qr_payload: "qrph://pay?ref=abc123",
-  ...overrides,
-});
-
-export const mockRewardStatus = (overrides: Partial<RewardStatus> = {}): RewardStatus => ({
-  id: "44444444-4444-4444-4444-444444444444",
-  provider: "gcash",
-  status: "pending",
-  amount_cents: 500000,
-  currency: "PHP",
-  provider_reference: "pi_dev_123",
-  created_at: "2026-11-16T10:00:00Z",
-  ...overrides,
-});
-
-/** Mutable reward-status map so tests can flip a transaction mid-poll. */
-export const rewardStatusStore = new Map<string, RewardStatus>();
-export function setRewardStatus(id: string, status: Partial<RewardStatus>) {
-  rewardStatusStore.set(id, { ...mockRewardStatus({ id }), ...status });
-}
 
 /** When true, the photo endpoint answers 422 no_pet_detected. */
 export let uploadRejects = false;
@@ -175,7 +140,7 @@ export const handlers = [
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
     let results = [
       mockFlyer(),
-      mockFlyer({ id: "55555555-5555-5555-5555-555555555555", mode: "outreach", pet: mockPet({ name: "Mochi", species: "cat", status: "adoptable" }), status: "active", reward_enabled: false, reward_amount_cents: 0 }),
+      mockFlyer({ id: "55555555-5555-5555-5555-555555555555", mode: "outreach", pet: mockPet({ name: "Mochi", species: "cat", status: "adoptable" }), status: "active" }),
       mockFoundFlyer(),
     ];
     if (mode) results = results.filter((f) => f.mode === mode);
@@ -235,25 +200,6 @@ export const handlers = [
   http.post("*/api/pets", async ({ request }) => {
     const body = (await request.json()) as Partial<Pet>;
     return HttpResponse.json(mockPet({ ...body, id: "66666666-6666-6666-6666-666666666666" }), { status: 201 });
-  }),
-
-  http.post("*/api/rewards", async ({ request }) => {
-    const body = (await request.json()) as { flyer_id: string; provider: string; amount_cents?: number; currency?: string };
-    const txId = "44444444-4444-4444-4444-444444444444";
-    setRewardStatus(txId, { id: txId, provider: body.provider as "stripe" | "gcash", status: "pending", amount_cents: body.amount_cents ?? 500000, currency: body.currency ?? "PHP" });
-    if (body.provider === "stripe") {
-      return HttpResponse.json(mockRewardInit({ transaction_id: txId, provider: "stripe", checkout_url: "https://checkout.stripe.com/test/pay/cs_test_123", qr_payload: "" }), { status: 201 });
-    }
-    return HttpResponse.json(mockRewardInit({ transaction_id: txId }), { status: 201 });
-  }),
-
-  http.get("*/api/rewards/mine", () => HttpResponse.json([mockRewardStatus()])),
-
-  http.get("*/api/rewards/:id/status", ({ params }) => {
-    const id = String(params.id);
-    const tx = rewardStatusStore.get(id);
-    if (!tx) return err(404, "not_found", "Transaction not found.");
-    return HttpResponse.json(tx);
   }),
 
   // Nominatim (OpenStreetMap) geocoding used by the Leaflet location picker —

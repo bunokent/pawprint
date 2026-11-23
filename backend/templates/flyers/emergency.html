@@ -21,10 +21,6 @@
   }
   .band h1 { font-size: 34pt; font-weight: 900; letter-spacing: 0.04em; line-height: 1.05; }
   .band .sub { font-size: 12pt; font-weight: 600; opacity: 0.94; line-height: 1.3; }
-  .reward {
-    background: #f59e0b; color: #451a03; font-weight: 800; font-size: 13pt;
-    padding: 3.5mm 8mm; border-radius: 3mm; text-align: center; white-space: nowrap;
-  }
   .corner-accent {
     position: absolute; width: 13mm; height: 13mm; border-radius: 50%; top: 7mm; right: 11mm;
     z-index: 0; opacity: 0.55;
@@ -81,9 +77,6 @@
       <h1>{% if flyer.mode == "found" %}FOUND PET{% else %}LOST PET{% endif %}</h1>
       <div class="sub">{% if flyer.mode == "found" %}Help {{ flyer.pet.name|default:"this pet" }} get back home{% else %}Help {{ flyer.pet.name }} come home{% endif %}</div>
     </div>
-    {% if flyer.reward_enabled and flyer.reward_amount_cents %}
-    <div class="reward">REWARD<br>{{ flyer.reward_amount_cents | floatformat:0 }} {{ flyer.reward_currency }}</div>
-    {% endif %}
   </div>
   <div class="photo">
     {% if photo_url %}<img src="{{ photo_url }}" alt="{{ flyer.pet.name }}">{% else %}<div class="photo-fallback" role="img" aria-label="No photo uploaded"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="#7f1d1d"><ellipse cx="27" cy="22" rx="8" ry="11"/><ellipse cx="50" cy="15" rx="8" ry="11"/><ellipse cx="73" cy="22" rx="8" ry="11"/><ellipse cx="13" cy="45" rx="6.5" ry="9"/><path d="M50 35c-13 0-24 8-24 20 0 10 7 18 24 26 17-8 24-16 24-26 0-12-11-20-24-20z"/></svg></div>{% endif %}

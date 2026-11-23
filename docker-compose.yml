@@ -3,7 +3,7 @@
 #                             its own postgres :5433 / redis :6379 / mailpit :1025/:8025 as
 #                             host services, so publishing those would conflict)
 #   web      Django API + migrations   http://localhost:8000
-#   celery   worker on flyers,webhooks,images,default queues
+#   celery   worker on flyers,images,default queues
 #   frontend Vite dev server          http://localhost:5173  (proxies /api,/media,/ws to web)
 #
 # Dev email goes to the HOST mailpit (host.docker.internal:1025 — same mailpit the host-only
@@ -102,7 +102,7 @@ services:
         condition: service_healthy
       web:
         condition: service_started
-    command: celery -A config worker -Q flyers,webhooks,images,default -l info
+    command: celery -A config worker -Q flyers,images,default -l info
 
   frontend:
     build:

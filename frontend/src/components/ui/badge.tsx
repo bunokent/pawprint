@@ -19,14 +19,6 @@ export function ModeBadge({ mode, className }: { mode?: Mode } & HTMLAttributes<
   );
 }
 
-export function RewardBadge({ amount, currency }: { amount: number; currency: string }) {
-  return (
-    <span className="badge badge--reward">
-      Reward {new Intl.NumberFormat("en-PH", { style: "currency", currency: currency || "PHP" }).format(amount / 100)}
-    </span>
-  );
-}
-
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     active: "badge--outreach",

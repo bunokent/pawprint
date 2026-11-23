@@ -200,7 +200,7 @@ export function LoginPage() {
           Welcome back
         </h1>
         <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
-          Log in to post flyers and fund rewards.
+          Log in to post flyers and help pets get home.
         </p>
 
         <div className="card" style={{ padding: 28 }} data-enter="3">

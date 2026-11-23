@@ -4,7 +4,7 @@ import { API, fixture, login } from "./helpers";
 /**
  * Journey 9 — found-pet posting mirrors the lost flow:
  * login → /builder?mode=found → photo gate → pet form (no name/age/tags — the
- * owner is unknown) → location/date/description (no reward) → publish → public
+ * owner is unknown) → location/date/description → publish → public
  * "Found pet" detail page + map endpoint includes it.
  */
 test("registered user publishes a found-pet flyer", async ({ page }) => {
@@ -37,8 +37,7 @@ test("registered user publishes a found-pet flyer", async ({ page }) => {
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Found-pet details" })).toBeVisible();
 
-  // Step 3 — found fields; no reward toggle in found mode.
-  await expect(page.getByLabel("Offer a finder's reward")).toHaveCount(0);
+  // Step 3 — found fields.
   await page.locator("#flyer-loc-found").fill("University Ave, Diliman");
   await page.locator("#flyer-date-found").fill("2026-11-18T09:30");
   await page.locator("#flyer-desc").fill("Friendly brown dog, blue collar");
@@ -52,7 +51,6 @@ test("registered user publishes a found-pet flyer", async ({ page }) => {
   await expect(page.getByText(/University Ave, Diliman/)).toBeVisible();
   await expect(page.getByText("Description")).toBeVisible();
   await expect(page.getByText(/Friendly brown dog, blue collar/)).toBeVisible();
-  await expect(page.getByText(/Reward for safe return/)).toHaveCount(0);
 
   // Publicly readable as a guest; mode is "found" and pet status is "found".
   const id = page.url().split("/flyers/")[1];
@@ -63,7 +61,6 @@ test("registered user publishes a found-pet flyer", async ({ page }) => {
   expect(flyer.pet.status).toBe("found");
   expect(flyer.pet.name).toBe(""); // found pets are created without a name
   expect(flyer.last_seen_location).toBe("University Ave, Diliman");
-  expect(flyer.reward_enabled).toBe(false);
 
   // Registered-only: guests get the register prompt on the builder.
   await page.context().clearCookies();

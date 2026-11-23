@@ -42,7 +42,6 @@ export default defineConfig({
       reporter: ["text", "html"],
       thresholds: {
         global: { lines: 70, functions: 70, branches: 60, statements: 70 },
-        "src/features/rewards/**": { lines: 100, functions: 100, branches: 100, statements: 100 },
       },
       include: ["src/**/*.{ts,tsx}"],
     },

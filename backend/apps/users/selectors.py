@@ -12,7 +12,7 @@ from .models import User
 def select_user_queryset() -> QuerySet[User]:
     return User.objects.all().only(
         "id", "email", "display_name", "phone", "avatar_path", "google_id",
-        "email_verified", "stripe_customer_id", "is_active", "date_joined",
+        "email_verified", "is_active", "date_joined",
     )
 
 
