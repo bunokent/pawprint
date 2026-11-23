@@ -26,6 +26,9 @@ dependencies = [
     "httpx>=0.28",
     "ultralytics>=8.3",
     "weasyprint>=63.0",
+    # A4@300dpi PNG flyer export (apps.flyers.tasks.render_flyer_png) — runtime dep of
+    # the celery generate_flyer_assets task, so it belongs here, not in dev extras.
+    "playwright>=1.49",
 ]
 
 [project.optional-dependencies]

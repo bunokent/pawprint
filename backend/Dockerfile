@@ -37,6 +37,9 @@ RUN uv pip install --system ./backend
 # (its check_requirements would pip-install it on first use) — bake it in instead.
 # Direct git URL: no Hugging Face involved.
 RUN uv pip install --system "git+https://github.com/ultralytics/CLIP.git"
+# Chromium for the A4@300dpi PNG flyer export (celery generate_flyer_assets ->
+# apps.flyers.tasks.render_flyer_png imports playwright at runtime).
+RUN python -m playwright install --with-deps chromium
 
 # Bake the vision weights (direct download, sha256-verified, no HF token) into
 # /opt/weights so the ./backend live-reload bind mount never shadows them.

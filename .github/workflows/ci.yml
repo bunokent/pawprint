@@ -138,8 +138,11 @@ jobs:
         run: cd backend && uv venv && uv pip install --python .venv/bin/python '.[dev]'
       - name: Install frontend dependencies
         run: cd frontend && npm ci
-      - name: Install Playwright chromium
+      - name: Install Playwright chromium (frontend tests)
         run: cd frontend && npx playwright install --with-deps chromium
+      - name: Install Playwright chromium (backend A4 PNG export)
+        # python-playwright ships its own browser build; the npm one above is for @playwright/test
+        run: cd backend && .venv/bin/python -m playwright install --with-deps chromium
       - name: Download vision weights (direct GitHub/OpenAI, no HF token)
         run: sh backend/scripts/download_weights.sh
       - name: Cache YOLO-World model weights

@@ -56,8 +56,9 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
    (npm dependency, no API key) over **CartoCDN Voyager** tiles (outline-free basemap,
   no country/island borders), with Nominatim geocoding (address search + reverse geocode), for the location
   picker and `/map`.
-- **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
-  browser-side exports.
+- **Exports**: WeasyPrint A4 PDF + Playwright (python package, declared in
+  `pyproject.toml` main deps, Chromium baked into the Docker image and installed in CI)
+  for the A4@300dpi PNG; Pillow thumbnails.
 - **Infra**: **Docker Compose** (`docker-compose.yml`, `docker compose up` starts
   everything): `postgres:16` and `redis:7-alpine` run **internal-only** (no host ports —
   the dev machine already runs its own postgres :5433 / redis :6379 as host services, so
@@ -1228,6 +1229,17 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `.env`, which does not exist in CI checkouts — it now checks `.env` only when present
   (`.env.example` is always asserted), fixing the one CI failure on run 45145992959
   (174 passed @ 97.16%, only that test red).
+- **Phase 49** — Fix E2E `No module named 'playwright'`: `apps.flyers.tasks.render_flyer_png`
+  (A4@300dpi PNG export in the celery `generate_flyer_assets` task) imports
+  `playwright.sync_api` at runtime, but the package was never declared — it only worked
+  on machines where it had been pip-installed by hand. Added `playwright>=1.49` to
+  `backend/pyproject.toml` **main** dependencies (it is a runtime dep, not a dev extra),
+  a `python -m playwright install --with-deps chromium` step in the CI e2e job (the npm
+  `playwright install` only covers `@playwright/test`'s browser build), and the same
+  browser install in `backend/Dockerfile` so the compose `celery` container can render
+  flyer PNGs. Guard test `test_playwright_is_a_declared_runtime_dep_and_ci_installs_its_browser`
+  pins all three. Verified: **7 tests pass** in `test_weight_downloads.py`, ruff + mypy
+  clean, ci.yml valid YAML, `docker compose build` green with the new dep.
 
 **Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
 `apps/vision/services.py`);

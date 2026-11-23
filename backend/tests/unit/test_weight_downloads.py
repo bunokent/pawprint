@@ -68,10 +68,21 @@ def test_ci_pins_uv_install_to_backend_venv_and_downloads_weights_directly():
     assert 'HF_HUB_OFFLINE: "1"' in ci
 
 
+def test_playwright_is_a_declared_runtime_dep_and_ci_installs_its_browser():
+    # apps.flyers.tasks.render_flyer_png imports playwright at runtime (celery PNG export);
+    # E2E failed with "No module named 'playwright'" when it was missing from pyproject.
+    pyproject = (ROOT / "backend/pyproject.toml").read_text()
+    assert '"playwright>=' in pyproject
+    ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    assert "python -m playwright install --with-deps chromium" in ci
+
+
 def test_backend_dockerfile_bakes_weights_directly_and_disables_hf():
     dockerfile = (ROOT / "backend/Dockerfile").read_text()
     assert "download_weights.sh" in dockerfile  # baked at build time, direct download
     assert "HF_HUB_OFFLINE=1" in dockerfile  # hard guarantee: no HF token usage at runtime
     assert "TRANSFORMERS_OFFLINE=1" in dockerfile
+    # celery renders A4 PNGs via python-playwright inside the container
+    assert "playwright install" in dockerfile
     lowered = dockerfile.lower()
     assert "hf_token" not in lowered
