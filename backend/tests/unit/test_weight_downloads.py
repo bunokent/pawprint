@@ -30,13 +30,18 @@ def test_download_script_never_references_hugging_face_or_tokens():
 
 
 def test_env_files_have_no_hf_token_and_force_offline_hf():
-    for name in (".env", ".env.example"):
-        text = (ROOT / name).read_text()
-        assert not re.search(r"(?im)^\s*HF_TOKEN\s*=", text), f"{name} must not define HF_TOKEN"
-        assert "huggingface.co" not in text.lower(), f"{name} must not reference huggingface.co"
+    # .env.example is committed; .env is gitignored and only exists on dev machines.
+    env_files = [ROOT / ".env.example"]
+    if (ROOT / ".env").exists():
+        env_files.append(ROOT / ".env")
+    for path in env_files:
+        text = path.read_text()
+        assert not re.search(r"(?im)^\s*HF_TOKEN\s*=", text), f"{path.name} must not define HF_TOKEN"
+        assert "huggingface.co" not in text.lower(), f"{path.name} must not reference huggingface.co"
         assert "hf_hub_download" not in text.lower()
     # .env pins HF offline mode so no library can phone home with a token
-    assert re.search(r"(?im)^HF_HUB_OFFLINE=1$", (ROOT / ".env").read_text())
+    if (ROOT / ".env").exists():
+        assert re.search(r"(?im)^HF_HUB_OFFLINE=1$", (ROOT / ".env").read_text())
 
 
 def test_docker_compose_runs_web_celery_and_frontend():

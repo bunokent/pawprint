@@ -1224,7 +1224,10 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   `test_ci_pins_uv_install_to_backend_venv_and_downloads_weights_directly` pins the
   `--python .venv/bin/python` fix, the direct weight download, and the offline flags.
   Verified: **6 tests pass** in `test_weight_downloads.py`, ruff + mypy clean, ci.yml
-  parses as valid YAML.
+  parses as valid YAML. Follow-up: the env-file guard test read the gitignored root
+  `.env`, which does not exist in CI checkouts — it now checks `.env` only when present
+  (`.env.example` is always asserted), fixing the one CI failure on run 45145992959
+  (174 passed @ 97.16%, only that test red).
 
 **Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
