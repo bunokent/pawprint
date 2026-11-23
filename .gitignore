@@ -38,3 +38,4 @@ frontend/playwright-report/
 
 # OS
 .DS_Store
+backend/weights/

@@ -1,8 +1,14 @@
 # PawPrint dev stack — `docker compose up` starts everything:
-#   postgres (:5433 host) · redis (:6379) · mailpit (:1025/:8025)
+#   postgres · redis          internal-only (no host ports — the dev machine already runs
+#                             its own postgres :5433 / redis :6379 / mailpit :1025/:8025 as
+#                             host services, so publishing those would conflict)
 #   web      Django API + migrations   http://localhost:8000
 #   celery   worker on flyers,webhooks,images,default queues
 #   frontend Vite dev server          http://localhost:5173  (proxies /api,/media,/ws to web)
+#
+# Dev email goes to the HOST mailpit (host.docker.internal:1025 — same mailpit the host-only
+# setup uses). On a machine without a host mailpit: `docker compose --profile mailpit up`
+# with COMPOSE_EMAIL_HOST=mailpit for a fully self-contained stack.
 #
 # Secrets come from the root .env (env_file); the `environment:` blocks below
 # override host-local addresses with in-network service names.
@@ -12,8 +18,6 @@ services:
   postgres:
     image: postgres:16
     env_file: .env
-    ports:
-      - "5433:5432" # host tooling keeps using 127.0.0.1:5433 from .env
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -24,8 +28,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -34,8 +36,10 @@ services:
       timeout: 3s
       retries: 10
 
+  # Optional self-contained mailpit — only with: docker compose --profile mailpit up
   mailpit:
     image: axllent/mailpit:latest
+    profiles: ["mailpit"]
     ports:
       - "1025:1025" # dev SMTP
       - "8025:8025" # web UI
@@ -49,20 +53,21 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
-      EMAIL_HOST: mailpit
+      EMAIL_HOST: ${COMPOSE_EMAIL_HOST:-host.docker.internal}
       EMAIL_PORT: "1025"
-      # Weights are baked into the image by direct download — never via Hugging Face.
+      # Weights are baked into the image at /opt/weights by direct download —
+      # never via Hugging Face — and the ./backend bind mount does not touch /opt.
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
+      YOLO_MODEL_PATH: /opt/weights/yolov8s-worldv2.pt
       DJANGO_ALLOWED_HOSTS: "*"
       DJANGO_DEBUG: "1"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend
-      # Named volumes keep the baked-in weights even though ./backend is mounted over /app/backend.
-      - yolo-weights:/app/backend/yolov8s-worldv2.pt
-      - clip-weights:/app/weights/clip/ViT-B-32.pt
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,15 +84,17 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
-      EMAIL_HOST: mailpit
+      EMAIL_HOST: ${COMPOSE_EMAIL_HOST:-host.docker.internal}
       EMAIL_PORT: "1025"
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
+      YOLO_MODEL_PATH: /opt/weights/yolov8s-worldv2.pt
       DJANGO_ALLOWED_HOSTS: "*"
+      PAWPRINT_MIGRATE: "0" # web migrates; celery must not race it on a fresh DB
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app/backend
-      - yolo-weights:/app/backend/yolov8s-worldv2.pt
-      - clip-weights:/app/weights/clip/ViT-B-32.pt
     depends_on:
       postgres:
         condition: service_healthy
@@ -116,6 +123,4 @@ services:
 volumes:
   pgdata:
   redisdata:
-  yolo-weights:
-  clip-weights:
   frontend-node-modules:

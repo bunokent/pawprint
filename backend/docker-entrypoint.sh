@@ -25,6 +25,10 @@ for attempt in range(60):
 sys.exit(f"[entrypoint] postgres at {host}:{port} never became reachable")
 PY
 
-python manage.py migrate --noinput
+# Only the `web` service migrates (PAWPRINT_MIGRATE=1, the default); celery sets
+# PAWPRINT_MIGRATE=0 so two entrypoints never race `manage.py migrate` on a fresh DB.
+if [ "${PAWPRINT_MIGRATE:-1}" = "1" ]; then
+    python manage.py migrate --noinput
+fi
 
 exec "$@"

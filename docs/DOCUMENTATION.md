@@ -59,20 +59,26 @@ and Playwright E2E covers the 10 critical journeys end-to-end.
 - **Exports**: WeasyPrint A4@300dpi PNG/PDF flyers + Pillow thumbnails; Playwright for
   browser-side exports.
 - **Infra**: **Docker Compose** (`docker-compose.yml`, `docker compose up` starts
-  everything): `postgres:16` (published on host :5433 so the existing local tooling keeps
-  working), `redis:7-alpine` (:6379), `mailpit` (SMTP :1025, UI :8025), **`web`** — the
-  backend image (`backend/Dockerfile`) whose entrypoint waits for PostgreSQL, runs
-  `manage.py migrate`, then `python manage.py runserver 0.0.0.0:8000` (:8000),
-  **`celery`** — same image running `celery -A config worker -Q
-  flyers,webhooks,images,default -l info`, and **`frontend`** — `node:24-slim` running
-  `npm run dev -- --host 0.0.0.0` (Vite) on **http://localhost:5173**, with the server-side
-  proxy `PAWPRINT_API_URL=http://web:8000` so `/api`, `/media`, `/ws` reach the `web`
-  service inside the compose network. Secrets come from the root `.env` (`env_file`);
-  compose overrides `POSTGRES_HOST`/`REDIS_URL`/`EMAIL_HOST` with service names. The
+  everything): `postgres:16` and `redis:7-alpine` run **internal-only** (no host ports —
+  the dev machine already runs its own postgres :5433 / redis :6379 as host services, so
+  publishing them would conflict), **`web`** — the backend image (`backend/Dockerfile`)
+  whose entrypoint waits for PostgreSQL, runs `manage.py migrate` (only on `web`;
+  `celery` sets `PAWPRINT_MIGRATE=0` so the two never race on a fresh DB), then
+  `python manage.py runserver 0.0.0.0:8000` on **:8000**, **`celery`** — same image
+  running `celery -A config worker -Q flyers,webhooks,images,default -l info`, and
+  **`frontend`** — `node:24-slim` running `npm run dev -- --host 0.0.0.0` (Vite) on
+  **http://localhost:5173**, with the server-side proxy `PAWPRINT_API_URL=http://web:8000`
+  so `/api`, `/media`, `/ws` reach the `web` service inside the compose network. Dev email
+  goes to the **host** mailpit (`EMAIL_HOST=host.docker.internal:1025` via
+  `extra_hosts: host-gateway`; on a machine without one:
+  `COMPOSE_EMAIL_HOST=mailpit docker compose --profile mailpit up` for a self-contained
+  mailpit). Secrets come from the root `.env` (`env_file`); compose overrides
+  `POSTGRES_HOST`/`REDIS_URL`/`EMAIL_HOST`/`YOLO_MODEL_PATH` with in-network values. The
   vision weights are **baked into the backend image at build time** by
-  `backend/scripts/download_weights.sh` (direct download, sha256-pinned, **no Hugging
-  Face token** — see §8); named volumes keep them when `./backend` is mounted for live
-  reload. Host-only fallback (no Docker) is still documented in `.env.example`:
+  `backend/scripts/download_weights.sh` into `/opt/weights` (direct download,
+  sha256-pinned, **no Hugging Face token** — see §8), so the `./backend` live-reload bind
+  mount never shadows them; the ultralytics CLIP git package is baked in too.
+  Host-only fallback (no Docker) is still documented in `.env.example`:
   local PostgreSQL 16 on **127.0.0.1:5433**, valkey on **127.0.0.1:6379**, mailpit,
   `python manage.py runserver 8000` + `celery -A config worker ...` + `npm run dev`.
   Storage is Cloudinary, so no local object storage is needed. Host-side
@@ -1184,28 +1190,36 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   public Azure blob, verifying both against pinned sha256 checksums; `HF_TOKEN` was removed
   from the local `.env`, and `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1` make tokenless
   loading a hard guarantee (supersedes the Phase 35 HF_TOKEN note). (2) `docker compose up`
-  now runs the whole app: `postgres:16` (:5433), `redis:7-alpine`, `mailpit`, **`web`**
-  (`backend/Dockerfile`: python:3.12-slim, CPU-only torch via pyproject `pytorch-cpu`
-  source, weights baked in by the script, entrypoint waits for PG + migrates + runs
-  `python manage.py runserver 0.0.0.0:8000` on :8000), **`celery`** (same image,
-  `celery -A config worker -Q flyers,webhooks,images,default -l info`), and **`frontend`**
-  (`node:24-slim`, `npm run dev -- --host 0.0.0.0` on :5173 with `PAWPRINT_API_URL=http://web:8000`
-  for the Vite proxy). Root `.env` feeds `env_file`; compose overrides point at service
-  names; named volumes preserve the baked weights over the mounted `./backend`.
-  `docker compose config` clean, `docker compose build` green. Guard tests in
+  now runs the whole app: `postgres:16` + `redis:7-alpine` internal-only (host ports
+  5433/6379/1025 are already owned by the dev machine's own services), **`web`**
+  (`backend/Dockerfile`: python:3.12-slim + git, CPU-only torch via pyproject
+  `pytorch-cpu` source, the ultralytics CLIP git package baked in, weights downloaded by
+  the script into `/opt/weights`; entrypoint waits for PG, migrates — only on `web`, celery
+  sets `PAWPRINT_MIGRATE=0` — then runs `python manage.py runserver 0.0.0.0:8000` on :8000),
+  **`celery`** (same image, `celery -A config worker -Q flyers,webhooks,images,default -l
+  info`), and **`frontend`** (`node:24-slim`, `npm run dev -- --host 0.0.0.0` on :5173 with
+  `PAWPRINT_API_URL=http://web:8000` for the Vite proxy). Dev email uses the host mailpit
+  via `host.docker.internal` (`--profile mailpit` + `COMPOSE_EMAIL_HOST=mailpit` for a
+  self-contained mailpit). Root `.env` feeds `env_file`; compose overrides point at
+  service names and `YOLO_MODEL_PATH=/opt/weights/yolov8s-worldv2.pt` so the `./backend`
+  bind mount never shadows the baked weights. Guard tests in
   `backend/tests/unit/test_weight_downloads.py` pin the direct URLs, the checksums, the
-  absence of any HF token, and the web/celery/frontend services. Verified:
-  **5 new tests pass** (`pytest tests/unit/test_weight_downloads.py`), download script
-  re-run verifies both cached weights.
+  absence of any HF token, and the web/celery/frontend services. Verified live:
+  `docker compose up -d` — all 5 containers healthy/up, `GET :8000/api/health` →
+  `{"status":"ok"}`, same through the Vite proxy on `:5173/api/health`, frontend HTML 200,
+  guest `GET /api/flyers/` returns flyers, celery `ready` on
+  `redis://redis:6379/0`, and inside the web container both `_get_model()` (YOLOWorld) and
+  `_get_clip_model()` (CLIP) load from `/opt/weights` with `HF_TOKEN` absent — **5 guard
+  tests pass**, download script re-run verifies both cached weights.
 
 **Final status:** backend **169 passed @ 97.16%** (100% on all services/drivers incl.
 `apps/vision/services.py`);
 frontend **145 vitest tests** @ 86.01/78.40/83.44/87.46 + Playwright journeys
 green; `ruff` + `mypy` clean; `tsc -b` + `vite build` green; GitHub Actions
 CI with 4 jobs (lint / backend-test / frontend-test / e2e); dependencies run via
-`docker compose up` (PostgreSQL :5433, Redis :6379, Mailpit :1025/:8025, web :8000,
-celery worker, Vite dev :5173 — host-only fallback documented in `.env.example`);
-vision weights download directly with no Hugging Face token;
+`docker compose up` (internal PostgreSQL + Redis, web :8000, celery worker, Vite dev
+:5173, host mailpit via host.docker.internal — host-only fallback documented in
+`.env.example`); vision weights download directly with no Hugging Face token;
 vision = YOLO-World gate + CLIP species/breed/color only (no matching model);
 no notifications feature; no seed/demo data — all E2E journeys are self-contained;
 `/map` has mode + DB-species filters;

@@ -12,11 +12,11 @@ ENV PYTHONUNBUFFERED=1 \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
     YOLO_CONFIG_DIR=/tmp/ultralytics \
-    YOLO_WEIGHTS_DIR=/app/weights
+    YOLO_WEIGHTS_DIR=/opt/weights
 
 # curl (weight download), libgl/libglib (OpenCV), pango (WeasyPrint A4 exports)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl ca-certificates \
+        curl ca-certificates git \
         libgl1 libglib2.0-0 \
         libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
@@ -33,11 +33,19 @@ COPY backend/config backend/config
 COPY backend/manage.py backend/manage.py
 COPY backend/templates backend/templates
 RUN uv pip install --system ./backend
+# ultralytics' CLIP text encoder imports the `clip` package from GitHub at runtime
+# (its check_requirements would pip-install it on first use) — bake it in instead.
+# Direct git URL: no Hugging Face involved.
+RUN uv pip install --system "git+https://github.com/ultralytics/CLIP.git"
 
-# Bake the vision weights (direct download, sha256-verified, no HF token).
+# Bake the vision weights (direct download, sha256-verified, no HF token) into
+# /opt/weights so the ./backend live-reload bind mount never shadows them.
 COPY backend/scripts/download_weights.sh backend/scripts/download_weights.sh
 RUN sh backend/scripts/download_weights.sh \
-    && rm -rf /tmp/ultralytics
+    && mkdir -p /opt/weights/clip \
+    && mv backend/yolov8s-worldv2.pt /opt/weights/ \
+    && mv weights/clip/ViT-B-32.pt /opt/weights/clip/ \
+    && rm -rf /tmp/ultralytics /app/weights
 
 # Application code.
 COPY backend/ backend/
