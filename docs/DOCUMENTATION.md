@@ -426,7 +426,21 @@ retains static and build checks: `ruff check .` and `mypy apps` in `backend/`, p
 pushes and pull requests. Runtime Playwright remains a backend dependency because the
 flyer export task uses it to render A4 PNGs; it is not used as an E2E test runner.
 
+Container shell scripts are verified separately: `.gitattributes` pins `*.sh` to LF so a Windows
+checkout (`core.autocrlf=true`) cannot put CRLF into the Docker build context, and
+`backend/Dockerfile` strips any remaining CR before running the weight download or installing the
+entrypoint. Check with `git ls-files --eol '*.sh'` (expect `w/lf`) and `sh -n` on each script
+inside a Linux shell.
+
 ## 12. Tutorial (Living Build Log)
+
+- **Docker build: CRLF in shell scripts** — `docker compose up --build` failed at
+  `[celery 14/17]` with `backend/scripts/download_weights.sh: 10: set: Illegal option -`:
+  Windows had checked the scripts out as CRLF (`core.autocrlf=true`) although Git stores LF,
+  so dash read `set -eu\r` as an invalid option. Added `.gitattributes` (`*.sh text eol=lf`),
+  normalized both shell scripts to LF, and made `backend/Dockerfile` strip CR from the weight
+  script and the entrypoint at build time. Verified under Alpine with stubbed download and
+  checksum tools: both scripts pass `sh -n` and the download script completes end to end.
 
 - **Dark-mode usability review** — Added a compact avatar account menu for Profile settings and
   Log out; corrected dark-theme action contrast, map popup surfaces and map tiles, and photo-viewer

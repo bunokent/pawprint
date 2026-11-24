@@ -1,0 +1,4 @@
+# Shell scripts run inside Linux images, where CRLF breaks /bin/sh
+# (`set: illegal option -`). Force LF in the working tree on every platform.
+*.sh text eol=lf
+.gitattributes text eol=lf
