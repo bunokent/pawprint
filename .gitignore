@@ -16,6 +16,7 @@ node_modules/
 dist/
 coverage/
 .playwright/
+.taste-skill/
 
 # Django
 *.log

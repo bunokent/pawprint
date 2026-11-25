@@ -133,9 +133,9 @@ export function BuilderWizard() {
 
   if (checked && !user) {
     return (
-      <section style={{ padding: "72px 0" }}>
+      <section className="page-section">
         <div className="wrap" style={{ maxWidth: 520 }}>
-          <h1 className="t-h1" data-enter style={{ fontSize: "clamp(28px, 4vw, 40px)", marginBottom: 12 }}>
+          <h1 className="t-h1" data-enter style={{ marginBottom: 12 }}>
             Register to post a flyer
           </h1>
           <p className="t-lead" data-enter="2" style={{ marginBottom: 24 }}>
@@ -155,7 +155,7 @@ export function BuilderWizard() {
   }
 
   return (
-    <section style={{ padding: "64px 0" }}>
+    <section className="page-section">
       <div className="wrap" style={{ maxWidth: 720 }}>
         <p className="t-label" data-enter style={{ marginBottom: 8 }}>
           New flyer — step {step + 1} of 3
@@ -165,7 +165,7 @@ export function BuilderWizard() {
             <span key={i} className={`step-dot ${i === step ? "step-dot--on" : i < step ? "step-dot--done" : ""}`} />
           ))}
         </div>
-        <h1 className="t-h1" data-enter="2" style={{ fontSize: "clamp(28px, 4vw, 42px)", marginBottom: 32 }}>
+        <h1 className="t-h1" data-enter="2" style={{ marginBottom: 32 }}>
           {step === 0 && (mode === "emergency" ? "Report a lost pet" : mode === "found" ? "Report a found pet" : "Post an adoptable pet")}
           {step === 1 && (mode === "found" ? "Describe the found pet" : "Tell us about the pet")}
           {step === 2 && (mode === "found" ? "Found-pet details" : "Flyer details")}
@@ -204,8 +204,8 @@ function StepPhotoMode({
   onNext: () => void;
 }) {
   return (
-    <div className="card" style={{ padding: 28, display: "flex", flexDirection: "column", gap: 24 }} data-enter="3">
-      <div className="btn-row" role="group" aria-label="Flyer mode">
+    <div className="card form-card" style={{ display: "flex", flexDirection: "column", gap: 24 }} data-enter="3">
+      <div className="btn-row btn-row--inline" role="group" aria-label="Flyer mode">
         <Button
           type="button"
           variant={mode === "emergency" ? "emergency" : "secondary"}
@@ -317,8 +317,8 @@ function StepPet({
   }, initialStepState);
 
   return (
-    <div className="card" style={{ padding: 28 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+    <div className="card form-card">
+      <div className="step-head">
         <span className="t-label" style={{ color: "var(--color-muted)" }}>
           {mode === "found" ? "Describe the found pet" : "Tell us about the pet"}
         </span>
@@ -453,8 +453,8 @@ function StepFlyer({
   }
 
   return (
-    <div className="card" style={{ padding: 28 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+    <div className="card form-card">
+      <div className="step-head">
         <span className="t-label" style={{ color: "var(--color-muted)" }}>{found ? "Found-pet details" : "Flyer details"}</span>
         <Button type="button" variant="secondary" onClick={onBack}>
           ← Back

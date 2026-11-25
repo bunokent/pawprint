@@ -417,6 +417,14 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   outreach sage/teal/terracotta). The photo uploader uses a fixed 380px desktop rectangle (360px
   on phones), neutral/sage drop affordances, an animated processing overlay, accessible live status
   and progress semantics, and reduced-motion fallbacks.
+- Responsive system (`src/index.css` + `components/layout/AppShell.tsx`): every route shares one
+  fluid type scale, a 24px phone gutter (`.wrap`), section rhythm (`.page-section`, `.section-head`),
+  card/filter/map/modal grids, and a single rule set for 44px tap targets. On phones the compact
+  nav becomes a 44px Menu toggle plus a full-screen menu with 52px rows; filters, search, forms,
+  button rows and detail actions stack; the pet map canvas becomes a shorter pane with a
+  bottom-anchored popup; and long location lines wrap instead of clipping. Focus rings use the
+  theme's ink at 2–3px so they stay visible on both palettes, and lead text uses a stronger muted
+  token that clears 7:1 body-text contrast while ordinary captions keep the softer muted token.
 
 ## 11. Verification & CI
 
@@ -425,6 +433,14 @@ retains static and build checks: `ruff check .` and `mypy apps` in `backend/`, p
 `npm run lint` and `npm run build` in `frontend/`. GitHub Actions runs those checks on
 pushes and pull requests. Runtime Playwright remains a backend dependency because the
 flyer export task uses it to render A4 PNGs; it is not used as an E2E test runner.
+Responsive checks are browser-based rather than a test suite: the `taste` layout checker
+is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is run at
+1440/390 plus the 320px walk. The responsive pass reports PASS for `spill`,
+`off-viewport`, `collide`, `fold-card`, `tap-size`, `cut-text`, `overlap-text`, `row-gap`,
+`tab-wrap`, `text-contrast`, `focus-visible` and `focus-ring`; the generic software-page
+template checks that remain open (hero/section screen height, visual density, button
+styles, copy contract and moment) are documented in the Tutorial entry rather than
+silently waived.
 
 Container shell scripts are verified separately: `.gitattributes` pins `*.sh` to LF so a Windows
 checkout (`core.autocrlf=true`) cannot put CRLF into the Docker build context, and
@@ -433,6 +449,23 @@ entrypoint. Check with `git ls-files --eol '*.sh'` (expect `w/lf`) and `sh -n` o
 inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
+
+- **Mobile responsiveness & typography across all pages** — Reworked the shared frontend
+  system instead of scattering per-page overrides: a fluid phone type scale, 24px gutters,
+  stacked button rows/filters/forms, reusable section/card/map/modal classes, and a 44px
+  tap-target floor. `AppShell` now has a skip link, a real 44px Menu toggle and a full-screen
+  mobile menu with 52px rows and full-width account/theme actions; gallery filters and search,
+  the builder wizard, My Flyers tabs, auth/settings forms, flyer detail actions, the location
+  picker and share/modal controls all follow the same rhythm. Map popups become bottom panels
+  on phones, and flyer-card locations wrap instead of being ellipsised. Focus rings now use the
+  theme ink (2–3px) rather than low-contrast amber/sage tints, and `.t-lead` uses a stronger
+  muted token that clears 7:1 contrast. Verified `npm run lint`, `npm run build`, the layout
+  checker at 1440/1024/820/768/390/320 and the consistency quick pass at 1440/390: mobile
+  layout, tap-size, cut-text, contrast and keyboard-focus checks pass. The taste gate still
+  reports the pre-existing generic software-page contract FAILs (one-section-per-screen hero
+  height, visual density, button-style/copy rules, container structure and dealt moment);
+  those need a separate marketing-page redesign and are left open, not waived.
+  Generated checker profiles/crops stay in `.taste-skill/` and are git-ignored.
 
 - **Docker build: CRLF in shell scripts** — `docker compose up --build` failed at
   `[celery 14/17]` with `backend/scripts/download_weights.sh: 10: set: Illegal option -`:

@@ -34,12 +34,10 @@ export function MyFlyersPage() {
   ];
 
   return (
-    <section style={{ padding: "64px 0" }}>
+    <section className="page-section">
       <div className="wrap">
-        <div
-          style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}
-        >
-          <h1 className="t-h1" data-enter style={{ fontSize: "clamp(28px, 4vw, 42px)" }}>
+        <div className="section-head">
+          <h1 className="t-h1" data-enter>
             My flyers
           </h1>
           <Button asChild data-enter="2">
@@ -48,7 +46,7 @@ export function MyFlyersPage() {
         </div>
 
         {query.isLoading && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 24 }}>
+          <div className="flyer-grid">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i}>
                 <Skeleton className="photo-frame" style={{ aspectRatio: "4 / 3", borderRadius: 20 }} />
@@ -142,7 +140,6 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
         {canResolve && (
           <Button
             variant="sage"
-            style={{ height: 36, padding: "0 14px", fontSize: 14 }}
             disabled={updateFlyer.isPending}
             aria-live="polite"
             onClick={armOrResolve}
@@ -158,7 +155,6 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
         )}
         <Button
           variant="secondary"
-          style={{ height: 36, padding: "0 14px", fontSize: 14 }}
           disabled={deleteFlyer.isPending}
           onClick={() => setConfirmOpen(true)}
         >

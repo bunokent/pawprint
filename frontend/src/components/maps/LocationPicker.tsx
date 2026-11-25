@@ -173,18 +173,7 @@ export function LocationPicker(props: LocationPickerProps) {
           </ul>
         )}
       </div>
-      <div
-        ref={mapRef}
-        data-testid={`${id}-map`}
-        style={{
-          height: 260,
-          marginTop: 10,
-          borderRadius: 16,
-          border: "1px solid var(--color-line)",
-          overflow: "hidden",
-          background: "var(--color-surface)",
-        }}
-      />
+      <div ref={mapRef} data-testid={`${id}-map`} className="location-map" />
     </FieldShell>
   );
 }

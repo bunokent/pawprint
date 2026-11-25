@@ -14,20 +14,13 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      style={{
-        position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgb(28 20 16 / 0.5)", padding: 24,
-      }}
+      className="modal-backdrop"
       onClick={onClose}
     >
-      <div
-        className="card"
-        style={{ width: "min(520px, 100%)", padding: 24 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h2 className="t-h3">{title}</h2>
-          <button className="btn btn--secondary" style={{ width: 36, height: 36, padding: 0 }} onClick={onClose} aria-label="Close dialog">
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-head">
+          <h2 className="t-h3" style={{ margin: 0 }}>{title}</h2>
+          <button className="btn btn--secondary modal__close" onClick={onClose} aria-label="Close dialog">
             <X size={18} />
           </button>
         </div>

@@ -99,9 +99,9 @@ export function SettingsPage() {
   const displayName = user.display_name || user.email;
 
   return (
-    <section style={{ padding: "64px 0" }}>
+    <section className="page-section">
       <div className="wrap" style={{ maxWidth: 720 }}>
-        <h1 className="t-h1" data-enter style={{ fontSize: "clamp(28px, 4vw, 42px)", marginBottom: 8 }}>
+        <h1 className="t-h1" data-enter style={{ marginBottom: 8 }}>
           Profile settings
         </h1>
         <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
@@ -109,14 +109,14 @@ export function SettingsPage() {
         </p>
 
         <div
-          className="card"
-          style={{ padding: 28, display: "flex", flexDirection: "column", gap: 20, marginBottom: 24 }}
+          className="card form-card"
+          style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 24 }}
           data-enter="3"
         >
           <span className="t-label" style={{ color: "var(--color-muted)" }}>
             Profile picture
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+          <div className="avatar-row">
             <div style={{ position: "relative", display: "inline-flex" }}>
               <Avatar src={avatarPreview ?? user.avatar_url} name={displayName} size={96} />
               {avatarUpload.isPending && (
@@ -171,7 +171,7 @@ export function SettingsPage() {
           )}
         </div>
 
-        <div className="card" style={{ padding: 28 }} data-enter="4">
+        <div className="card form-card" data-enter="4">
           <form
             onSubmit={form.handleSubmit((v) => startTransition(() => submit(v)))}
             style={{ display: "flex", flexDirection: "column", gap: 16 }}

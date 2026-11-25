@@ -44,7 +44,7 @@ export function PetMapPage() {
   }, [allFlyers, filterMode, filterSpecies]);
 
   return (
-    <section style={{ padding: "64px 0" }}>
+    <section className="page-section">
       <div className="wrap">
         <h1 className="t-h1" data-enter style={{ marginBottom: 8 }}>
           Pet map
@@ -80,7 +80,7 @@ export function PetMapPage() {
           )}
         </div>
 
-        {query.isLoading && <Skeleton style={{ height: 480, borderRadius: 20 }} />}
+        {query.isLoading && <Skeleton className="map-skeleton" />}
         {query.isError && <ErrorBox message="Could not load the pet map. Please try again." />}
         {query.data && query.data.length === 0 && (
           <EmptyState title="No pinned pets yet">
@@ -163,41 +163,8 @@ function LeafletPins({ flyers }: { flyers: Flyer[] }) {
   const selected = groups.find((g) => g.key === selectedKey) ?? null;
   return (
     <div style={{ position: "relative" }}>
-      <div
-        ref={containerRef}
-        data-testid="pet-map"
-        style={{
-          height: "min(72vh, 660px)",
-          minHeight: 420,
-          borderRadius: 20,
-          border: "1px solid var(--color-line)",
-          boxShadow: "var(--shadow-card)",
-          overflow: "hidden",
-          background: "var(--color-surface)",
-        }}
-      />
-      <div
-        className="map-floating-status"
-        style={{
-          position: "absolute",
-          bottom: 16,
-          left: 16,
-          zIndex: 10,
-          background: "var(--color-paper)",
-          backdropFilter: "blur(8px)",
-          border: "1px solid var(--color-line)",
-          borderRadius: 999,
-          padding: "6px 14px",
-          boxShadow: "var(--shadow-card)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          fontSize: 12,
-          color: "var(--color-ink)",
-          fontWeight: 600,
-          pointerEvents: "none",
-        }}
-      >
+      <div ref={containerRef} data-testid="pet-map" className="pet-map__canvas" />
+      <div className="map-status">
         <span
           style={{
             width: 7,
@@ -217,29 +184,7 @@ function LeafletPins({ flyers }: { flyers: Flyer[] }) {
 /** Popup for a stack of pins at the same spot: every stacked flyer as a row. */
 function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () => void }) {
   return (
-    <div
-      className="card map-popup-card"
-      data-testid="map-pin-popup"
-      style={{
-        position: "absolute",
-        top: 16,
-        right: 16,
-        zIndex: 10,
-        width: 320,
-        maxWidth: "calc(100% - 32px)",
-        maxHeight: 400,
-        overflowY: "auto",
-        padding: 16,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        borderRadius: "var(--radius-lg)",
-        boxShadow: "var(--shadow-lift)",
-        border: "1.5px solid var(--color-line)",
-        background: "var(--color-paper)",
-        backdropFilter: "blur(12px)",
-      }}
-    >
+    <div className="card map-popup map-popup--stack map-popup-card" data-testid="map-pin-popup">
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <span className="badge badge--neutral" data-testid="stack-count-badge" style={{ fontWeight: 700 }}>
           ×{group.items.length} stacked here
@@ -248,15 +193,8 @@ function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () =>
           type="button"
           aria-label="Close popup"
           onClick={onClose}
-          style={{
-            marginLeft: "auto",
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            color: "var(--color-muted)",
-            display: "inline-flex",
-            padding: 4,
-          }}
+          className="map-popup__close"
+          style={{ marginLeft: "auto" }}
         >
           <X size={16} />
         </button>
@@ -310,7 +248,7 @@ function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () =>
             </div>
             <Button
               variant={flyer.mode === "found" ? "found" : "emergency"}
-              style={{ height: 32, padding: "0 12px", flex: "none", fontSize: 13 }}
+              className="map-popup__action"
               asChild
             >
               <Link to={`/flyers/${flyer.id}`}>Open</Link>
@@ -335,27 +273,7 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
   const displayName = petDisplayName(flyer.pet, flyer.mode);
 
   return (
-    <div
-      className="card map-popup-card"
-      data-testid="map-pin-popup"
-      style={{
-        position: "absolute",
-        top: 16,
-        right: 16,
-        zIndex: 10,
-        width: 300,
-        maxWidth: "calc(100% - 32px)",
-        borderRadius: "var(--radius-lg)",
-        boxShadow: "var(--shadow-lift)",
-        border: "1.5px solid var(--color-line)",
-        background: "var(--color-paper)",
-        backdropFilter: "blur(12px)",
-        padding: 0,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
+    <div className="card map-popup map-popup-card" data-testid="map-pin-popup">
       {(
         <div className="photo-frame" style={{ width: "100%", aspectRatio: "16 / 10", background: "var(--color-surface)", position: "relative" }}>
           <img
@@ -368,23 +286,7 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
             type="button"
             aria-label="Close popup"
             onClick={onClose}
-            style={{
-              position: "absolute",
-              top: 10,
-              right: 10,
-              width: 28,
-              height: 28,
-              borderRadius: "50%",
-              border: "1px solid var(--color-line)",
-              background: "var(--color-paper)",
-              backdropFilter: "blur(6px)",
-              cursor: "pointer",
-              color: "var(--color-ink)",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "var(--shadow-card)",
-            }}
+            className="map-popup__close map-popup__close--over-photo"
           >
             <X size={15} />
           </button>
@@ -400,15 +302,8 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
               type="button"
               aria-label="Close popup"
               onClick={onClose}
-              style={{
-                marginLeft: "auto",
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                color: "var(--color-muted)",
-                display: "inline-flex",
-                padding: 4,
-              }}
+              className="map-popup__close"
+              style={{ marginLeft: "auto" }}
             >
               <X size={16} />
             </button>
@@ -428,7 +323,7 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
           {flyer.last_seen_location ? ` · ${flyer.last_seen_location}` : ""}
         </p>
 
-        <Button variant={flyer.mode === "found" ? "found" : "emergency"} style={{ height: 40, width: "100%", marginTop: 4 }} asChild>
+        <Button variant={flyer.mode === "found" ? "found" : "emergency"} className="map-popup__action" style={{ marginTop: 4 }} asChild>
           <Link to={`/flyers/${flyer.id}`}>Show Full Details</Link>
         </Button>
       </div>
@@ -447,7 +342,7 @@ function PinList({ flyers, note }: { flyers: Flyer[]; note?: string }) {
           {note}
         </p>
       )}
-      <div data-testid="pin-list" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24 }}>
+      <div data-testid="pin-list" className="flyer-grid">
         {list.map((flyer) => (
           <div key={flyer.id} className="card flyer-card" style={{ display: "flex", flexDirection: "column" }}>
             <div className="photo-frame flyer-card__photo">

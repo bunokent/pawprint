@@ -85,7 +85,7 @@ export function ShareMenu({ info }: { info: FlyerShareInfo }) {
     <div className="share-menu" ref={rootRef}>
       <Button
         variant="secondary"
-        style={{ height: 40 }}
+       
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -161,13 +161,13 @@ export function ShareMenu({ info }: { info: FlyerShareInfo }) {
               </p>
               <div className="btn-row" style={{ marginTop: 16 }}>
                 {qrPng && (
-                  <Button variant="primary" style={{ height: 40 }} asChild>
+                  <Button variant="primary" asChild>
                     <a href={qrPng} download="pawprint-flyer-qr.png">
                       <Download size={16} /> Download QR (PNG)
                     </a>
                   </Button>
                 )}
-                <Button variant="secondary" style={{ height: 40 }} onClick={() => void copyToClipboard(info.url)}>
+                <Button variant="secondary" onClick={() => void copyToClipboard(info.url)}>
                   <Send size={16} /> Copy link
                 </Button>
               </div>

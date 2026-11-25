@@ -106,9 +106,9 @@ export function LoginPage() {
 
   if (isSigningIn && !callbackError) {
     return (
-      <section style={{ padding: "72px 0" }}>
+      <section className="page-section">
         <div className="wrap" style={{ maxWidth: 480 }}>
-          <h1 className="t-h1" data-enter style={{ fontSize: "clamp(28px, 4vw, 40px)", marginBottom: 8 }}>
+          <h1 className="t-h1" data-enter style={{ marginBottom: 8 }}>
             Welcome back
           </h1>
           <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
@@ -116,9 +116,8 @@ export function LoginPage() {
           </p>
 
           <div
-            className="card"
+            className="card auth-status-card"
             style={{
-              padding: "44px 32px",
               textAlign: "center",
               display: "flex",
               flexDirection: "column",
@@ -145,7 +144,7 @@ export function LoginPage() {
               <GoogleBrandIcon size={26} />
             </div>
 
-            <h2 className="t-h2" style={{ fontSize: "clamp(22px, 3.2vw, 28px)", marginBottom: 10 }}>
+            <h2 className="t-h2" style={{ marginBottom: 10 }}>
               Signing you in…
             </h2>
 
@@ -194,16 +193,16 @@ export function LoginPage() {
   }
 
   return (
-    <section style={{ padding: "72px 0" }}>
+    <section className="page-section">
       <div className="wrap" style={{ maxWidth: 480 }}>
-        <h1 className="t-h1" data-enter style={{ fontSize: "clamp(28px, 4vw, 40px)", marginBottom: 8 }}>
+        <h1 className="t-h1" data-enter style={{ marginBottom: 8 }}>
           Welcome back
         </h1>
         <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
           Log in to post flyers and help pets get home.
         </p>
 
-        <div className="card" style={{ padding: 28 }} data-enter="3">
+        <div className="card form-card" data-enter="3">
           {callbackError && (
             <div className="error-box" role="alert" style={{ marginBottom: 16 }}>
               {callbackError}

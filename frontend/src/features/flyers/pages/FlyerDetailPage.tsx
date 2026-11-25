@@ -48,7 +48,7 @@ export function FlyerDetailPage() {
 
   if (query.isLoading) {
     return (
-      <section style={{ padding: "64px 0" }}>
+      <section className="page-section">
         <div className="wrap split-2">
           <Skeleton className="flyer-photo" style={{ aspectRatio: "5 / 4" }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -63,7 +63,7 @@ export function FlyerDetailPage() {
 
   if (query.isError || !flyer) {
     return (
-      <section style={{ padding: "64px 0" }}>
+      <section className="page-section">
         <div className="wrap">
           <ErrorBox message="This flyer could not be loaded.">
             <p style={{ marginTop: 8 }}>
@@ -90,9 +90,9 @@ export function FlyerDetailPage() {
   const shareText = `${shareTitle} — ${flyer.pet.species}${flyer.last_seen_location ? ` · ${flyer.last_seen_location}` : ""}. See the PawPrint flyer:`;
 
   return (
-    <section style={{ padding: "48px 0 64px" }}>
+    <section className="page-section">
       <div className="wrap">
-        <div className="no-print btn-row" style={{ marginBottom: 24, flexWrap: "wrap" }}>
+        <div className="no-print btn-row" style={{ marginBottom: 24 }}>
           <ShareMenu
             info={{
               url: shareUrl,
@@ -103,14 +103,14 @@ export function FlyerDetailPage() {
             }}
           />
           {flyer.export_pdf_url && (
-            <Button variant="secondary" style={{ height: 40 }} asChild>
+            <Button variant="secondary" asChild>
               <a href={flyer.export_pdf_url} download>
                 <Download size={16} /> Download PDF
               </a>
             </Button>
           )}
           {hasPin && (
-            <Button variant="secondary" style={{ height: 40 }} asChild>
+            <Button variant="secondary" asChild>
               <Link to="/map">
                 <MapPin size={16} /> View on map
               </Link>
@@ -119,7 +119,7 @@ export function FlyerDetailPage() {
           {isOwner && flyer.status === "active" && (
             <Button
               variant="sage"
-              style={{ height: 40 }}
+             
               disabled={updateFlyer.isPending}
               aria-live="polite"
               onClick={armOrResolve}
@@ -136,7 +136,7 @@ export function FlyerDetailPage() {
           {isOwner && (
             <Button
               variant="secondary"
-              style={{ height: 40 }}
+             
               disabled={deleteFlyer.isPending}
               onClick={() => setConfirmOpen(true)}
             >
@@ -148,7 +148,7 @@ export function FlyerDetailPage() {
         {deleteFlyer.isError && <div style={{ marginBottom: 16 }}><ErrorBox message="Could not delete the flyer. Please try again." /></div>}
 
         {/* One large photo, one clear column of facts. The A4 download keeps the same hierarchy. */}
-        <article className="card flyer-sheet" data-mode={flyer.mode} style={{ padding: 32 }} data-testid="flyer-sheet">
+        <article className="card flyer-sheet detail-card" data-mode={flyer.mode} data-testid="flyer-sheet">
           <div className="flyer-sheet__grid">
             <div className="flyer-sheet__media">
               <PhotoGallery src={photoUrl} alt={`${displayName} — ${photoKind} photo`} />
