@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 from apps.common import storage
@@ -34,8 +36,16 @@ class PetCreateSerializer(serializers.Serializer):
     breed = serializers.CharField(max_length=120, required=False, allow_blank=True)
     color = serializers.CharField(max_length=120, required=False, allow_blank=True)
     age = serializers.IntegerField(min_value=0, max_value=50, required=False, allow_null=True)
-    temperament_tags = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
-    health_tags = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
+    temperament_tags = serializers.ListField(
+        child=serializers.CharField(max_length=40),
+        max_length=12,
+        required=False,
+    )
+    health_tags = serializers.ListField(
+        child=serializers.CharField(max_length=40),
+        max_length=12,
+        required=False,
+    )
     photo_path = serializers.CharField(max_length=512, required=False, allow_blank=True)
     # One photo per pet — the cover image used by the flyer and the detector readout.
     photo_paths = serializers.ListField(
@@ -45,6 +55,21 @@ class PetCreateSerializer(serializers.Serializer):
         error_messages={"max_length": "One photo per pet is allowed. Please upload a single clear photo."},
     )
     status = serializers.ChoiceField(choices=Pet.Status.choices, default=Pet.Status.ADOPTABLE)
+
+    def validate_name(self, value: str) -> str:
+        return value.strip()
+
+    def validate_breed(self, value: str) -> str:
+        return value.strip()
+
+    def validate_color(self, value: str) -> str:
+        return value.strip()
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        # A found pet is unnamed by design; every other status needs a name.
+        if attrs.get("status") != Pet.Status.FOUND and not attrs.get("name", "").strip():
+            raise serializers.ValidationError({"name": "Give the pet a name."})
+        return attrs
 
 
 class PhotoUploadRequestSerializer(serializers.Serializer):

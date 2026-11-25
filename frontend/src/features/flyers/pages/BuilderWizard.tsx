@@ -19,6 +19,7 @@ import {
 } from "@/features/pets/api";
 import { useCreateFlyer, type Flyer, type Mode } from "@/features/flyers/api";
 import { FlyerCard } from "@/components/FlyerCard";
+import { ageSchema, dateTimeLocalSchema, emailSchema, phoneSchema } from "@/lib/validation";
 
 const SPECIES = ["dog", "cat", "bird", "horse", "other"] as const;
 
@@ -44,11 +45,11 @@ function prefill(value: string | undefined, confidence: number | undefined): str
 }
 
 const petSchemaBase = z.object({
-  name: z.string().max(120).optional().or(z.literal("")),
-  breed: z.string().max(120).optional().or(z.literal("")),
-  color: z.string().max(120).optional().or(z.literal("")),
-  age: z.string().regex(/^\d{1,2}$/, "Age in years (up to 2 digits).").optional().or(z.literal("")),
-  temperament_tags: z.string().optional().or(z.literal("")),
+  name: z.string().trim().max(120, "Keep the name under 120 characters.").optional().or(z.literal("")),
+  breed: z.string().trim().max(120, "Keep the breed under 120 characters.").optional().or(z.literal("")),
+  color: z.string().trim().max(120, "Keep the color under 120 characters.").optional().or(z.literal("")),
+  age: ageSchema().optional().or(z.literal("")),
+  temperament_tags: z.string().trim().max(600, "Keep personality tags under 600 characters.").optional().or(z.literal("")),
 });
 type PetValues = z.infer<typeof petSchemaBase>;
 
@@ -58,20 +59,44 @@ type PetValues = z.infer<typeof petSchemaBase>;
  */
 function petSchemaFor(mode: Mode) {
   return petSchemaBase.superRefine((v, ctx) => {
-    if (mode !== "found" && !v.name?.trim()) {
+    if (mode === "found") return;
+    if (!v.name?.trim()) {
       ctx.addIssue({ code: "custom", path: ["name"], message: "Give the pet a name." });
+    }
+    // Count before parseTags() truncates, so an overlong list is rejected.
+    const tags = (v.temperament_tags ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
+    if (tags.length > 12) {
+      ctx.addIssue({ code: "custom", path: ["temperament_tags"], message: "Use at most 12 personality tags." });
+    }
+    if (tags.some((tag) => tag.length > 40)) {
+      ctx.addIssue({ code: "custom", path: ["temperament_tags"], message: "Keep each personality tag under 40 characters." });
     }
   });
 }
 
-const flyerSchema = z.object({
-  last_seen_location: z.string().max(255).optional().or(z.literal("")),
-  last_seen_date: z.string().optional().or(z.literal("")),
-  distinctive_markings: z.string().max(1000).optional().or(z.literal("")),
-  contact_phone: z.string().max(32).optional().or(z.literal("")),
-  contact_email: z.email("Enter a valid email.").optional().or(z.literal("")),
-});
-type FlyerValues = z.infer<typeof flyerSchema>;
+/**
+ * Flyer details schema — lost/found flyers need a location and a real, non-future
+ * last-seen date; outreach flyers don't show those fields. Contacts are optional,
+ * but any value supplied must be a usable phone number or email address.
+ */
+function flyerSchemaFor(mode: Mode) {
+  const needsWhereAndWhen = mode === "emergency" || mode === "found";
+  const location = z.string().trim().max(255, "Keep the location under 255 characters.");
+  return z.object({
+    last_seen_location: needsWhereAndWhen
+      ? location.min(1, mode === "found" ? "Add the location where you found the pet." : "Add where you last saw the pet.")
+      : location.optional().or(z.literal("")),
+    last_seen_date: dateTimeLocalSchema(
+      needsWhereAndWhen
+        ? mode === "found" ? "Add the date and time you found the pet." : "Add the last seen date and time."
+        : undefined,
+    ),
+    distinctive_markings: z.string().trim().max(1000, "Keep the description under 1000 characters.").optional().or(z.literal("")),
+    contact_phone: phoneSchema(),
+    contact_email: emailSchema("Enter a valid email.").optional().or(z.literal("")),
+  });
+}
+type FlyerValues = z.infer<ReturnType<typeof flyerSchemaFor>>;
 
 interface StepState {
   error: string | null;
@@ -280,6 +305,8 @@ function StepPet({
   const autoSpecies = (detectedSpecies(detectedLabels) ?? "dog") as Species;
   const form = useForm<PetValues>({
     resolver: zodResolver(petSchemaFor(mode)),
+    mode: "onTouched",
+    reValidateMode: "onChange",
     defaultValues: {
       name: "",
       breed: prefill(photo.breed, photo.breed_confidence),
@@ -340,7 +367,7 @@ function StepPet({
           </FieldShell>
           {mode !== "found" && (
             <FieldShell label="Age (years)" htmlFor="pet-age" error={form.formState.errors.age?.message}>
-              <Input id="pet-age" inputMode="numeric" aria-invalid={Boolean(form.formState.errors.age)} {...form.register("age")} />
+              <Input id="pet-age" inputMode="numeric" placeholder="0–50" aria-invalid={Boolean(form.formState.errors.age)} {...form.register("age")} />
             </FieldShell>
           )}
         </div>
@@ -364,7 +391,7 @@ function StepPet({
             hint="Comma-separated, e.g. friendly, good with kids, house-trained"
             error={form.formState.errors.temperament_tags?.message}
           >
-            <Input id="pet-tags" autoComplete="off" {...form.register("temperament_tags")} />
+            <Input id="pet-tags" autoComplete="off" aria-invalid={Boolean(form.formState.errors.temperament_tags)} {...form.register("temperament_tags")} />
           </FieldShell>
         )}
         {mode === "found" && (
@@ -402,7 +429,9 @@ function StepFlyer({
   // Pin coordinates from the LocationPicker map (null when only text was typed).
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const form = useForm<FlyerValues>({
-    resolver: zodResolver(flyerSchema),
+    resolver: zodResolver(flyerSchemaFor(mode)),
+    mode: "onTouched",
+    reValidateMode: "onChange",
     defaultValues: {
       last_seen_location: "",
       last_seen_date: "",
@@ -471,13 +500,19 @@ function StepFlyer({
               value={form.watch("last_seen_location") ?? ""}
               onChange={setLocation}
             />
-            <FieldShell label="Last seen date & time" htmlFor="flyer-date" error={form.formState.errors.last_seen_date?.message}>
-              <Input id="flyer-date" type="datetime-local" {...form.register("last_seen_date")} />
+            <FieldShell
+              label="Last seen date & time"
+              htmlFor="flyer-date"
+              hint="When did you last see them? Future dates aren't allowed."
+              error={form.formState.errors.last_seen_date?.message}
+            >
+              <Input id="flyer-date" type="datetime-local" aria-invalid={Boolean(form.formState.errors.last_seen_date)} {...form.register("last_seen_date")} />
             </FieldShell>
             <FieldShell label="Distinctive markings" htmlFor="flyer-marks" error={form.formState.errors.distinctive_markings?.message}>
               <Textarea
                 id="flyer-marks"
                 placeholder="e.g. white patch on left ear, blue collar"
+                aria-invalid={Boolean(form.formState.errors.distinctive_markings)}
                 {...form.register("distinctive_markings")}
               />
             </FieldShell>
@@ -493,13 +528,19 @@ function StepFlyer({
               value={form.watch("last_seen_location") ?? ""}
               onChange={setLocation}
             />
-            <FieldShell label="Date & time found" htmlFor="flyer-date-found" error={form.formState.errors.last_seen_date?.message}>
-              <Input id="flyer-date-found" type="datetime-local" {...form.register("last_seen_date")} />
+            <FieldShell
+              label="Date & time found"
+              htmlFor="flyer-date-found"
+              hint="When did you find them? Future dates aren't allowed."
+              error={form.formState.errors.last_seen_date?.message}
+            >
+              <Input id="flyer-date-found" type="datetime-local" aria-invalid={Boolean(form.formState.errors.last_seen_date)} {...form.register("last_seen_date")} />
             </FieldShell>
             <FieldShell label="Description" htmlFor="flyer-desc" error={form.formState.errors.distinctive_markings?.message}>
               <Textarea
                 id="flyer-desc"
                 placeholder="e.g. orange tabby with a torn ear, very friendly, found near the market"
+                aria-invalid={Boolean(form.formState.errors.distinctive_markings)}
                 {...form.register("distinctive_markings")}
               />
             </FieldShell>
@@ -507,7 +548,7 @@ function StepFlyer({
         )}
         <div className="split-2" style={{ gap: 16 }}>
           <FieldShell label="Contact phone" htmlFor="flyer-phone" error={form.formState.errors.contact_phone?.message}>
-            <Input id="flyer-phone" type="tel" autoComplete="tel" {...form.register("contact_phone")} />
+            <Input id="flyer-phone" type="tel" inputMode="tel" autoComplete="tel" aria-invalid={Boolean(form.formState.errors.contact_phone)} {...form.register("contact_phone")} />
           </FieldShell>
           <FieldShell label="Contact email" htmlFor="flyer-email" error={form.formState.errors.contact_email?.message}>
             <Input

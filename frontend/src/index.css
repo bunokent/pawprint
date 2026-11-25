@@ -352,9 +352,10 @@ html[data-theme="dark"] .leaflet-control-attribution a { color: #a3d1bd; }
   .flyer-card { transition: none; }
 }
 
-/* Form fields */
+/* Form fields — errors sit directly under their own control */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font: 600 13px/1.2 var(--font-sans); color: var(--color-ink); }
+.field-hint { font-size: 14px; line-height: 1.5; color: var(--color-muted); }
 .input, .textarea, .select {
   height: 44px; padding: 0 14px; border-radius: var(--radius-sm);
   border: 1.5px solid var(--color-line); background: #fff; color: var(--color-ink);
@@ -365,8 +366,20 @@ html[data-theme="dark"] .leaflet-control-attribution a { color: #a3d1bd; }
 .input:focus, .textarea:focus, .select:focus {
   outline: none; border-color: var(--color-ink); box-shadow: 0 0 0 3px rgb(28 20 16 / 0.08);
 }
-.input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--color-emergency); }
-.field-error { font-size: 13px; color: var(--color-emergency-deep); }
+.input[aria-invalid="true"], .textarea[aria-invalid="true"], .select[aria-invalid="true"] {
+  border-color: var(--color-emergency);
+  box-shadow: 0 0 0 1px var(--color-emergency);
+}
+.input[aria-invalid="true"]:focus,
+.textarea[aria-invalid="true"]:focus,
+.select[aria-invalid="true"]:focus {
+  border-color: var(--color-emergency-deep);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-emergency) 26%, transparent);
+}
+.field-error {
+  display: block; margin: 0; font-size: 13px; line-height: 1.35;
+  font-weight: 600; color: var(--color-emergency-deep);
+}
 
 /* Input with leading icon / trailing adornment (e.g. password eye toggle) */
 .input-wrap { position: relative; display: flex; align-items: center; }

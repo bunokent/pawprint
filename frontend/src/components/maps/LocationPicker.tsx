@@ -34,6 +34,7 @@ function PlainAddressField({ id, label, hint, error, placeholder, value, onChang
         placeholder={placeholder ?? "e.g. Barangay hall, Quezon City"}
         autoComplete="off"
         aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
         value={value}
         onChange={(e) => onChange({ address: e.target.value, lat: null, lng: null })}
       />
@@ -142,6 +143,7 @@ export function LocationPicker(props: LocationPickerProps) {
       htmlFor={id}
       hint={hint ?? "Search an address or drop the pin on the map — the address is filled in automatically."}
       error={error}
+      after={<div ref={mapRef} data-testid={`${id}-map`} className="location-map" />}
     >
       <div style={{ position: "relative" }}>
         <Input
@@ -149,6 +151,7 @@ export function LocationPicker(props: LocationPickerProps) {
           placeholder={placeholder ?? "Search an address…"}
           autoComplete="off"
           aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
           aria-expanded={suggestions.length > 0}
           aria-controls={suggestions.length > 0 ? `${id}-suggestions` : undefined}
           value={value}
@@ -173,7 +176,6 @@ export function LocationPicker(props: LocationPickerProps) {
           </ul>
         )}
       </div>
-      <div ref={mapRef} data-testid={`${id}-map`} className="location-map" />
     </FieldShell>
   );
 }

@@ -77,7 +77,7 @@ class FlyerDetailMutateView(APIView):
         if err:
             return err
         self.check_object_permissions(request, flyer)
-        serializer = FlyerUpdateSerializer(data=request.data, partial=True)
+        serializer = FlyerUpdateSerializer(flyer, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         if "status" in data and data["status"] == Flyer.Status.RESOLVED:
