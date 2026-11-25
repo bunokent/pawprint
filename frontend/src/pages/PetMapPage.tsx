@@ -15,6 +15,23 @@ function speciesLabel(species: string): string {
   return species.charAt(0).toUpperCase() + species.slice(1);
 }
 
+/** Signed URLs expire; fall back to the bundled photo rather than showing a broken image. */
+function PetImage({ flyer, className, style }: { flyer: Flyer; className?: string; style?: React.CSSProperties }) {
+  const [failed, setFailed] = useState(false);
+  const fallback = "/pet-fallback.webp";
+  const src = flyer.photo_url && !failed ? flyer.photo_url : fallback;
+  return (
+    <img
+      src={src}
+      alt={src === fallback ? "" : petDisplayName(flyer.pet, flyer.mode)}
+      aria-hidden={src === fallback ? true : undefined}
+      className={className}
+      style={style}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 /** Public interactive pet map: one photo pin per active lost/found flyer with coordinates. */
 export function PetMapPage() {
   const query = useQuery(flyerMapQuery());
@@ -226,17 +243,10 @@ function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () =>
                 "--pin-glow": pinRingColor(flyer.mode),
               } as React.CSSProperties}
             >
-              {flyer.photo_url ? (
-                <img
-                  src={flyer.photo_url}
-                  alt={petDisplayName(flyer.pet, flyer.mode)}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
-                <span className="pp-pin__letter" style={{ fontSize: 15 }}>
-                  {petDisplayName(flyer.pet, flyer.mode).charAt(0).toUpperCase()}
-                </span>
-              )}
+              <PetImage
+                flyer={flyer}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <strong style={{ fontSize: 14, fontFamily: "var(--font-display)", display: "block" }}>
@@ -274,40 +284,22 @@ function PinPopup({ flyer, onClose }: { flyer: Flyer; onClose: () => void }) {
 
   return (
     <div className="card map-popup map-popup-card" data-testid="map-pin-popup">
-      {(
-        <div className="photo-frame" style={{ width: "100%", aspectRatio: "16 / 10", background: "var(--color-surface)", position: "relative" }}>
-          <img
-            src={flyer.photo_url || "/pet-fallback.webp"}
-            alt={flyer.photo_url ? displayName : ""}
-            aria-hidden={!flyer.photo_url ? true : undefined}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-          <button
-            type="button"
-            aria-label="Close popup"
-            onClick={onClose}
-            className="map-popup__close map-popup__close--over-photo"
-          >
-            <X size={15} />
-          </button>
-        </div>
-      )}
+      <div className="photo-frame map-popup__photo">
+        <PetImage flyer={flyer} />
+        <button
+          type="button"
+          aria-label="Close popup"
+          onClick={onClose}
+          className="map-popup__close map-popup__close--over-photo"
+        >
+          <X size={15} />
+        </button>
+      </div>
 
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="map-popup__body">
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <ModeBadge mode={flyer.mode} />
           <StatusBadge status={flyer.status} />
-          {!flyer.photo_url && (
-            <button
-              type="button"
-              aria-label="Close popup"
-              onClick={onClose}
-              className="map-popup__close"
-              style={{ marginLeft: "auto" }}
-            >
-              <X size={16} />
-            </button>
-          )}
         </div>
 
         <strong style={{ fontSize: 18, fontFamily: "var(--font-display)", color: accent, lineHeight: 1.25 }}>

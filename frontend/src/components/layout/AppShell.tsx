@@ -148,7 +148,17 @@ export function AppShell() {
             <span>{mobileMenuOpen ? "Close" : "Menu"}</span>
           </button>
         </div>
-        {mobileMenuOpen && (
+      </header>
+      {/* Outside the blurred header so backdrop-filter cannot trap the fixed panel,
+          with a blue left-side scrim and a narrow right-hand drawer. */}
+      {mobileMenuOpen && (
+        <>
+          <button
+            type="button"
+            className="nav-mobile__scrim"
+            aria-label="Close menu"
+            onClick={() => setMobileMenuOpen(false)}
+          />
           <nav id="mobile-navigation" className="nav-mobile" aria-label="Main mobile">
             <NavLink className="nav-mobile__link" to="/" end>Home</NavLink>
             <NavLink className="nav-mobile__link" to="/flyers">Flyers</NavLink>
@@ -176,8 +186,8 @@ export function AppShell() {
               <ThemeToggleButton darkMode={darkMode} onToggle={toggleDarkMode} />
             </div>
           </nav>
-        )}
-      </header>
+        </>
+      )}
       <main id="top" style={{ flex: 1 }}>
         <Outlet />
       </main>

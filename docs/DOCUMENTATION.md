@@ -450,6 +450,28 @@ inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
 
+- **Right-side mobile drawer, readable map card and search control** — The hamburger now opens a
+  narrow right-hand drawer (`min(320px, 78vw)`) over a slate-blue scrim on the left, so the page
+  stays visible instead of being fully covered; the scrim is tappable to close and the header
+  toggle remains above it. Map pin popups now keep the pet details and the **Show Full Details**
+  button on screen at phone widths: a tighter body rhythm, a 2:1 photo, and a taller capped panel
+  with scroll as a fallback. On All Flyers the Search button no longer inherits the full-width
+  mobile button rule — the input grows to fill the row and Search stays an 88px pill. Verified
+  `npm run lint`, `npm run build` and headless Chromium at 390×844: drawer `x=86 w=304 z=41`,
+  blue scrim `rgba(29, 58, 106, 0.56)`, popup button visible, search input 246px vs button 88px;
+  consistency quick mobile checks still pass. The pre-existing taste template FAILs remain open.
+
+- **Mobile menu and map pin popup fixes** — The hamburger panel had been rendered inside the
+  blurred `.nav`; `backdrop-filter` made the header a containing block for the `position: fixed`
+  panel, so it collapsed to the 60px nav height and looked invisible. It now renders as a sibling
+  of the header with an explicit `calc(100dvh - 60px)` height. Map popups and the status pill were
+  also beneath Leaflet's 200–800 pane stack; raising them to `z-index: 1000` puts the popup photo
+  and close control above tiles and pins. Pin images now use the bundled fallback when a signed
+  URL fails, and the phone popup is a little tighter (16px gutters, `min(58%, 420px)` height,
+  16:9 photo). Verified `npm run lint`, `npm run build` and headless Chromium at 390×844: menu
+  390×784, popup `z-index: 1000` over marker pane `600`, image loaded (`naturalWidth: 550`);
+  consistency quick mobile checks still pass.
+
 - **Mobile responsiveness & typography across all pages** — Reworked the shared frontend
   system instead of scattering per-page overrides: a fluid phone type scale, 24px gutters,
   stacked button rows/filters/forms, reusable section/card/map/modal classes, and a 44px
