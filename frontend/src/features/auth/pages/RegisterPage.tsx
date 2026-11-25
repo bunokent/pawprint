@@ -11,11 +11,16 @@ import { Button } from "@/components/ui/button";
 import { FieldShell, IconInput } from "@/components/ui/field";
 import { GoogleButton } from "@/features/auth/components/GoogleButton";
 import { PasswordInput } from "@/features/auth/components/PasswordInput";
+import { emailSchema } from "@/lib/validation";
 
 const registerSchema = z.object({
-  display_name: z.string().max(120, "Keep it under 120 characters.").optional().or(z.literal("")),
-  email: z.email("Enter a valid email address."),
-  password: z.string().min(8, "Use at least 8 characters."),
+  display_name: z.string().trim().max(120, "Keep it under 120 characters.").optional().or(z.literal("")),
+  email: emailSchema("Enter a valid email address."),
+  password: z
+    .string()
+    .min(8, "Use at least 8 characters.")
+    .max(128, "Keep the password under 128 characters.")
+    .refine((value) => value.trim().length >= 8, "Use at least 8 characters."),
 });
 type RegisterValues = z.infer<typeof registerSchema>;
 
@@ -32,6 +37,8 @@ export function RegisterPage() {
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
+    mode: "onTouched",
+    reValidateMode: "onChange",
     defaultValues: { display_name: "", email: "", password: "" },
   });
 

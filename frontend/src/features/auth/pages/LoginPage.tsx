@@ -11,10 +11,11 @@ import { Button } from "@/components/ui/button";
 import { FieldShell, IconInput } from "@/components/ui/field";
 import { GoogleBrandIcon, GoogleButton } from "@/features/auth/components/GoogleButton";
 import { PasswordInput } from "@/features/auth/components/PasswordInput";
+import { emailSchema } from "@/lib/validation";
 
 const loginSchema = z.object({
-  email: z.email("Enter a valid email address."),
-  password: z.string().min(1, "Enter your password."),
+  email: emailSchema("Enter a valid email address."),
+  password: z.string().min(1, "Enter your password.").max(128, "Keep the password under 128 characters."),
 });
 type LoginValues = z.infer<typeof loginSchema>;
 
@@ -44,6 +45,8 @@ export function LoginPage() {
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
+    mode: "onTouched",
+    reValidateMode: "onChange",
     defaultValues: { email: "", password: "" },
   });
 

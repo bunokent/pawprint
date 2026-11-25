@@ -1,19 +1,44 @@
-import type { InputHTMLAttributes, ReactNode, RefAttributes, TextareaHTMLAttributes } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type RefAttributes,
+  type TextareaHTMLAttributes,
+} from "react";
 import { cn } from "@/lib/utils";
 
 interface FieldProps {
   label: string;
   error?: string;
   hint?: string;
+  /** Field furniture that belongs below the error message (map, suggestions, …). */
+  after?: ReactNode;
 }
 
-export function FieldShell({ label, error, hint, children, htmlFor }: FieldProps & { children: React.ReactNode; htmlFor?: string }) {
+/** Wire the control to its error message without repeating this in every form. */
+function withErrorState(child: ReactNode, errorId?: string): ReactNode {
+  if (!errorId || !isValidElement<Record<string, unknown>>(child)) return child;
+  const describedBy = [child.props["aria-describedby"], errorId].filter(Boolean).join(" ");
+  return cloneElement(child, {
+    "aria-invalid": true,
+    "aria-describedby": describedBy,
+  });
+}
+
+export function FieldShell({ label, error, hint, after, children, htmlFor }: FieldProps & { children: ReactNode; htmlFor?: string }) {
+  const errorId = error && htmlFor ? `${htmlFor}-error` : undefined;
   return (
-    <div className="field">
+    <div className="field" data-invalid={Boolean(error)}>
       <label htmlFor={htmlFor}>{label}</label>
-      {children}
-      {hint && !error && <span className="t-small" style={{ color: "var(--color-muted)" }}>{hint}</span>}
-      {error && <span className="field-error" role="alert">{error}</span>}
+      {withErrorState(children, errorId)}
+      {hint && !error && <span className="field-hint">{hint}</span>}
+      {error && (
+        <span className="field-error" id={errorId} role="alert">
+          {error}
+        </span>
+      )}
+      {after}
     </div>
   );
 }

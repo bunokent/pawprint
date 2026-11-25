@@ -11,10 +11,11 @@ import { useAuth } from "@/stores/auth";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { FieldShell, IconInput } from "@/components/ui/field";
+import { phoneSchema } from "@/lib/validation";
 
 const profileSchema = z.object({
-  display_name: z.string().max(120, "Keep it under 120 characters.").optional().or(z.literal("")),
-  phone: z.string().max(32, "Keep it under 32 characters.").optional().or(z.literal("")),
+  display_name: z.string().trim().max(120, "Keep it under 120 characters.").optional().or(z.literal("")),
+  phone: phoneSchema(),
 });
 type ProfileValues = z.infer<typeof profileSchema>;
 
@@ -35,6 +36,8 @@ export function SettingsPage() {
 
   const form = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
+    mode: "onTouched",
+    reValidateMode: "onChange",
     values: { display_name: user?.display_name ?? "", phone: user?.phone ?? "" },
   });
 

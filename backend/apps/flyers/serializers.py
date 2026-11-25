@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+from typing import Any
+
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.common import storage
+from apps.common.validation import clean_phone
 from apps.pets.serializers import PetSerializer
 
 from .models import Flyer
@@ -60,6 +65,42 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
         return storage.signed_url(obj.export_pdf_path) if obj.export_pdf_path else ""
 
 
+FUTURE_TOLERANCE = timedelta(minutes=5)
+
+
+def validate_seen_date(value: datetime | None) -> datetime | None:
+    """Reject future timestamps (typo'ed years and impossible 'future sightings')."""
+    if value is not None and value > timezone.now() + FUTURE_TOLERANCE:
+        raise serializers.ValidationError("The last seen date and time cannot be in the future.")
+    return value
+
+
+def validate_details(mode: str, attrs: dict[str, Any], *, instance: Flyer | None) -> None:
+    """Lost/found flyers need a location and date.
+
+    PATCH normally checks only supplied fields so legacy rows stay editable, but a
+    mode change into lost/found must validate the final combined state.
+    """
+    if mode not in (Flyer.Mode.EMERGENCY, Flyer.Mode.FOUND):
+        return
+    errors: dict[str, str] = {}
+    # Only a real mode change into lost/found demands a full combined-state check;
+    # resending the current mode keeps legacy rows editable.
+    full_check = instance is None or instance.mode != mode
+    for field, message in (
+        ("last_seen_location", "Add the location."),
+        ("last_seen_date", "Add the date and time."),
+    ):
+        if not full_check and field not in attrs:
+            continue
+        value = attrs.get(field) if field in attrs else getattr(instance, field, None)
+        value = value.strip() if isinstance(value, str) else value
+        if value is None or value == "":
+            errors[field] = message
+    if errors:
+        raise serializers.ValidationError(errors)
+
+
 class FlyerCreateSerializer(serializers.Serializer):
     pet_id = serializers.UUIDField()
     mode = serializers.ChoiceField(choices=Flyer.Mode.choices)
@@ -70,6 +111,28 @@ class FlyerCreateSerializer(serializers.Serializer):
     distinctive_markings = serializers.CharField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
+
+    def validate_last_seen_location(self, value: str) -> str:
+        return value.strip()
+
+    def validate_last_seen_date(self, value: datetime | None) -> datetime | None:
+        return validate_seen_date(value)
+
+    def validate_distinctive_markings(self, value: str) -> str:
+        value = value.strip()
+        if len(value) > 1000:
+            raise serializers.ValidationError("Keep the description under 1000 characters.")
+        return value
+
+    def validate_contact_phone(self, value: str) -> str:
+        return clean_phone(value)
+
+    def validate_contact_email(self, value: str) -> str:
+        return value.strip()
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        validate_details(attrs.get("mode", ""), attrs, instance=None)
+        return attrs
 
 
 class FlyerUpdateSerializer(serializers.Serializer):
@@ -82,3 +145,26 @@ class FlyerUpdateSerializer(serializers.Serializer):
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
     status = serializers.ChoiceField(choices=[Flyer.Status.ACTIVE, Flyer.Status.RESOLVED], required=False)
+
+    def validate_last_seen_location(self, value: str) -> str:
+        return value.strip()
+
+    def validate_last_seen_date(self, value: datetime | None) -> datetime | None:
+        return validate_seen_date(value)
+
+    def validate_distinctive_markings(self, value: str) -> str:
+        value = value.strip()
+        if len(value) > 1000:
+            raise serializers.ValidationError("Keep the description under 1000 characters.")
+        return value
+
+    def validate_contact_phone(self, value: str) -> str:
+        return clean_phone(value)
+
+    def validate_contact_email(self, value: str) -> str:
+        return value.strip()
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        mode = attrs.get("mode", self.instance.mode if self.instance else "")
+        validate_details(mode, attrs, instance=self.instance)
+        return attrs

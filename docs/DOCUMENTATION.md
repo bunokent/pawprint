@@ -164,6 +164,16 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `GET /api/health` | Public | Liveness probe |
 | `GET /api/schema` | Public | drf-spectacular OpenAPI schema |
 
+Serializers are the validation boundary: free text is trimmed and emails are normalized;
+`last_seen_date` rejects impossible and future timestamps (5-minute clock-skew tolerance); and
+lost/found flyers require both a location and a timestamp — including when a `PATCH` changes an
+outreach flyer into lost/found mode, because `FlyerUpdateSerializer` receives the existing flyer
+and checks the final combined state. Descriptions are capped at 1000 characters, locations at 255,
+pet names/breeds/colors at 120, ages at 0–50, tags at 12 per list with each tag ≤40 characters,
+and phone numbers at 7–15 digits (≤32 characters with common separators). Passwords are capped at
+128 characters; registration requires 8 non-whitespace characters, and login preserves whitespace
+exactly rather than silently rewriting a password.
+
 ## 6. Auth & OAuth Flow
 
 - Email registration & login issue an HttpOnly session cookie plus a CSRF cookie; the
@@ -403,6 +413,20 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
   and `aria-pressed`) on password fields via `PasswordInput`, a User icon on the
   display-name field, and the official multicolor Google "G" brand mark on the
   `GoogleButton` sign-in button.
+- Shared form validation lives in `src/lib/validation.ts`: `datetime-local` values must be real
+  calendar dates and cannot be more than 5 minutes in the future; lost/found modes require
+  location + date/time while adoptable leaves them optional (the UI hides them); emails are
+  trimmed before validation; phones accept 7–15 digits with common separators and cap at 32
+  characters; ages are whole years 0–50; personality tags cap at 12 × 40 characters. The builder
+  wizard uses mode-aware schemas, shows inline hints, and marks invalid controls with
+  `aria-invalid`; login/register/profile reuse the same email, password and phone rules. `FieldShell`
+  (`components/ui/field.tsx`) renders each validation message directly below its own control, wires
+  it to the control with `aria-describedby`, and lets the shared CSS paint a red border and focus
+  ring on `[aria-invalid="true"]` inputs/textareas/selects. The location picker's message sits
+  immediately under the address input and above the map. Forms validate on touch and revalidate on
+  change, so the field-level message and red outline clear as soon as the value becomes valid.
+  Passwords are capped at 128 characters, registration requires at least 8 non-whitespace characters,
+  and login never trims the password.
 - React 19 idioms: `useActionState` forms (dispatch wrapped in `startTransition` so `pending`
   works), `useOptimistic` publishing card on flyer create, ref-as-prop, React Compiler in
   `vite.config.ts`. TanStack Query
@@ -433,6 +457,14 @@ retains static and build checks: `ruff check .` and `mypy apps` in `backend/`, p
 `npm run lint` and `npm run build` in `frontend/`. GitHub Actions runs those checks on
 pushes and pull requests. Runtime Playwright remains a backend dependency because the
 flyer export task uses it to render A4 PNGs; it is not used as an E2E test runner.
+The validation pass documented in §5 and §10 was checked locally with `npm run lint`,
+`npm run build`, and `python -m compileall -q apps config` (all pass, with only pre-existing
+Zod/chunk-size warnings from the frontend build). The field-level error presentation pass was
+checked again with `npm run lint` and `npm run build` after moving messages below their controls,
+linking them with `aria-describedby`, adding the red invalid border/ring, and switching forms to
+on-touch validation. `ruff` and `mypy` are CI checks but are not installed in this checkout, so
+they could not be run locally. `docs/documentation.pdf` is regenerated from this file with
+`npm run docs:pdf` after every documentation change.
 Responsive checks are browser-based rather than a test suite: the `taste` layout checker
 is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is run at
 1440/390 plus the 320px walk. The responsive pass reports PASS for `spill`,
@@ -449,6 +481,31 @@ entrypoint. Check with `git ls-files --eol '*.sh'` (expect `w/lf`) and `sh -n` o
 inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
+
+- **Validation errors now belong to their own field** — `FieldShell` renders the message immediately
+  below the control it describes, gives it a stable `<field-id>-error` id, and forwards
+  `aria-invalid` + `aria-describedby` to the control (including icon and password inputs). Shared
+  CSS paints invalid inputs/textareas/selects with the emergency-red border and a red focus ring,
+  using the same token in both palettes so the state stays legible in dark mode. The location
+  picker's error now appears directly under the address input with the map below it, and forms
+  validate on touch then revalidate on change so the message and outline clear as the user types.
+  Verified `npm run lint` and `npm run build` (only the pre-existing Zod/comment and chunk-size
+  warnings); the PDF was regenerated and all changes were left uncommitted at the user's request.
+
+- **Input validation covers every form** — The builder wizard's last-seen/found date & time is now
+  checked against the calendar and the clock: impossible dates are rejected, future timestamps are
+  rejected beyond a 5-minute skew allowance, and lost/found modes require both a date/time and a
+  location while adoptable leaves them optional because those fields are hidden. Shared Zod helpers
+  (`src/lib/validation.ts`) also trim emails, accept 7–15-digit phone numbers with common
+  separators (≤32 characters), allow whole-year ages 0–50, cap personality tags at 12 × 40
+  characters, and surface inline hints with `aria-invalid` on bad controls. The same contract is
+  mirrored in DRF (`apps/common/validation.py`, `apps/flyers/serializers.py`,
+  `apps/pets/serializers.py`, `apps/users/serializers.py`): PATCH receives the existing flyer so a
+  mode change into lost/found validates the final combined state, free text is trimmed, and auth
+  serializers preserve password whitespace (registration requires 8 non-space characters; all
+  passwords cap at 128). Verified `npm run lint`, `npm run build`, and
+  `python -m compileall -q apps config`; `ruff`/`mypy` are unavailable locally. The PDF was
+  regenerated, and all changes were left uncommitted at the user's request.
 
 - **Detail-page actions find their place on phones** — Removed the full-width button stack that
   used to push the flyer down. **Share flyer** is now a 44px icon pinned to the top-right of the
