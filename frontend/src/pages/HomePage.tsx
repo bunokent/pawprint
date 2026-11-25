@@ -14,7 +14,7 @@ export function HomePage() {
   return (
     <>
       {/* Hero — one screen, entrance once on load */}
-      <section style={{ padding: "96px 0 72px", borderBottom: "1px solid var(--color-line)" }}>
+      <section className="page-section page-section--hero">
         <div className="wrap">
           <p className="t-label" data-enter style={{ marginBottom: 16 }}>
             Lost-pet alerts · Adoption flyers · Print-ready in one click
@@ -43,22 +43,22 @@ export function HomePage() {
       </section>
 
       {/* Emergency rail */}
-      <section style={{ padding: "64px 0" }}>
+      <section className="page-section" aria-labelledby="lost-now-heading">
         <div className="wrap">
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 24 }}>
-            <h2 className="t-h2" style={{ color: "var(--color-emergency-deep)" }}>Lost right now</h2>
-            <Link to="/flyers?mode=emergency" className="t-small" style={{ fontWeight: 600 }}>All emergencies →</Link>
+          <div className="section-head">
+            <h2 id="lost-now-heading" className="t-h2" style={{ color: "var(--color-emergency-deep)" }}>Lost right now</h2>
+            <Link to="/flyers?mode=emergency" className="section-head__link">All emergencies →</Link>
           </div>
           <FlyerGrid query={emergency} />
         </div>
       </section>
 
       {/* Outreach rail */}
-      <section style={{ padding: "64px 0", background: "var(--color-cream)", borderBlock: "1px solid var(--color-line)" }}>
+      <section className="page-section page-section--tint" aria-labelledby="adoptable-heading">
         <div className="wrap">
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 24 }}>
-            <h2 className="t-h2" style={{ color: "var(--color-sage-deep)" }}>Looking for a home</h2>
-            <Link to="/flyers?mode=outreach" className="t-small" style={{ fontWeight: 600 }}>All adoptable pets →</Link>
+          <div className="section-head">
+            <h2 id="adoptable-heading" className="t-h2" style={{ color: "var(--color-sage-deep)" }}>Looking for a home</h2>
+            <Link to="/flyers?mode=outreach" className="section-head__link">All adoptable pets →</Link>
           </div>
           <FlyerGrid query={outreach} />
         </div>
@@ -70,7 +70,7 @@ export function HomePage() {
 function FlyerGrid({ query }: { query: { data?: { results: Flyer[] }; isLoading: boolean; isError: boolean } }) {
   if (query.isLoading) {
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 24 }}>
+      <div className="flyer-grid">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i}>
             <Skeleton className="photo-frame" style={{ aspectRatio: "4 / 3", borderRadius: 20 }} />
@@ -85,7 +85,7 @@ function FlyerGrid({ query }: { query: { data?: { results: Flyer[] }; isLoading:
     return <p className="t-body" style={{ color: "var(--color-muted)" }}>Nothing here yet — check back soon.</p>;
   }
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 24 }}>
+    <div className="flyer-grid">
       {query.data.results.slice(0, 8).map((flyer) => (
         <FlyerCard key={flyer.id} flyer={flyer} />
       ))}

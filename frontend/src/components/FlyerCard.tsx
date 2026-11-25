@@ -74,14 +74,14 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
           <div
             style={{
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               gap: 6,
               color: "var(--color-muted)",
               fontSize: 13,
             }}
           >
-            <MapPin size={13} style={{ color: modeColor, flexShrink: 0 }} />
-            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <MapPin size={13} style={{ color: modeColor, flexShrink: 0, marginTop: 2 }} />
+            <span style={{ overflowWrap: "anywhere" }}>
               {emergency ? "Last seen " : found ? "Found at " : ""}{flyer.last_seen_location}
             </span>
           </div>

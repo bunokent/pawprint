@@ -64,16 +64,16 @@ export function RegisterPage() {
   }, [user, navigate]);
 
   return (
-    <section style={{ padding: "72px 0" }}>
+    <section className="page-section">
       <div className="wrap" style={{ maxWidth: 480 }}>
-        <h1 className="t-h1" data-enter style={{ fontSize: "clamp(28px, 4vw, 40px)", marginBottom: 8 }}>
+        <h1 className="t-h1" data-enter style={{ marginBottom: 8 }}>
           Register free
         </h1>
         <p className="t-lead" data-enter="2" style={{ marginBottom: 32 }}>
           One account to post lost-pet alerts and share adoptable pets.
         </p>
 
-        <div className="card" style={{ padding: 28 }} data-enter="3">
+        <div className="card form-card" data-enter="3">
           <form
             onSubmit={form.handleSubmit((values) => startTransition(() => submit(values)))}
             style={{ display: "flex", flexDirection: "column", gap: 16 }}

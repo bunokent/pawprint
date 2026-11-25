@@ -44,6 +44,9 @@ RUN python -m playwright install --with-deps chromium
 # Bake the vision weights (direct download, sha256-verified, no HF token) into
 # /opt/weights so the ./backend live-reload bind mount never shadows them.
 COPY backend/scripts/download_weights.sh backend/scripts/download_weights.sh
+# A Windows checkout can put CRLF in the build context; /bin/sh rejects it
+# (`set: illegal option -`), even though Git stores these scripts as LF.
+RUN sed -i 's/\r$//' backend/scripts/download_weights.sh
 RUN sh backend/scripts/download_weights.sh \
     && mkdir -p /opt/weights/clip \
     && mv backend/yolov8s-worldv2.pt /opt/weights/ \
@@ -53,7 +56,8 @@ RUN sh backend/scripts/download_weights.sh \
 # Application code.
 COPY backend/ backend/
 
-RUN chmod +x backend/docker-entrypoint.sh
+RUN sed -i 's/\r$//' backend/docker-entrypoint.sh \
+    && chmod +x backend/docker-entrypoint.sh
 
 WORKDIR /app/backend
 EXPOSE 8000

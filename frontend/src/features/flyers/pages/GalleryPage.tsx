@@ -32,7 +32,7 @@ export function GalleryPage() {
   };
 
   return (
-    <section style={{ padding: "64px 0" }}>
+    <section className="page-section">
       <div className="wrap">
         <h1 className="t-h1" data-enter style={{ marginBottom: 8 }}>
           {mode === "emergency" ? "Lost pet alerts" : mode === "found" ? "Found pets" : mode === "outreach" ? "Adoptable pets" : "All flyers"}
@@ -41,26 +41,26 @@ export function GalleryPage() {
           Public gallery — anyone can browse and scan. Found a pet? Open the flyer and call the number.
         </p>
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 24 }}>
-          <div className="btn-row" role="group" aria-label="Filter by mode">
-            <Button variant={mode === undefined ? "primary" : "secondary"} style={{ height: 40 }} onClick={() => setMode(undefined)}>All</Button>
-            <Button variant={mode === "emergency" ? "emergency" : "secondary"} style={{ height: 40 }} onClick={() => setMode("emergency")}>Lost</Button>
-            <Button variant={mode === "found" ? "found" : "secondary"} style={{ height: 40 }} onClick={() => setMode("found")}>Found</Button>
-            <Button variant={mode === "outreach" ? "sage" : "secondary"} style={{ height: 40 }} onClick={() => setMode("outreach")}>Adoptable</Button>
+        <div className="filter-bar">
+          <div className="btn-row btn-row--inline" role="group" aria-label="Filter by mode">
+            <Button variant={mode === undefined ? "primary" : "secondary"} onClick={() => setMode(undefined)}>All</Button>
+            <Button variant={mode === "emergency" ? "emergency" : "secondary"} onClick={() => setMode("emergency")}>Lost</Button>
+            <Button variant={mode === "found" ? "found" : "secondary"} onClick={() => setMode("found")}>Found</Button>
+            <Button variant={mode === "outreach" ? "sage" : "secondary"} onClick={() => setMode("outreach")}>Adoptable</Button>
           </div>
-          <form onSubmit={submitSearch} style={{ display: "flex", gap: 8, flex: 1, minWidth: 240 }}>
+          <form onSubmit={submitSearch} className="search-form">
             <Input
               aria-label="Search pets by name, breed or color"
               placeholder="Search name, breed, color…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
-            <Button type="submit" variant="secondary" style={{ height: 44 }}>Search</Button>
+            <Button type="submit" variant="secondary">Search</Button>
           </form>
         </div>
 
         {query.isLoading && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 24 }}>
+          <div className="flyer-grid">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i}>
                 <Skeleton className="photo-frame" style={{ aspectRatio: "4 / 3", borderRadius: 20 }} />
@@ -80,7 +80,7 @@ export function GalleryPage() {
 
         {query.data && query.data.results.length > 0 && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 24 }}>
+            <div className="flyer-grid">
               {query.data.results.map((flyer) => (
                 <FlyerCard key={flyer.id} flyer={flyer} />
               ))}
