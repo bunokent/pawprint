@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Download, MapPin } from "lucide-react";
+import { Download, MapPin, Trash2 } from "lucide-react";
 import { flyerDetailQuery, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
@@ -82,6 +82,8 @@ export function FlyerDetailPage() {
   const isOwner = Boolean(user && flyer.creator === user.id);
   const hasPin = flyer.location_lat != null && flyer.location_lng != null;
   const displayName = petDisplayName(flyer.pet, flyer.mode);
+  const markLabel = emergency ? "Mark reunited" : found ? "Mark home" : "Mark adopted";
+  const markFullLabel = emergency ? "Mark reunited" : found ? "Mark returned home" : "Mark adopted";
   const photoKind = emergency ? "lost pet" : found ? "found pet" : "adoptable pet";
   // One photo per pet; photo_urls is kept for legacy responses but only the cover is shown.
   const photoUrl = flyer.photo_url || flyer.photo_urls?.[0] || "";
@@ -92,59 +94,6 @@ export function FlyerDetailPage() {
   return (
     <section className="page-section">
       <div className="wrap">
-        <div className="no-print btn-row" style={{ marginBottom: 24 }}>
-          <ShareMenu
-            info={{
-              url: shareUrl,
-              title: shareTitle,
-              text: shareText,
-              qrValue: qrTarget || shareUrl,
-              imageUrl: flyer.export_png_url || undefined,
-            }}
-          />
-          {flyer.export_pdf_url && (
-            <Button variant="secondary" asChild>
-              <a href={flyer.export_pdf_url} download>
-                <Download size={16} /> Download PDF
-              </a>
-            </Button>
-          )}
-          {hasPin && (
-            <Button variant="secondary" asChild>
-              <Link to="/map">
-                <MapPin size={16} /> View on map
-              </Link>
-            </Button>
-          )}
-          {isOwner && flyer.status === "active" && (
-            <Button
-              variant="sage"
-             
-              disabled={updateFlyer.isPending}
-              aria-live="polite"
-              onClick={armOrResolve}
-              onBlur={() => {
-                setResolveArmed(false);
-                if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
-              }}
-            >
-              {resolveArmed
-                ? "Click again to confirm"
-                : emergency ? "Mark reunited" : found ? "Mark returned home" : "Mark adopted"}
-            </Button>
-          )}
-          {isOwner && (
-            <Button
-              variant="secondary"
-             
-              disabled={deleteFlyer.isPending}
-              onClick={() => setConfirmOpen(true)}
-            >
-              Delete flyer
-            </Button>
-          )}
-        </div>
-
         {deleteFlyer.isError && <div style={{ marginBottom: 16 }}><ErrorBox message="Could not delete the flyer. Please try again." /></div>}
 
         {/* One large photo, one clear column of facts. The A4 download keeps the same hierarchy. */}
@@ -152,6 +101,18 @@ export function FlyerDetailPage() {
           <div className="flyer-sheet__grid">
             <div className="flyer-sheet__media">
               <PhotoGallery src={photoUrl} alt={`${displayName} — ${photoKind} photo`} />
+              <div className="flyer-sheet__share no-print">
+                <ShareMenu
+                  iconOnly
+                  info={{
+                    url: shareUrl,
+                    title: shareTitle,
+                    text: shareText,
+                    qrValue: qrTarget || shareUrl,
+                    imageUrl: flyer.export_png_url || undefined,
+                  }}
+                />
+              </div>
             </div>
             <div className="flyer-sheet__body">
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -168,6 +129,24 @@ export function FlyerDetailPage() {
                 {flyer.pet.color ? ` · ${flyer.pet.color}` : ""}
                 {flyer.pet.age != null ? ` · ${flyer.pet.age} yr${flyer.pet.age === 1 ? "" : "s"}` : ""}
               </p>
+              {(flyer.export_pdf_url || hasPin) && (
+                <div className="detail-actions no-print">
+                  {flyer.export_pdf_url && (
+                    <Button variant="secondary" asChild>
+                      <a href={flyer.export_pdf_url} download>
+                        <Download size={16} /> Download PDF
+                      </a>
+                    </Button>
+                  )}
+                  {hasPin && (
+                    <Button variant="secondary" asChild>
+                      <Link to="/map">
+                        <MapPin size={16} /> View on map
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              )}
               {(emergency || found) && flyer.last_seen_location && (
                 <div>
                   <p className="t-label">{emergency ? "Last seen" : "Found at"}</p>
@@ -211,6 +190,32 @@ export function FlyerDetailPage() {
                   </p>
                 </div>
               </div>
+              {isOwner && (
+                <div className="detail-actions detail-actions--owner no-print">
+                  {flyer.status === "active" && (
+                    <Button
+                      variant="sage"
+                      aria-label={markFullLabel}
+                      aria-live="polite"
+                      disabled={updateFlyer.isPending}
+                      onClick={armOrResolve}
+                      onBlur={() => {
+                        setResolveArmed(false);
+                        if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
+                      }}
+                    >
+                      {resolveArmed ? "Click again to confirm" : markLabel}
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    disabled={deleteFlyer.isPending}
+                    onClick={() => setConfirmOpen(true)}
+                  >
+                    <Trash2 size={16} /> Delete
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </article>

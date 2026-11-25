@@ -450,6 +450,16 @@ inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
 
+- **Detail-page actions find their place on phones** — Removed the full-width button stack that
+  used to push the flyer down. **Share flyer** is now a 44px icon pinned to the top-right of the
+  photo inside the card, with the popover anchored inside the viewport; **Download PDF** and
+  **View on map** sit side by side in a two-column row under the pet summary. Owner controls —
+  **Mark returned home / reunited / adopted** and **Delete** — moved into a compact bottom row
+  inside the card, using short visible labels with full `aria-label`s, and My Flyers owner cards
+  use the same inline pair. The QR modal buttons stay inline too. Verified `npm run lint`,
+  `npm run build` and headless Chromium at 390×844: card starts at `y=101`, share icon `44×44`
+  inside the media, and PDF/map buttons share one row at `y=506`; consistency mobile checks pass.
+
 - **Right-side mobile drawer, readable map card and search control** — The hamburger now opens a
   narrow right-hand drawer (`min(320px, 78vw)`) over a slate-blue scrim on the left, so the page
   stays visible instead of being fully covered; the scrim is tappable to close and the header

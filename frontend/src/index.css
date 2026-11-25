@@ -118,6 +118,11 @@ body {
 .btn--secondary:hover { border-color: var(--color-ink); }
 .btn[disabled] { opacity: 0.55; cursor: not-allowed; transform: none; }
 .btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.btn.btn--icon { width: 44px; min-width: 44px; height: 44px; padding: 0; flex: none; }
+/* Compact action pairs stay side by side on phones instead of stacking. */
+.detail-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.detail-actions .btn { width: 100%; min-width: 0; padding-inline: 12px; font-size: 14px; }
+.detail-actions--owner { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--color-line); }
 
 /* Shared page building blocks — one rhythm on every route */
 .page-section { padding-block: 64px; }
@@ -887,6 +892,10 @@ html[data-theme="dark"] .leaflet-control-attribution a { color: #a3d1bd; }
 .flyer-sheet[data-mode="found"] { --flyer-accent: var(--color-found-deep); }
 .flyer-sheet__grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 40px; align-items: start; }
 .flyer-sheet__media, .flyer-sheet__body { min-width: 0; }
+.flyer-sheet__media { position: relative; }
+.flyer-sheet__share { position: absolute; top: 12px; right: 12px; z-index: 2; }
+.flyer-sheet__share .btn { background: var(--color-paper); border-color: transparent; box-shadow: var(--shadow-card); }
+.flyer-sheet__share .btn:hover { border-color: var(--color-line); }
 .flyer-sheet__body { display: flex; flex-direction: column; gap: 16px; }
 .flyer-sheet__title { color: var(--flyer-accent); font-size: clamp(32px, 4.5vw, 48px); }
 @media (max-width: 900px) {

@@ -21,7 +21,7 @@ import {
  * Instagram / X / WhatsApp intents, copy-link, and a QR-code modal (the QR still
  * prints on the A4 flyer).
  */
-export function ShareMenu({ info }: { info: FlyerShareInfo }) {
+export function ShareMenu({ info, iconOnly = false }: { info: FlyerShareInfo; iconOnly?: boolean }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -85,12 +85,14 @@ export function ShareMenu({ info }: { info: FlyerShareInfo }) {
     <div className="share-menu" ref={rootRef}>
       <Button
         variant="secondary"
-       
+        className={iconOnly ? "btn--icon" : undefined}
+        aria-label={iconOnly ? "Share flyer" : undefined}
+        title={iconOnly ? "Share flyer" : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <Share2 size={16} /> Share flyer
+        <Share2 size={16} />{!iconOnly && " Share flyer"}
       </Button>
 
       {open && (
@@ -159,7 +161,7 @@ export function ShareMenu({ info }: { info: FlyerShareInfo }) {
               <p className="qr-modal__url" title={info.url}>
                 {info.url}
               </p>
-              <div className="btn-row" style={{ marginTop: 16 }}>
+              <div className="btn-row btn-row--inline" style={{ marginTop: 16 }}>
                 {qrPng && (
                   <Button variant="primary" asChild>
                     <a href={qrPng} download="pawprint-flyer-qr.png">

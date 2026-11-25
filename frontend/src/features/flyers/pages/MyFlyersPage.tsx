@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { myFlyersQuery, useDeleteFlyer, useUpdateFlyer, type Flyer } from "@/features/flyers/api";
@@ -110,6 +111,8 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
   const deleteFlyer = useDeleteFlyer(flyer.id);
   const navigate = useNavigate();
   const canResolve = flyer.status === "active";
+  const markLabel = flyer.mode === "emergency" ? "Mark reunited" : flyer.mode === "found" ? "Mark home" : "Mark adopted";
+  const markFullLabel = `Mark ${flyer.mode === "emergency" ? "reunited" : flyer.mode === "found" ? "returned home" : "adopted"}`;
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Resolving ("reunited" / "returned home" / "adopted") needs a deliberate second
   // click — armed for 4 s — so a single stray tap never closes a flyer.
@@ -136,10 +139,11 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <FlyerCard flyer={flyer} />
-      <div className="btn-row no-print">
+      <div className="detail-actions no-print">
         {canResolve && (
           <Button
             variant="sage"
+            aria-label={markFullLabel}
             disabled={updateFlyer.isPending}
             aria-live="polite"
             onClick={armOrResolve}
@@ -148,9 +152,7 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
               if (resolveTimer.current) window.clearTimeout(resolveTimer.current);
             }}
           >
-            {resolveArmed
-              ? "Click again to confirm"
-              : `Mark ${flyer.mode === "emergency" ? "reunited" : flyer.mode === "found" ? "returned home" : "adopted"}`}
+            {resolveArmed ? "Click again to confirm" : markLabel}
           </Button>
         )}
         <Button
@@ -158,7 +160,7 @@ function OwnerFlyerCard({ flyer }: { flyer: Flyer }) {
           disabled={deleteFlyer.isPending}
           onClick={() => setConfirmOpen(true)}
         >
-          Delete
+          <Trash2 size={16} /> Delete
         </Button>
       </div>
       <ConfirmDeleteDialog
