@@ -1,6 +1,7 @@
 """Pure rules shared by flyer/pet edit validation (no Django imports)."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 
 
