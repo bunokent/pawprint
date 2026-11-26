@@ -1,6 +1,7 @@
 """Pure rules shared by flyer/pet edit validation (no Django imports)."""
 
 from __future__ import annotations
+from collections.abc import Mapping
 
 
 def pet_name_missing(mode: str, name: str | None) -> bool:
@@ -22,7 +23,7 @@ EDIT_DETAIL_FIELDS = frozenset({
 })
 
 
-def update_missing_photo(fields: dict[str, object]) -> bool:
+def update_missing_photo(fields: Mapping[str, object]) -> bool:
     """True when a detail update omits or clears the required cover photo."""
     if "photo_path" in fields:
         value = fields["photo_path"]
