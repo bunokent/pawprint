@@ -1606,3 +1606,10 @@ rendering. Application data and schema are unchanged; only test-mode settings an
   pinned "View flyer" footer stays at the bottom of every card. Layout contract covered by new
   tests in `frontend/tests/my-flyers-card-height.test.mjs` (added to `npm test`). Verified
   `tsc -b --noEmit` clean and `npm test` green.
+
+- **Phase 56** — Remove redundant address from `FlyerCard` metadata line.
+  The `· last seen <location>` / `· found at <location>` suffix that was concatenated onto the
+  species · breed · color line in `FlyerCard` (`frontend/src/components/FlyerCard.tsx`) is gone,
+  since the dedicated last-seen/found location block (MapPin icon + "Last seen / Found at"
+  label) already appears just below it. The location block itself is unchanged. Verified
+  `tsc -b --noEmit` clean, `npm test` green, and `vite build` clean.
