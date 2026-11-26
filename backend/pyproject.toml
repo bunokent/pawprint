@@ -18,6 +18,8 @@ dependencies = [
     "channels-redis>=4.2",
     "django-allauth[socialaccount]>=65.0",
     "django-cors-headers>=4.6",
+    # Philippine phone validation/normalization for profile + flyer contact fields.
+    "django-phonenumber-field[phonenumbers]>=9.0",
     "python-dotenv>=1.0",
     "Pillow>=11.0",
     "qrcode[pil]>=8.0",

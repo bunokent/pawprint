@@ -29,7 +29,8 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
 ## 2. Architecture & Stack
 
 - **Backend**: Django 5.2+ (Python 3.12+), DRF, drf-spectacular (OpenAPI), PostgreSQL 16,
-  Redis 7, Celery, Django Channels (WebSockets), django-allauth (email + Google OAuth 2.0).
+  Redis 7, Celery, Django Channels (WebSockets), django-allauth (email + Google OAuth 2.0),
+  django-phonenumber-field (Philippine phone validation, default region `PH`).
   **No Django Admin** — `django.contrib.admin` is completely removed.
   Packaging: `pyproject.toml` declares an explicit setuptools build backend with
   `packages.find include = ["apps*", "config*"]` so `uv pip install .[dev]` succeeds on a
@@ -118,8 +119,9 @@ flyers and photo upload.
 
 Apps under `backend/apps/`: `users`, `pets`, `flyers`, `vision`.
 
-- `users.User` — AbstractUser, UUID PK, email login, `display_name`, `phone`, `avatar_path`,
-  `google_id` (nullable unique), `email_verified`.
+- `users.User` — AbstractUser, UUID PK, email login, `display_name`, `phone` (validated as a
+  Philippine number and stored in E.164), `avatar_path`, `google_id` (nullable unique),
+  `email_verified`.
 - `pets.Pet` — UUID PK, `owner` FK, species/breed/color/age, `temperament_tags` & `health_tags`
   JSON (GIN indexes), `photo_path` (cover photo), `status` (`lost|found|adoptable|reunited|adopted`),
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
@@ -128,7 +130,8 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `vision`.
   A report carries exactly **one** photo (`MAX_PET_PHOTOS = 1`), mirrored on `Pet.photo_path`
   as the cover. The stored file is always the full, uncropped display image.
 - `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
-  fields, `location_lat`/`location_lng` floats (the map pin), contact fields, QR target, export
+  fields, `location_lat`/`location_lng` floats (the map pin), contact fields (`contact_phone`
+  validated as a Philippine number and stored in E.164), QR target, export
   paths, `status` (`draft|generating|active|resolved`); indexes `(mode, status, created_at)`,
   `(creator, mode)`, and `flyer_status_location_idx` `(status, location_lat, location_lng)` for
   the pet map.
@@ -170,7 +173,10 @@ lost/found flyers require both a location and a timestamp — including when a `
 outreach flyer into lost/found mode, because `FlyerUpdateSerializer` receives the existing flyer
 and checks the final combined state. Descriptions are capped at 1000 characters, locations at 255,
 pet names/breeds/colors at 120, ages at 0–50, tags at 12 per list with each tag ≤40 characters,
-and phone numbers at 7–15 digits (≤32 characters with common separators). The same owner-only
+and phone numbers as valid Philippine numbers (with `PHONENUMBER_DEFAULT_REGION = "PH"`):
+`apps/common/validation.py` uses django-phonenumber-field to parse local (`0917…`, `02…`) and
+international (`+63…`) input, rejects foreign numbers, short codes, extensions and invalid PH
+prefixes, and stores the accepted value as an E.164 string of at most 32 characters. The same owner-only
 `PATCH` accepts `name`, `species`, `breed`, `color`, `age`, `temperament_tags` and `health_tags`;
 `apps/flyers/edit_rules.py` keeps found-pet reports unnamed while requiring a name for every other
 mode. A replacement `photo_path` must be a full (non-thumbnail)
@@ -197,7 +203,8 @@ exactly rather than silently rewriting a password.
 - Guests hitting an auth-only endpoint get 401 with `error.session_expired: true`
   (`SessionAuthenticationWith401`), which the SPA uses to reset the auth store.
 - **Profile settings**: `PATCH /api/auth/profile` updates `display_name`/`phone`
-  (partial, validated by `ProfileUpdateSerializer`) via `AuthService.update_profile`.
+  (partial, validated by `ProfileUpdateSerializer` with the same Philippine phone rule) via
+  `AuthService.update_profile`.
   `POST /api/auth/avatar` stores a profile picture — deliberately **without** the
   YOLO-World pet gate (it is the user's own photo, not a pet photo): Pillow-validated,
   ≤5 MB, EXIF-stripped, re-encoded as a ≤512px JPEG into private storage under
@@ -246,7 +253,7 @@ exactly rather than silently rewriting a password.
   flyers that have one — the pins behind `/map`.
 - Owner edits use `PATCH /flyers/{id}/edit`; the update serializer accepts flyer details
   (`last_seen_location`, `last_seen_date`, `location_lat`/`location_lng`, `distinctive_markings`,
-  `contact_phone`, `contact_email`, `status`), linked-pet details (`name`, `species`, `breed`,
+  `contact_phone` (PH-validated, stored in E.164), `contact_email`, `status`), linked-pet details (`name`, `species`, `breed`,
   `color`, `age`, `temperament_tags`, `health_tags`) and a required `photo_path` cover-photo key
   (status-only resolve requests remain exempt).
   `FlyerService` splits the validated body with `PET_UPDATE_FIELDS`, applies pet edits through
@@ -461,8 +468,10 @@ exactly rather than silently rewriting a password.
 - Shared form validation lives in `src/lib/validation.ts`: `datetime-local` values must be real
   calendar dates and cannot be more than 5 minutes in the future; lost/found modes require
   location + date/time while adoptable leaves them optional (the UI hides them); emails are
-  trimmed before validation; phones accept 7–15 digits with common separators and cap at 32
-  characters; ages are whole years 0–50; personality tags cap at 12 × 40 characters. The builder
+  trimmed before validation; phones accept Philippine mobile/landline shapes with common
+  separators (local `0`, `63` or `+63` prefixes) and cap at 32 characters, mirroring the backend's
+  django-phonenumber-field rule while the API remains authoritative; ages are whole years 0–50;
+  personality tags cap at 12 × 40 characters. The builder
   wizard uses mode-aware schemas, shows inline hints, and marks invalid controls with
   `aria-invalid`; login/register/profile reuse the same email, password and phone rules. `FieldShell`
   (`components/ui/field.tsx`) renders each validation message directly below its own control, wires
@@ -514,8 +523,12 @@ The validation pass documented in §5 and §10 was checked locally with `npm run
 Zod/chunk-size warnings from the frontend build). The field-level error presentation pass was
 checked again with `npm run lint` and `npm run build` after moving messages below their controls,
 linking them with `aria-describedby`, adding the red invalid border/ring, and switching forms to
-on-touch validation. `ruff` and `mypy` are CI checks but are not installed in this checkout, so
-they could not be run locally. The localStorage draft and photo-preview passes were checked again with
+on-touch validation. Earlier passes could not run `ruff`/`mypy` locally because they were not
+installed; the Philippine-phone pass installed them and both `ruff check .` and `mypy apps` pass,
+as does `python manage.py check`. A direct serializer probe confirmed that `0917 123 4567`,
+`+639171234567`, `0281234567` and `032 123 4567` normalize to E.164 while foreign numbers,
+short codes, extensions and invalid PH prefixes are rejected; `npm test` stays at 9/9.
+The localStorage draft and photo-preview passes were checked again with
 `npm run lint` and `npm run build` (only the same pre-existing Zod/chunk-size warnings).
 The owner-edit and photo-replacement passes added `npm test` and
 `python -m unittest apps.flyers.test_photo_keys`; the pet-details edit pass extended them to
@@ -524,7 +537,8 @@ and the resolved-lock pass to 6/6 and 12/12. Every pass was checked with `npm ru
 `npm run build` and
 `python -m compileall -q apps config`; all changes were left uncommitted at the user's request.
 `docs/documentation.pdf` is regenerated from this file with `npm run docs:pdf` after every
-documentation change.
+documentation change. The script now uses a small Node rename instead of `mv`/`ls` with
+`/dev/null`, so the same command works on Windows as well as Linux.
 Responsive checks are browser-based rather than a test suite: the `taste` layout checker
 is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is run at
 1440/390 plus the 320px walk. The responsive pass reports PASS for `spill`,
@@ -541,6 +555,19 @@ entrypoint. Check with `git ls-files --eol '*.sh'` (expect `w/lf`) and `sh -n` o
 inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
+
+- **Phone fields now validate Philippine numbers** — `django-phonenumber-field[phonenumbers]`
+  is installed and configured with `PHONENUMBER_DEFAULT_REGION = "PH"`. `clean_phone` in
+  `apps/common/validation.py` parses profile and flyer contact input with that default region,
+  rejects foreign numbers, short codes, extensions and invalid PH prefixes, and returns E.164
+  (`0917 123 4567` → `+639171234567`); `ProfileUpdateSerializer`, `FlyerCreateSerializer` and
+  `FlyerUpdateSerializer` all use it. The shared frontend `phoneSchema` in `src/lib/validation.ts`
+  now mirrors PH mobile/landline shapes so the profile, builder and edit forms fail early, while
+  the API stays authoritative. Verified with `ruff check .`, `mypy apps`, `python manage.py check`,
+  `npm run lint`, `npm run build`, `npm test` (9/9) and a direct serializer probe covering local,
+  international, landline, foreign, short, extension and invalid-prefix inputs. The
+  `docs:pdf` script was also made cross-platform so the PDF could be regenerated with the
+  mandated command on Windows. Committed.
 
 - **Resolved flyers are now read-only** — `flyer_is_editable` in `edit_rules.py` makes the
   `FlyerDetailMutateView.patch` return `409 flyer_resolved` before validation whenever
