@@ -17,6 +17,8 @@ interface LocationPickerProps {
   error?: string;
   placeholder?: string;
   value: string;
+  /** Saved pin to restore after Back or a page reload. */
+  initialCoords?: { lat: number; lng: number } | null;
   onChange: (value: LocationValue) => void;
 }
 
@@ -26,7 +28,7 @@ const SUGGESTION_DEBOUNCE_MS = 300;
 /** Minimum characters before querying Nominatim. */
 const MIN_QUERY = 3;
 
-function PlainAddressField({ id, label, hint, error, placeholder, value, onChange }: LocationPickerProps) {
+function PlainAddressField({ id, label, hint, error, placeholder, value, initialCoords, onChange }: LocationPickerProps) {
   return (
     <FieldShell label={label} htmlFor={id} hint={hint} error={error}>
       <Input
@@ -36,7 +38,11 @@ function PlainAddressField({ id, label, hint, error, placeholder, value, onChang
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : undefined}
         value={value}
-        onChange={(e) => onChange({ address: e.target.value, lat: null, lng: null })}
+        onChange={(e) => onChange({
+          address: e.target.value,
+          lat: initialCoords?.lat ?? null,
+          lng: initialCoords?.lng ?? null,
+        })}
       />
     </FieldShell>
   );
@@ -50,7 +56,9 @@ function PlainAddressField({ id, label, hint, error, placeholder, value, onChang
  * under the same id — forms keep working, coordinates stay null.
  */
 export function LocationPicker(props: LocationPickerProps) {
-  const { id, label, hint, error, placeholder, value, onChange } = props;
+  const { id, label, hint, error, placeholder, value, initialCoords, onChange } = props;
+  const initialLat = initialCoords?.lat ?? null;
+  const initialLng = initialCoords?.lng ?? null;
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObjRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
@@ -59,6 +67,11 @@ export function LocationPicker(props: LocationPickerProps) {
   onChangeRef.current = onChange;
   const [mapFailed, setMapFailed] = useState(false);
   const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
+
+  // Keep typing in sync with a restored pin before the map is ready.
+  useEffect(() => {
+    coordsRef.current = initialLat != null && initialLng != null ? { lat: initialLat, lng: initialLng } : null;
+  }, [initialLat, initialLng]);
 
   // Build the map once per mount (value/onChange are read through refs).
   useEffect(() => {
@@ -100,6 +113,13 @@ export function LocationPicker(props: LocationPickerProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapFailed]);
+
+  // Put a saved pin back on the map after Back / reload.
+  useEffect(() => {
+    if (initialLat == null || initialLng == null || !mapObjRef.current || !markerRef.current) return;
+    markerRef.current.setLatLng([initialLat, initialLng]);
+    mapObjRef.current.setView([initialLat, initialLng], Math.max(mapObjRef.current.getZoom(), 14), { animate: false });
+  }, [initialLat, initialLng, mapFailed]);
 
   // Debounced Nominatim address search behind the text input.
   useEffect(() => {

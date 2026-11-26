@@ -389,8 +389,12 @@ exactly rather than silently rewriting a password.
   urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
   the photo step stays open until **Next** with exactly one photo (picking several files keeps
   only the first) and going back with an uploaded photo shows **Next** to continue without
-  re-uploading; the pet is created with `photo_path` = that single photo). Found mode hides
-  **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
+  re-uploading; the pet is created with `photo_path` = that single photo). Wizard inputs are
+  kept in a versioned `localStorage` draft (`pawprint:flyer-draft:v1`): mode, step, uploaded
+  photo metadata, pet and flyer fields, contact details and the map pin survive Back navigation
+  and page reloads. Drafts are scoped to the signed-in account, removed after publishing, and
+  unchanged pet values are reused on Back → Continue instead of creating a duplicate pet.
+  Found mode hides **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
   `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
   settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
@@ -400,7 +404,8 @@ exactly rather than silently rewriting a password.
 - Builder step 3 uses `LocationPicker` (`components/maps/LocationPicker.tsx`): an embedded
   Leaflet (OpenStreetMap) map with a **draggable pin** plus Nominatim address suggestions on
   the text input; dropping the pin reverse-geocodes the address and the form stores
-  `last_seen_location` + `location_lat`/`location_lng`. If the map cannot be created (jsdom
+  `last_seen_location` + `location_lat`/`location_lng`, and a saved pin is put back on the map
+  when a draft resumes. If the map cannot be created (jsdom
   unit tests) it degrades to a plain address input under the same id (`flyer-loc` /
   `flyer-loc-found`) with null coordinates. Maps plumbing lives in `src/lib/maps.ts` —
   `leaflet` npm dependency (+ `@types/leaflet`, `leaflet/dist/leaflet.css`), OSM tile-layer
@@ -440,7 +445,9 @@ exactly rather than silently rewriting a password.
   tactile hover/press, skeleton/empty/error states, dual palette (emergency crimson/amber vs
   outreach sage/teal/terracotta). The photo uploader uses a fixed 380px desktop rectangle (360px
   on phones), neutral/sage drop affordances, an animated processing overlay, accessible live status
-  and progress semantics, and reduced-motion fallbacks.
+  and progress semantics, and reduced-motion fallbacks. Its preview prefers a fresh blob URL, then
+  the full signed photo URL, then the thumbnail: the thumbnail is produced asynchronously by Celery,
+  so using it first made a just-uploaded photo briefly show "Could not load photo" until a reload.
 - Responsive system (`src/index.css` + `components/layout/AppShell.tsx`): every route shares one
   fluid type scale, a 24px phone gutter (`.wrap`), section rhythm (`.page-section`, `.section-head`),
   card/filter/map/modal grids, and a single rule set for 44px tap targets. On phones the compact
@@ -463,8 +470,10 @@ Zod/chunk-size warnings from the frontend build). The field-level error presenta
 checked again with `npm run lint` and `npm run build` after moving messages below their controls,
 linking them with `aria-describedby`, adding the red invalid border/ring, and switching forms to
 on-touch validation. `ruff` and `mypy` are CI checks but are not installed in this checkout, so
-they could not be run locally. `docs/documentation.pdf` is regenerated from this file with
-`npm run docs:pdf` after every documentation change.
+they could not be run locally. The localStorage draft and photo-preview passes were checked again with
+`npm run lint` and `npm run build` (only the same pre-existing Zod/chunk-size warnings).
+`docs/documentation.pdf` is regenerated from this file with `npm run docs:pdf` after every
+documentation change.
 Responsive checks are browser-based rather than a test suite: the `taste` layout checker
 is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is run at
 1440/390 plus the 320px walk. The responsive pass reports PASS for `spill`,
@@ -481,6 +490,26 @@ entrypoint. Check with `git ls-files --eol '*.sh'` (expect `w/lf`) and `sh -n` o
 inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
+
+- **Fresh photo previews no longer fail before the thumbnail exists** — Restoring the uploader
+  from the saved draft made it request `thumb_url` immediately, but `PetPhotoService` dispatches
+  `generate_thumbnail` to Celery after returning the upload response, so the first load 404'd and
+  showed "Could not load photo" until a refresh. `PhotoUpload` now prefers the local blob URL for a
+  new selection, then the full signed photo URL (written synchronously), and only then the
+  thumbnail; it also clears a stale image-error state when the source changes. Verified
+  `npm run lint` and `npm run build`; the PDF was regenerated and all changes were left uncommitted
+  at the user's request.
+
+- **Flyer drafts survive Back navigation** — The builder now writes a versioned draft to
+  `localStorage` (`pawprint:flyer-draft:v1`) on every step change and form edit, then restores
+  mode, step, the accepted photo's metadata, pet fields, flyer details, contact details and the
+  map pin when the wizard remounts. `LocationPicker` puts a saved pin back on the map; the
+  photo preview falls back to the signed thumbnail because blob URLs cannot survive a reload.
+  Drafts are scoped to the signed-in account and deleted after a successful publish. Returning
+  to the pet step and clicking Continue reuses the pet created from unchanged values instead of
+  posting a duplicate. Verified `npm run lint` and `npm run build` (only the pre-existing
+  Zod/chunk-size warnings); the PDF was regenerated and all changes were left uncommitted at the
+  user's request.
 
 - **Validation errors now belong to their own field** — `FieldShell` renders the message immediately
   below the control it describes, gives it a stable `<field-id>-error` id, and forwards
