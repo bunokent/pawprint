@@ -1,4 +1,5 @@
 import { HIGH_CONFIDENCE, type Pet, type PhotoUploadResult } from "@/features/pets/api";
+import type { Species } from "@/features/pets/petSchema";
 import type { Mode } from "@/features/flyers/api";
 
 /** One versioned key so old/incompatible drafts are discarded instead of crashing the wizard. */
@@ -15,6 +16,7 @@ export interface Coordinates {
 /** Strings mirror the HTML inputs — Zod parses them at submit time. */
 export interface PetDraftValues {
   name?: string;
+  species?: Species;
   breed?: string;
   color?: string;
   age?: string;

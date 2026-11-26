@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 
 from apps.common.permissions import IsOwnerOrReadOnly
 
+from .edit_rules import flyer_is_editable
 from .models import Flyer
 from .selectors import get_flyer_by_id, list_flyers_by_creator, list_map_flyers, list_public_flyers
 from .serializers import FlyerCreateSerializer, FlyerSerializer, FlyerUpdateSerializer
@@ -77,6 +78,11 @@ class FlyerDetailMutateView(APIView):
         if err:
             return err
         self.check_object_permissions(request, flyer)
+        if not flyer_is_editable(flyer.status):
+            return Response(
+                {"error": {"code": "flyer_resolved", "message": "Resolved flyers can no longer be edited."}},
+                status=status.HTTP_409_CONFLICT,
+            )
         serializer = FlyerUpdateSerializer(flyer, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data

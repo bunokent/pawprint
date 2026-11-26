@@ -16,6 +16,8 @@ interface PhotoUploadProps {
   uploaded: LocalPhotoUploadResult[];
   /** Private flyer folder; defaults to `losts` for standalone pickers. */
   category?: PhotoCategory;
+  /** Hide the "Pet detected" badge when prefilling a photo from a saved flyer. */
+  showDetectedBadge?: boolean;
 }
 
 const UPLOAD_STAGES = [
@@ -32,7 +34,7 @@ type UploadStage = (typeof UPLOAD_STAGES)[number]["id"];
  * image (including a logo or illustration) gets a 422 "no pet detected" response —
  * never a ban — so the user can pick a different file straight away.
  */
-export function PhotoUpload({ onUploaded, onRemove, uploaded, category = "losts" }: PhotoUploadProps) {
+export function PhotoUpload({ onUploaded, onRemove, uploaded, category = "losts", showDetectedBadge = true }: PhotoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingUrlRef = useRef<string | null>(null);
   // Every object URL we created, so removed/unmounted previews can be revoked.
@@ -263,7 +265,7 @@ export function PhotoUpload({ onUploaded, onRemove, uploaded, category = "losts"
         >
           {busy ? "Processing…" : photo ? "Replace photo" : "Choose a photo"}
         </Button>
-        {photo && src && !imageFailed && !busy && (
+        {showDetectedBadge && photo && src && !imageFailed && !busy && (
           <>
             <span className="badge badge--outreach">
               {photo.pet_classes?.length ? `Detected: ${photo.pet_classes[0]} ✓` : "Pet detected ✓"}

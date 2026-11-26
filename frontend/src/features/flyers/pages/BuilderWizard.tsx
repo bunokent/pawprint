@@ -2,13 +2,13 @@ import { startTransition, useActionState, useEffect, useOptimistic, useRef, useS
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { useAuth } from "@/stores/auth";
 import { ApiError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { FieldShell, Input, Textarea } from "@/components/ui/field";
 import { ErrorBox } from "@/components/ui/feedback";
 import { PhotoUpload, type LocalPhotoUploadResult } from "@/features/pets/components/PhotoUpload";
+import { petSchemaFor, parseTags, SPECIES, type PetValues, type Species } from "@/features/pets/petSchema";
 import { LocationPicker } from "@/components/maps/LocationPicker";
 import {
   PHOTO_CATEGORY_BY_MODE,
@@ -17,6 +17,7 @@ import {
   type PhotoUploadResult,
 } from "@/features/pets/api";
 import { useCreateFlyer, type Flyer, type Mode } from "@/features/flyers/api";
+import { flyerSchemaFor, type FlyerValues } from "@/features/flyers/flyerSchema";
 import {
   clearDraft,
   createEmptyDraft,
@@ -32,14 +33,10 @@ import {
   type PetDraftValues,
 } from "@/features/flyers/draft";
 import { FlyerCard } from "@/components/FlyerCard";
-import { ageSchema, dateTimeLocalSchema, emailSchema, phoneSchema } from "@/lib/validation";
-
-const SPECIES = ["dog", "cat", "bird", "horse", "other"] as const;
 
 // Map YOLO-World's open-vocabulary labels to our standard species values.
 // Expanded animals (lion, rabbit, …) use "other"; ambiguous multi-species
 // detections fall back to the first standard match.
-type Species = (typeof SPECIES)[number];
 function detectedSpecies(detectedClasses: string[]): Species | null {
   const labels = new Set(detectedClasses.map((label) => label.toLowerCase()));
   const standardMatches = SPECIES.slice(0, 4).filter((species) => labels.has(species));
@@ -55,73 +52,11 @@ function modeFromParam(value: string | null): Mode | null {
   return value === "emergency" || value === "found" || value === "outreach" ? value : null;
 }
 
-const petSchemaBase = z.object({
-  name: z.string().trim().max(120, "Keep the name under 120 characters.").optional().or(z.literal("")),
-  breed: z.string().trim().max(120, "Keep the breed under 120 characters.").optional().or(z.literal("")),
-  color: z.string().trim().max(120, "Keep the color under 120 characters.").optional().or(z.literal("")),
-  age: ageSchema().optional().or(z.literal("")),
-  temperament_tags: z.string().trim().max(600, "Keep personality tags under 600 characters.").optional().or(z.literal("")),
-});
-type PetValues = z.infer<typeof petSchemaBase>;
-
-/**
- * Pet form schema — a name is required for lost/adoptable pets, but a found-pet
- * report has no name (the owner is unknown), so the field is hidden there.
- */
-function petSchemaFor(mode: Mode) {
-  return petSchemaBase.superRefine((v, ctx) => {
-    if (mode === "found") return;
-    if (!v.name?.trim()) {
-      ctx.addIssue({ code: "custom", path: ["name"], message: "Give the pet a name." });
-    }
-    // Count before parseTags() truncates, so an overlong list is rejected.
-    const tags = (v.temperament_tags ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
-    if (tags.length > 12) {
-      ctx.addIssue({ code: "custom", path: ["temperament_tags"], message: "Use at most 12 personality tags." });
-    }
-    if (tags.some((tag) => tag.length > 40)) {
-      ctx.addIssue({ code: "custom", path: ["temperament_tags"], message: "Keep each personality tag under 40 characters." });
-    }
-  });
-}
-
-/**
- * Flyer details schema — lost/found flyers need a location and a real, non-future
- * last-seen date; outreach flyers don't show those fields. Contacts are optional,
- * but any value supplied must be a usable phone number or email address.
- */
-function flyerSchemaFor(mode: Mode) {
-  const needsWhereAndWhen = mode === "emergency" || mode === "found";
-  const location = z.string().trim().max(255, "Keep the location under 255 characters.");
-  return z.object({
-    last_seen_location: needsWhereAndWhen
-      ? location.min(1, mode === "found" ? "Add the location where you found the pet." : "Add where you last saw the pet.")
-      : location.optional().or(z.literal("")),
-    last_seen_date: dateTimeLocalSchema(
-      needsWhereAndWhen
-        ? mode === "found" ? "Add the date and time you found the pet." : "Add the last seen date and time."
-        : undefined,
-    ),
-    distinctive_markings: z.string().trim().max(1000, "Keep the description under 1000 characters.").optional().or(z.literal("")),
-    contact_phone: phoneSchema(),
-    contact_email: emailSchema("Enter a valid email.").optional().or(z.literal("")),
-  });
-}
-type FlyerValues = z.infer<ReturnType<typeof flyerSchemaFor>>;
-
 interface StepState {
   error: string | null;
 }
 
 const initialStepState: StepState = { error: null };
-
-function parseTags(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .slice(0, 12);
-}
 
 function draftFlyer(
   pet: Pet,

@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { HomePage } from "@/pages/HomePage";
 import { GalleryPage } from "@/features/flyers/pages/GalleryPage";
 import { FlyerDetailPage } from "@/features/flyers/pages/FlyerDetailPage";
+import { FlyerEditPage } from "@/features/flyers/pages/FlyerEditPage";
 import { PetMapPage } from "@/pages/PetMapPage";
 import { BuilderWizard } from "@/features/flyers/pages/BuilderWizard";
 import { MyFlyersPage } from "@/features/flyers/pages/MyFlyersPage";
@@ -23,6 +24,7 @@ export function App() {
       <Route element={<AppShell />}>
         <Route index element={<HomePage />} />
         <Route path="flyers" element={<GalleryPage />} />
+        <Route path="flyers/:id/edit" element={<FlyerEditPage />} />
         <Route path="flyers/:id" element={<FlyerDetailPage />} />
         <Route path="map" element={<PetMapPage />} />
         <Route path="builder" element={<BuilderWizard />} />
