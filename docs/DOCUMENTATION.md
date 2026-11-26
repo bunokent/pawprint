@@ -502,7 +502,10 @@ exactly rather than silently rewriting a password.
   card/filter/map/modal grids, and a single rule set for 44px tap targets. On phones the compact
   nav becomes a 44px Menu toggle plus a full-screen menu with 52px rows; filters, search, forms,
   button rows and detail actions stack; the pet map canvas becomes a shorter pane with a
-  bottom-anchored popup; and long location lines wrap instead of clipping. Focus rings use the
+  bottom-anchored popup. The same-spot stack popup is its own responsive card: a fixed header
+  and intro over a scroll-only flyer list, with each row a grid that drops to a 44px thumb plus
+  name and a full-width 44px **Open** button on phones; the card becomes a 12px-gutter bottom
+  sheet and never scrolls the whole panel. Long location lines wrap instead of clipping. Focus rings use the
   theme's ink at 2–3px so they stay visible on both palettes, and lead text uses a stronger muted
   token that clears 7:1 body-text contrast while ordinary captions keep the softer muted token.
 
@@ -1640,3 +1643,17 @@ rendering. Application data and schema are unchanged; only test-mode settings an
   since the dedicated last-seen/found location block (MapPin icon + "Last seen / Found at"
   label) already appears just below it. The location block itself is unchanged. Verified
   `tsc -b --noEmit` clean, `npm test` green, and `vite build` clean.
+
+- **Phase 57** — Mobile-responsive stacked-pet popup on `/map`.
+  The same-spot stack card (`StackPopup` in `frontend/src/pages/PetMapPage.tsx`) no longer
+  squeezes its photo, name and **Open** link into one rigid inline flex row on a phone. The
+  markup now uses `map-popup__header`, `map-popup__intro`, `map-stack-list` and `map-stack-row`
+  classes; each flyer row is a CSS grid (38px thumb / name / compact button on desktop) that
+  becomes a 44px thumb + name row with the **Open** button spanning the full width at the 44px
+  tap-target floor on phones. The enclosing card keeps its count badge and close control in a
+  fixed header, scrolls only the flyer list (`overscroll-behavior: contain`), and becomes a
+  bottom sheet with 12px gutters inside the map on small screens instead of letting the whole
+  panel scroll and the buttons overflow. Added
+  `frontend/tests/map-stack-popup-responsive.test.mjs` to `npm test` to pin the row grid,
+  full-width button, scroll container and bottom-sheet rules. Verified `npm run lint`,
+  `npm run build`, `npm test` and `npm run docs:pdf` clean.
