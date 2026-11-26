@@ -10,9 +10,12 @@ from rest_framework import serializers
 
 from apps.common import storage
 from apps.common.validation import clean_phone
+from apps.pets.models import Pet
 from apps.pets.serializers import PetSerializer
 
+from .edit_rules import pet_name_missing, update_missing_photo
 from .models import Flyer
+from .photo_keys import is_valid_photo_key
 
 
 class FlyerSerializer(serializers.ModelSerializer[Flyer]):
@@ -137,14 +140,37 @@ class FlyerCreateSerializer(serializers.Serializer):
 
 class FlyerUpdateSerializer(serializers.Serializer):
     mode = serializers.ChoiceField(choices=Flyer.Mode.choices, required=False)
+    # The pet is edited in the same owner-only request as the flyer it belongs to.
+    name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    species = serializers.ChoiceField(choices=Pet.Species.choices, required=False)
+    breed = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    color = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    age = serializers.IntegerField(min_value=0, max_value=50, required=False, allow_null=True)
+    temperament_tags = serializers.ListField(
+        child=serializers.CharField(max_length=40), max_length=12, required=False
+    )
+    health_tags = serializers.ListField(
+        child=serializers.CharField(max_length=40), max_length=12, required=False
+    )
     last_seen_location = serializers.CharField(max_length=255, required=False, allow_blank=True)
     last_seen_date = serializers.DateTimeField(required=False, allow_null=True)
     location_lat = serializers.FloatField(min_value=-90, max_value=90, required=False, allow_null=True)
     location_lng = serializers.FloatField(min_value=-180, max_value=180, required=False, allow_null=True)
     distinctive_markings = serializers.CharField(required=False, allow_blank=True)
+    # Full photo key returned by POST /api/pets/photos; blank removes the cover.
+    photo_path = serializers.CharField(max_length=512, required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
     status = serializers.ChoiceField(choices=[Flyer.Status.ACTIVE, Flyer.Status.RESOLVED], required=False)
+
+    def validate_name(self, value: str) -> str:
+        return value.strip()
+
+    def validate_breed(self, value: str) -> str:
+        return value.strip()
+
+    def validate_color(self, value: str) -> str:
+        return value.strip()
 
     def validate_last_seen_location(self, value: str) -> str:
         return value.strip()
@@ -164,7 +190,31 @@ class FlyerUpdateSerializer(serializers.Serializer):
     def validate_contact_email(self, value: str) -> str:
         return value.strip()
 
+    def validate_photo_path(self, value: str) -> str:
+        return value.strip()
+
+    def _validate_replacement_photo(self, value: str, mode: str) -> None:
+        """Only accept a full photo this owner uploaded for this flyer's folder."""
+        flyer = self.instance
+        if flyer is None:
+            raise serializers.ValidationError({"photo_path": "Upload a photo first."})
+        category = storage.flyer_category(mode)
+        if not is_valid_photo_key(value, flyer.creator_id, category):
+            raise serializers.ValidationError({"photo_path": "Choose a photo uploaded for this flyer."})
+        if not storage.get_storage().exists(value):
+            raise serializers.ValidationError({"photo_path": "That photo is no longer available. Upload it again."})
+
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        if update_missing_photo(attrs):
+            raise serializers.ValidationError({"photo_path": "Upload a photo before saving."})
         mode = attrs.get("mode", self.instance.mode if self.instance else "")
         validate_details(mode, attrs, instance=self.instance)
+        # A found flyer is unnamed; a name is required once a pet is edited into
+        # any other mode. Existing flyers without a name only fail when touched.
+        if "name" in attrs or "mode" in attrs:
+            current_name = self.instance.pet.name if self.instance else ""
+            if pet_name_missing(mode, attrs.get("name", current_name)):
+                raise serializers.ValidationError({"name": "Give the pet a name."})
+        if attrs.get("photo_path"):
+            self._validate_replacement_photo(attrs["photo_path"], mode)
         return attrs

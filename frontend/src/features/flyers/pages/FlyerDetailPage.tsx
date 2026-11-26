@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Download, MapPin, Trash2 } from "lucide-react";
 import { flyerDetailQuery, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
+import { isFlyerOwner } from "@/features/flyers/edit-helpers";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-dialog";
@@ -79,7 +80,7 @@ export function FlyerDetailPage() {
 
   const emergency = flyer.mode === "emergency";
   const found = flyer.mode === "found";
-  const isOwner = Boolean(user && flyer.creator === user.id);
+  const isOwner = isFlyerOwner(flyer, user);
   const hasPin = flyer.location_lat != null && flyer.location_lng != null;
   const displayName = petDisplayName(flyer.pet, flyer.mode);
   const markLabel = emergency ? "Mark reunited" : found ? "Mark home" : "Mark adopted";

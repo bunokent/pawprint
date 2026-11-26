@@ -18,6 +18,22 @@ export interface FlyerCreateInput {
   contact_email?: string;
 }
 
+/**
+ * PATCH body for the owner-only edit endpoint. Pet details and the cover photo
+ * are applied to the flyer's linked pet in the same atomic request.
+ */
+export interface FlyerUpdateInput extends Partial<Omit<FlyerCreateInput, "pet_id">> {
+  status?: string;
+  photo_path?: string;
+  name?: string;
+  species?: components["schemas"]["SpeciesEnum"];
+  breed?: string;
+  color?: string;
+  age?: number | null;
+  temperament_tags?: string[];
+  health_tags?: string[];
+}
+
 export const flyerKeys = {
   all: ["flyers"] as const,
   list: (params: { mode?: Mode; q?: string; cursor?: string }) =>
@@ -73,7 +89,7 @@ export function useCreateFlyer() {
 export function useUpdateFlyer(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<FlyerCreateInput> & { status?: string }) =>
+    mutationFn: (patch: FlyerUpdateInput) =>
       api.patch<Flyer>(`/flyers/${id}/edit`, patch).then((r) => r.data),
     onSuccess: (flyer) => {
       qc.setQueryData(flyerKeys.detail(id), flyer);

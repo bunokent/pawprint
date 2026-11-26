@@ -18,6 +18,12 @@ from .models import Pet, PetPhoto
 # PhotoUpload caps at the same number.
 MAX_PET_PHOTOS = 1
 
+# Fields an owner may change on an existing pet. Kept here so the flyer edit
+# service can split one PATCH body into flyer and pet writes without guessing.
+PET_UPDATE_FIELDS = frozenset({
+    "name", "species", "breed", "color", "age", "temperament_tags", "health_tags",
+})
+
 
 @dataclass(frozen=True)
 class UploadedPhoto:
@@ -53,6 +59,15 @@ class PetService:
         )
         for path in paths:
             PetPhoto.objects.create(pet=pet, photo_path=path)
+        return pet
+
+    @staticmethod
+    @transaction.atomic
+    def update_pet(pet: Pet, **fields) -> Pet:
+        """Apply validated owner edits; `Pet.save` keeps the search vector in sync."""
+        for key, value in fields.items():
+            setattr(pet, key, value)
+        pet.save(update_fields=list(fields))
         return pet
 
 

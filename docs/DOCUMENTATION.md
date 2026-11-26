@@ -157,7 +157,7 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` |
 | `GET /api/flyers/{id}` | Guest | Public flyer detail (QR scan landing) |
 | `POST /api/flyers/new` | Auth | Create flyer — `mode` incl. `found`, optional `location_lat`/`location_lng` pin (dispatches A4 asset generation) |
-| `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / delete own flyer |
+| `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / delete own flyer; detail `PATCH` applies flyer/pet edits and requires a non-empty `photo_path` (status-only resolve exempt); any `PATCH` on a resolved flyer returns 409 |
 | `GET /api/flyers/mine` | Auth | Creator's own flyers |
 | `POST /api/pets/photos` | Auth | YOLO-World-gated photo upload (10/min); response also carries CLIP `breed`/`breed_confidence`/`color`/`color_confidence` |
 | `POST /api/pets` | Auth | Create pet record (links an uploaded photo) |
@@ -170,7 +170,16 @@ lost/found flyers require both a location and a timestamp — including when a `
 outreach flyer into lost/found mode, because `FlyerUpdateSerializer` receives the existing flyer
 and checks the final combined state. Descriptions are capped at 1000 characters, locations at 255,
 pet names/breeds/colors at 120, ages at 0–50, tags at 12 per list with each tag ≤40 characters,
-and phone numbers at 7–15 digits (≤32 characters with common separators). Passwords are capped at
+and phone numbers at 7–15 digits (≤32 characters with common separators). The same owner-only
+`PATCH` accepts `name`, `species`, `breed`, `color`, `age`, `temperament_tags` and `health_tags`;
+`apps/flyers/edit_rules.py` keeps found-pet reports unnamed while requiring a name for every other
+mode. A replacement `photo_path` must be a full (non-thumbnail)
+`flyers/{owner_id}/{folder}/{uuid}.jpg` key that the owner uploaded for that flyer's mode folder;
+`apps/flyers/photo_keys.py` enforces this shape, and `FlyerService.replace_pet_photo` mirrors it
+onto `Pet.photo_path`/`PetPhoto` and removes the old objects best-effort. A `PATCH` that changes
+flyer or pet details must include a non-empty photo key (`apps/flyers/edit_rules.py`); only a
+status-only resolve request may omit it. Once a flyer is resolved, `flyer_is_editable` blocks every
+`PATCH` with `409 flyer_resolved`, so neither the flyer nor its linked pet can be changed. Passwords are capped at
 128 characters; registration requires 8 non-whitespace characters, and login preserves whitespace
 exactly rather than silently rewriting a password.
 
@@ -235,6 +244,17 @@ exactly rather than silently rewriting a password.
   Flyers can carry a map pin (`location_lat`/`location_lng`, indexed via
   `flyer_status_location_idx`); `GET /api/flyers/map` (public) returns active lost/found
   flyers that have one — the pins behind `/map`.
+- Owner edits use `PATCH /flyers/{id}/edit`; the update serializer accepts flyer details
+  (`last_seen_location`, `last_seen_date`, `location_lat`/`location_lng`, `distinctive_markings`,
+  `contact_phone`, `contact_email`, `status`), linked-pet details (`name`, `species`, `breed`,
+  `color`, `age`, `temperament_tags`, `health_tags`) and a required `photo_path` cover-photo key
+  (status-only resolve requests remain exempt).
+  `FlyerService` splits the validated body with `PET_UPDATE_FIELDS`, applies pet edits through
+  `PetService.update_pet` (which keeps the search vector current), swaps the pet's single photo
+  row, cleans up superseded private objects and re-dispatches `generate_flyer_assets` so the
+  gallery image and printable flyer match the saved details. A resolved flyer is final: the view
+  rejects every `PATCH` before validation, and the UI hides the card pencil and blocks the edit
+  route. `IsOwnerOrReadOnly` remains the security boundary; the frontend checks are only guards.
 
 ## 8. AI Pet Detection (YOLO-World gate + CLIP species naming + attributes)
 
@@ -385,22 +405,44 @@ exactly rather than silently rewriting a password.
   (delete opens the custom `ConfirmDeleteDialog` — `src/components/ui/confirm-dialog.tsx`,
   an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`)
   (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
-  "View on map" link when pinned), `/builder` 3-step wizard with **three modes** — Lost —
+  "View on map" link when pinned), `/flyers/:id/edit` **owner-only edit form** (guarded by
+  `isFlyerOwner` and `isFlyerEditable`, so resolved flyers are read-only; reusing the builder's
+  mode-aware Zod schema, `LocationPicker` and
+  `PATCH /flyers/{id}/edit`; the same owner-only request edits flyer details, linked-pet details
+  (name, species, age, breed, color, personality tags) and the replaceable cover photo; found
+  mode keeps the name/age/tags hidden),
+  `/builder` 3-step wizard with **three modes** — Lost —
   urgent / **Found pet** / Adoptable (`?mode=found`) — (photo gate → pet form → details;
   the photo step stays open until **Next** with exactly one photo (picking several files keeps
   only the first) and going back with an uploaded photo shows **Next** to continue without
-  re-uploading; the pet is created with `photo_path` = that single photo). Found mode hides
-  **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
+  re-uploading; the pet is created with `photo_path` = that single photo). Wizard inputs are
+  kept in a versioned `localStorage` draft (`pawprint:flyer-draft:v1`): mode, step, uploaded
+  photo metadata, pet and flyer fields, contact details and the map pin survive Back navigation
+  and page reloads. Drafts are scoped to the signed-in account, removed after publishing, and
+  unchanged pet values are reused on Back → Continue instead of creating a duplicate pet.
+  Found mode hides **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
   `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
   settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
   name/phone, read-only email). The header nav links Flyers, **Pet map**, the avatar + display
   name to `/settings` (`components/Avatar.tsx` renders the round picture with an
   initial-letter fallback).
+- `FlyerCard` is an `article` whose whole body links to the flyer detail, with a sibling
+  owner-only **Edit** pencil at the photo's top-right corner (no nested interactive elements).
+  The control is a 44px tap target on phones, uses the shared `isFlyerOwner` id check so other
+  registered users never see it, and hides from print. The backend `IsOwnerOrReadOnly`
+  permission remains the actual security boundary.
+- The edit page also reuses `PhotoUpload` for the cover: it seeds the picker from
+  `pet.photo_url`, suppresses the builder's "Pet detected" badge for the already-approved photo,
+  uploads a replacement through the same gated `/pets/photos` endpoint and sends only the returned
+  storage key in the final `PATCH`. A cover photo is mandatory: removing it disables Save and shows
+  an inline error until a new one is uploaded, and the API rejects a detail update with no photo
+  key. A failed save leaves the existing flyer untouched.
 - Builder step 3 uses `LocationPicker` (`components/maps/LocationPicker.tsx`): an embedded
   Leaflet (OpenStreetMap) map with a **draggable pin** plus Nominatim address suggestions on
   the text input; dropping the pin reverse-geocodes the address and the form stores
-  `last_seen_location` + `location_lat`/`location_lng`. If the map cannot be created (jsdom
+  `last_seen_location` + `location_lat`/`location_lng`, and a saved pin is put back on the map
+  when a draft resumes. If the map cannot be created (jsdom
   unit tests) it degrades to a plain address input under the same id (`flyer-loc` /
   `flyer-loc-found`) with null coordinates. Maps plumbing lives in `src/lib/maps.ts` —
   `leaflet` npm dependency (+ `@types/leaflet`, `leaflet/dist/leaflet.css`), OSM tile-layer
@@ -440,7 +482,9 @@ exactly rather than silently rewriting a password.
   tactile hover/press, skeleton/empty/error states, dual palette (emergency crimson/amber vs
   outreach sage/teal/terracotta). The photo uploader uses a fixed 380px desktop rectangle (360px
   on phones), neutral/sage drop affordances, an animated processing overlay, accessible live status
-  and progress semantics, and reduced-motion fallbacks.
+  and progress semantics, and reduced-motion fallbacks. Its preview prefers a fresh blob URL, then
+  the full signed photo URL, then the thumbnail: the thumbnail is produced asynchronously by Celery,
+  so using it first made a just-uploaded photo briefly show "Could not load photo" until a reload.
 - Responsive system (`src/index.css` + `components/layout/AppShell.tsx`): every route shares one
   fluid type scale, a 24px phone gutter (`.wrap`), section rhythm (`.page-section`, `.section-head`),
   card/filter/map/modal grids, and a single rule set for 44px tap targets. On phones the compact
@@ -452,19 +496,32 @@ exactly rather than silently rewriting a password.
 
 ## 11. Verification & CI
 
-Automated backend, frontend, and browser test suites have been removed. The repository
-retains static and build checks: `ruff check .` and `mypy apps` in `backend/`, plus
-`npm run lint` and `npm run build` in `frontend/`. GitHub Actions runs those checks on
-pushes and pull requests. Runtime Playwright remains a backend dependency because the
-flyer export task uses it to render A4 PNGs; it is not used as an E2E test runner.
+Full automated backend and browser test suites have been removed. The repository retains
+static and build checks (`ruff check .` and `mypy apps` in `backend/`, plus `npm run lint`
+and `npm run build` in `frontend/`) plus two targeted suites: `npm test` in `frontend/`
+compiles and checks the pure flyer-edit helpers (6 tests for owner matching, `datetime-local`
+conversion, tag text, the required photo and resolved-flyer editability), and
+`python -m unittest apps.flyers.test_photo_keys apps.flyers.test_edit_rules` in `backend/` checks
+the pure replacement-photo key, found-name, required-photo and resolved-flyer rules (12 tests).
+GitHub Actions runs the static/build checks on pushes and pull requests.
+Runtime Playwright remains a backend dependency because the flyer export task uses it to
+render A4 PNGs; it is not used as an E2E test runner.
 The validation pass documented in §5 and §10 was checked locally with `npm run lint`,
 `npm run build`, and `python -m compileall -q apps config` (all pass, with only pre-existing
 Zod/chunk-size warnings from the frontend build). The field-level error presentation pass was
 checked again with `npm run lint` and `npm run build` after moving messages below their controls,
 linking them with `aria-describedby`, adding the red invalid border/ring, and switching forms to
 on-touch validation. `ruff` and `mypy` are CI checks but are not installed in this checkout, so
-they could not be run locally. `docs/documentation.pdf` is regenerated from this file with
-`npm run docs:pdf` after every documentation change.
+they could not be run locally. The localStorage draft and photo-preview passes were checked again with
+`npm run lint` and `npm run build` (only the same pre-existing Zod/chunk-size warnings).
+The owner-edit and photo-replacement passes added `npm test` and
+`python -m unittest apps.flyers.test_photo_keys`; the pet-details edit pass extended them to
+4/4 frontend helper tests and 7/7 backend rule tests, the required-photo pass to 5/5 and 10/10,
+and the resolved-lock pass to 6/6 and 12/12. Every pass was checked with `npm run lint`,
+`npm run build` and
+`python -m compileall -q apps config`; all changes were left uncommitted at the user's request.
+`docs/documentation.pdf` is regenerated from this file with `npm run docs:pdf` after every
+documentation change.
 Responsive checks are browser-based rather than a test suite: the `taste` layout checker
 is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is run at
 1440/390 plus the 320px walk. The responsive pass reports PASS for `spill`,
@@ -481,6 +538,85 @@ entrypoint. Check with `git ls-files --eol '*.sh'` (expect `w/lf`) and `sh -n` o
 inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
+
+- **Resolved flyers are now read-only** — `flyer_is_editable` in `edit_rules.py` makes the
+  `FlyerDetailMutateView.patch` return `409 flyer_resolved` before validation whenever
+  `flyer.status == "resolved"`, so neither flyer fields, pet fields nor the cover photo can change.
+  Status-only resolve requests from an active flyer still work. The card pencil is hidden and the
+  edit route shows a "resolved and can no longer be edited" message via `isFlyerEditable` in
+  `edit-helpers.ts`. Verified with `npm test` (6/6), `npm run lint`, `npm run build`,
+  `python -m unittest apps.flyers.test_photo_keys apps.flyers.test_edit_rules` (12/12) and
+  `python -m compileall -q apps config`; nothing was committed.
+
+- **A cover photo is mandatory for every detail update** — Removing the cover in `FlyerEditPage`
+  now clears the picker but disables **Save changes**, shows an inline "Upload a photo before
+  saving" error under `Cover photo`, and the submit action itself guards against a blank key.
+  `hasPhotoInput` in `edit-helpers.ts` is the pure UI rule. On the API side,
+  `update_missing_photo` in `edit_rules.py` rejects any detail `PATCH` that omits or clears
+  `photo_path`, while a status-only resolve PATCH stays allowed so the detail page's "Mark
+  reunited" action keeps working. Verified with `npm test` (5/5), `npm run lint`,
+  `npm run build`, `python -m unittest apps.flyers.test_photo_keys apps.flyers.test_edit_rules`
+  (10/10) and `python -m compileall -q apps config`; nothing was committed.
+
+- **The edit form now edits the pet too** — `FlyerEditPage` combines `flyerSchemaFor(mode)` with a
+  shared `petSchemaFor(mode)` from `frontend/src/features/pets/petSchema.ts`, so one owner-only
+  `PATCH /flyers/{id}/edit` saves the flyer, the linked pet and the cover photo together. The form
+  adds name (non-found), an editable species select, age (non-found), breed, colour and personality
+  tags (non-found); species is no longer read-only just because the builder auto-detects it.
+  `parseTags` was extracted from `BuilderWizard` and reused, and `tagsText` seeds the tag input from
+  the API array. On the backend, `FlyerUpdateSerializer` validates the pet fields with the same
+  mode-aware rule as creation (`apps/flyers/edit_rules.py` keeps found pets unnamed), and
+  `PET_UPDATE_FIELDS` lets `FlyerService` dispatch them to `PetService.update_pet` before regenerating
+  flyer assets. `health_tags` is accepted by the API for other clients but not exposed in this UI.
+  The builder now imports the shared pet schema instead of keeping a duplicate. Verified with
+  `npm test` (4/4), `npm run lint`, `npm run build`,
+  `python -m unittest apps.flyers.test_photo_keys apps.flyers.test_edit_rules` (7/7) and
+  `python -m compileall -q apps config`; nothing was committed.
+
+- **Owners can replace a flyer's photo from the edit page** — The edit form now seeds `PhotoUpload`
+  with the current `pet.photo_path`/`pet.photo_url`, hides the builder-only detection badge, and
+  reuses the same YOLO-World-gated `/pets/photos` upload for a replacement. The returned storage key
+  is sent as `photo_path` in the existing `PATCH /flyers/{id}/edit`; `FlyerUpdateSerializer` accepts
+  it only when `apps/flyers/photo_keys.py` confirms it is a full (not thumbnail) object under the
+  owner's id and the flyer's mode folder, and `FlyerService.replace_pet_photo` mirrors the key onto
+  `Pet`/`PetPhoto`, deletes superseded objects best-effort and regenerates flyer assets. Removing
+  the cover was later tightened by the first entry above so a detail update cannot save without a
+  photo. Verified with `python -m unittest apps.flyers.test_photo_keys` (4/4),
+  `python -m compileall -q apps config`, `npm test`, `npm run lint` and `npm run build`;
+  nothing was committed.
+
+- **Owners can edit their flyers from the card** — `FlyerCard` is now an `article` containing one
+  detail `<Link>` plus a sibling pencil `<Link>` to `/flyers/:id/edit`; this keeps the interactive
+  elements valid HTML while preserving the whole-card click. The pencil is rendered only when
+  `isFlyerOwner(flyer, user)` matches the API's `creator` id, and it is a 44px tap target pinned to
+  the photo corner with hover/press feedback and a print-hidden class. `FlyerEditPage` guards the
+  route again (including before auth hydration), prefills the `datetime-local` value via
+  `toDateTimeLocal`, restores the saved map pin in `LocationPicker`, reuses the builder's
+  `flyerSchemaFor(mode)` validation and submits only flyer fields to the existing owner-protected
+  `PATCH /flyers/{id}/edit`. Non-owners see a "You can only edit flyers you created" error; the
+  backend permission is the real security boundary. Three pure helper tests cover ownership and
+  date conversion; `npm test`, `npm run lint`, `npm run build` and `git diff --check` pass, and
+  nothing was committed.
+
+- **Fresh photo previews no longer fail before the thumbnail exists** — Restoring the uploader
+  from the saved draft made it request `thumb_url` immediately, but `PetPhotoService` dispatches
+  `generate_thumbnail` to Celery after returning the upload response, so the first load 404'd and
+  showed "Could not load photo" until a refresh. `PhotoUpload` now prefers the local blob URL for a
+  new selection, then the full signed photo URL (written synchronously), and only then the
+  thumbnail; it also clears a stale image-error state when the source changes. Verified
+  `npm run lint` and `npm run build`; the PDF was regenerated and all changes were left uncommitted
+  at the user's request.
+
+- **Flyer drafts survive Back navigation** — The builder now writes a versioned draft to
+  `localStorage` (`pawprint:flyer-draft:v1`) on every step change and form edit, then restores
+  mode, step, the accepted photo's metadata, pet fields, flyer details, contact details and the
+  map pin when the wizard remounts. `LocationPicker` puts a saved pin back on the map; the
+  photo preview falls back to the signed thumbnail because blob URLs cannot survive a reload.
+  Drafts are scoped to the signed-in account and deleted after a successful publish. Returning
+  to the pet step and clicking Continue reuses the pet created from unchanged values instead of
+  posting a duplicate. Verified `npm run lint` and `npm run build` (only the pre-existing
+  Zod/chunk-size warnings); the PDF was regenerated and all changes were left uncommitted at the
+  user's request.
 
 - **Validation errors now belong to their own field** — `FieldShell` renders the message immediately
   below the control it describes, gives it a stable `<field-id>-error` id, and forwards
