@@ -30,7 +30,7 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
   return (
     <article
       className="card flyer-card"
-      style={{ borderTop: `3px solid ${modeColor}` }}
+      style={{ flex: 1, borderTop: `3px solid ${modeColor}` }}
     >
       <Link
         to={`/flyers/${flyer.id}`}

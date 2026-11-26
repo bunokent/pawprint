@@ -430,8 +430,11 @@ exactly rather than silently rewriting a password.
 - `FlyerCard` is an `article` whose whole body links to the flyer detail, with a sibling
   owner-only **Edit** pencil at the photo's top-right corner (no nested interactive elements).
   The control is a 44px tap target on phones, uses the shared `isFlyerOwner` id check so other
-  registered users never see it, and hides from print. The backend `IsOwnerOrReadOnly`
-  permission remains the actual security boundary.
+  registered users never see it, and hides from print. On My Flyers (`/my-flyers`) every card in
+  a grid row is the same height: the grid stretches its items, the owner-card wrapper is a flex
+  column, and `FlyerCard` grows with `flex: 1` to fill the row height so its pinned "View flyer"
+  footer stays at the bottom of each card regardless of content length. The backend
+  `IsOwnerOrReadOnly` permission remains the actual security boundary.
 - The edit page also reuses `PhotoUpload` for the cover: it seeds the picker from
   `pet.photo_url`, suppresses the builder's "Pet detected" badge for the already-approved photo,
   uploads a replacement through the same gated `/pets/photos` endpoint and sends only the returned
@@ -1594,3 +1597,12 @@ user direction. CI runs backend lint (ruff + mypy) and frontend type-check/build
 locally with `cd backend && .venv/bin/ruff check . && .venv/bin/mypy apps` and
 `cd frontend && npm run lint && npm run build`. Runtime Playwright remains for flyer PNG
 rendering. Application data and schema are unchanged; only test-mode settings and infrastructure were removed.
+
+- **Phase 55** — Equal-height FlyerCards on My Flyers (`/my-flyers`).
+  Owner cards in the My Flyers grid now all share one height within a grid row, so the card
+  grid stays rectangular regardless of how much location/date content each flyer has. The grid
+  keeps its default stretch alignment, each owner-card wrapper is a flex column, and `FlyerCard`
+  (`frontend/src/components/FlyerCard.tsx`) grows with `flex: 1` to fill the row height — its
+  pinned "View flyer" footer stays at the bottom of every card. Layout contract covered by new
+  tests in `frontend/tests/my-flyers-card-height.test.mjs` (added to `npm test`). Verified
+  `tsc -b --noEmit` clean and `npm test` green.
