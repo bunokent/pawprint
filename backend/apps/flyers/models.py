@@ -18,6 +18,12 @@ class Flyer(models.Model):
         ACTIVE = "active", "Active"
         RESOLVED = "resolved", "Resolved"
 
+    class Design(models.TextChoices):
+        CLASSIC = "classic", "Classic"
+        MODERN = "modern", "Modern"
+        MINIMALIST = "minimalist", "Minimalist"
+        VIBRANT = "vibrant", "Vibrant"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     pet = models.ForeignKey("pets.Pet", on_delete=models.CASCADE, related_name="flyers")
     creator = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="flyers")

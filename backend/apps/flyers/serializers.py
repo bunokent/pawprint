@@ -37,7 +37,8 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
             "photo_url", "photo_urls", "export_png_url", "export_pdf_url", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "creator", "status", "created_at", "updated_at",
-                            "export_png_url", "export_pdf_url", "photo_url", "photo_urls"]
+                            "export_png_url", "export_pdf_url",
+                            "photo_url", "photo_urls"]
 
     def get_photo_url(self, obj: Flyer) -> str:
         if obj.pet and obj.pet.photo_path:

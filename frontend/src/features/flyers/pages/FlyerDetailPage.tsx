@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Download, MapPin, Trash2 } from "lucide-react";
-import { flyerDetailQuery, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
+import { flyerDetailQuery, exportFlyer, useDeleteFlyer, useUpdateFlyer } from "@/features/flyers/api";
 import { isFlyerOwner } from "@/features/flyers/edit-helpers";
 import { useAuth } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-dialog";
+import { Modal } from "@/components/ui/modal";
 import { ModeBadge, StatusBadge } from "@/components/ui/badge";
 import { ErrorBox, Skeleton } from "@/components/ui/feedback";
 import { PhotoGallery } from "@/components/PhotoGallery";
@@ -26,9 +27,34 @@ export function FlyerDetailPage() {
   // deliberate second click (armed for 4 s) instead of resolving on a single tap.
   const [resolveArmed, setResolveArmed] = useState(false);
   const resolveTimer = useRef<number | null>(null);
+  // Whether the download design-chooser dialog is open.
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  // Which single design the user has selected to generate/download.
+  const [selectedDesign, setSelectedDesign] = useState<string>("classic");
+  // Whether a generation/download is in flight.
+  const [generating, setGenerating] = useState(false);
 
   const flyer = query.data;
   const qrTarget = flyer?.qr_target_value ?? "";
+
+  const downloadSelectedDesign = async () => {
+    if (!flyer) return;
+    setGenerating(true);
+    try {
+      const { data } = await exportFlyer(flyer.id, selectedDesign);
+      const url = URL.createObjectURL(data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `flyer-${flyer.id}-${selectedDesign}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setGenerating(false);
+      setDownloadOpen(false);
+    }
+  };
 
   useEffect(
     () => () => {
@@ -130,15 +156,10 @@ export function FlyerDetailPage() {
                 {flyer.pet.color ? ` · ${flyer.pet.color}` : ""}
                 {flyer.pet.age != null ? ` · ${flyer.pet.age} yr${flyer.pet.age === 1 ? "" : "s"}` : ""}
               </p>
-              {(flyer.export_pdf_url || hasPin) && (
-                <div className="detail-actions no-print">
-                  {flyer.export_pdf_url && (
-                    <Button variant="secondary" asChild>
-                      <a href={flyer.export_pdf_url} download>
-                        <Download size={16} /> Download PDF
-                      </a>
-                    </Button>
-                  )}
+              <div className="detail-actions no-print">
+                  <Button variant="secondary" onClick={() => setDownloadOpen(true)}>
+                    <Download size={16} /> Download PDF
+                  </Button>
                   {hasPin && (
                     <Button variant="secondary" asChild>
                       <Link to="/map">
@@ -147,7 +168,6 @@ export function FlyerDetailPage() {
                     </Button>
                   )}
                 </div>
-              )}
               {(emergency || found) && flyer.last_seen_location && (
                 <div>
                   <p className="t-label">{emergency ? "Last seen" : "Found at"}</p>
@@ -236,6 +256,121 @@ export function FlyerDetailPage() {
           }}
         />
       )}
+      <Modal
+        open={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+        title="Choose flyer design"
+      >
+        <p className="t-body" style={{ marginBottom: 16 }}>
+          Select the design you want to download.
+        </p>
+
+        {generating ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: 20 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                border: "3px solid var(--color-line)",
+                borderTopColor: "var(--color-accent)",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite",
+              }}
+            />
+            <p style={{ fontSize: 14, color: "var(--color-ink)", fontWeight: 600, margin: 0 }}>
+              Preparing your flyer…
+            </p>
+            <style>{`
+              @keyframes spin { to { transform: rotate(360deg); } }
+            `}</style>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[
+              { value: "classic", label: "Classic", accent: "var(--color-accent)", desc: "Original layout with side detail cards" },
+              { value: "modern", label: "Modern", accent: "#8f1d17", desc: "Hero tile with stacked details" },
+              { value: "minimalist", label: "Minimalist", accent: "#1a1a1a", desc: "Clean whitespace, black ink on ivory" },
+              { value: "vibrant", label: "Vibrant", accent: "#ef4444", desc: "Bold accent band with rounded shapes" },
+            ].map((d) => (
+              <button
+                key={d.value}
+                onClick={() => setSelectedDesign(d.value)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  width: "100%",
+                  padding: 12,
+                  border: "1px solid var(--color-line)",
+                  borderRadius: 8,
+                  background: "var(--color-ground)",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  borderLeft: `4px solid ${selectedDesign === d.value ? d.accent : "transparent"}`,
+                  opacity: selectedDesign === d.value ? 1 : 0.95,
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "var(--color-accent-light)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "var(--color-ground)";
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      border: `2px solid ${d.accent}`,
+                      background: selectedDesign === d.value ? d.accent : "transparent",
+                      color: selectedDesign === d.value ? "#fff" : "transparent",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selectedDesign === d.value ? "✓" : ""}
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        color: "var(--color-ink)",
+                        fontSize: 14,
+                      }}
+                    >
+                      {d.label}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--color-muted)" }}>
+                      {d.desc}
+                    </div>
+                  </div>
+                </div>
+                <span style={{ fontSize: 18, color: "var(--color-muted)" }}>→</span>
+              </button>
+            ))}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+              <Button
+                variant="secondary"
+                onClick={() => setDownloadOpen(false)}
+                disabled={generating}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={downloadSelectedDesign}
+                disabled={generating}
+              >
+                {generating ? "Preparing…" : `Download ${selectedDesign.charAt(0).toUpperCase() + selectedDesign.slice(1)}`}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </section>
   );
 }

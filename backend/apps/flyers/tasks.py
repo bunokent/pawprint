@@ -20,6 +20,7 @@ from apps.common import storage
 from apps.common.private_storage import StorageUnavailableError
 
 from .consumers import broadcast_flyer_generated
+from .models import Flyer
 from .qr import QrService
 from .selectors import get_flyer_by_id
 
@@ -45,8 +46,14 @@ def photo_for_export(path: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
-def render_flyer_html(flyer) -> str:  # noqa: ANN001
-    template = "flyers/outreach.html" if flyer.mode == "outreach" else "flyers/emergency.html"
+def render_flyer_html(flyer, design: str = "classic") -> str:  # noqa: ANN001
+    template_map = {
+        "classic": "flyers/outreach.html" if flyer.mode == "outreach" else "flyers/emergency.html",
+        "modern": "flyers/outreach_modern.html" if flyer.mode == "outreach" else "flyers/emergency_modern.html",
+        "minimalist": "flyers/outreach_minimalist.html" if flyer.mode == "outreach" else "flyers/emergency_minimalist.html",
+        "vibrant": "flyers/outreach_vibrant.html" if flyer.mode == "outreach" else "flyers/emergency_vibrant.html",
+    }
+    template = template_map.get(design, template_map["classic"])
     target = flyer.qr_target_value or QrService.target_url(str(flyer.pk), settings.FRONTEND_BASE_URL)
     qr_svg = QrService.svg_for_url(target)
     # Deterministic design variant per flyer ID so every printed flyer looks unique.
@@ -91,15 +98,16 @@ def generate_flyer_assets(self, flyer_id: str) -> dict:
     if flyer is None:
         logger.warning("generate_flyer_assets: flyer %s not found", flyer_id)
         return {"flyer_id": flyer_id, "status": "missing"}
-    html = render_flyer_html(flyer)
+    # Only generate the Classic design upfront so the flyer can go live
+    # immediately. All other designs are generated on-demand at download time
+    # to save time and storage.
+    html = render_flyer_html(flyer, design="classic")
     pdf_bytes = render_flyer_pdf(html)
     png_bytes = render_flyer_png(html)
-    pdf_key = storage.flyer_export_key(flyer.creator_id, flyer.mode, flyer.pk, "pdf")
-    png_key = storage.flyer_export_key(flyer.creator_id, flyer.mode, flyer.pk, "png")
+    pdf_key = storage.flyer_export_key(flyer.creator_id, flyer.mode, flyer.pk, "pdf", design="classic")
+    png_key = storage.flyer_export_key(flyer.creator_id, flyer.mode, flyer.pk, "png", design="classic")
     storage.upload_bytes(pdf_key, pdf_bytes, content_type="application/pdf")
     storage.upload_bytes(png_key, png_bytes, content_type="image/png")
-    from .models import Flyer
-
     Flyer.objects.filter(pk=flyer.pk).update(
         export_pdf_path=pdf_key, export_png_path=png_key, status=Flyer.Status.ACTIVE
     )

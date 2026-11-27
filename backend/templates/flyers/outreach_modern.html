@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ADOPT {{ flyer.pet.name }}</title>
+<style>
+  /* Adoption flyer — same layout as outreach.html, warm sage/teal palette. */
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 210mm; height: 297mm; }
+  body {
+    --ink: #1f2a24;
+    --muted: #5f6f61;
+    --accent: #2f6f5e;
+    --accent-dark: #245249;
+    --soft: #f3f1e6;
+    --rule: #d9dfd2;
+    --ground: #ffffff;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--ground);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  /* ---------- Mode band ---------- */
+  .mode-band {
+    background: var(--accent-dark);
+    padding: 6mm 15mm 5mm;
+    color: #fff;
+    text-align: center;
+    border-bottom: 2.5mm solid var(--accent);
+    flex: 0 0 auto;
+  }
+  .mode-kicker {
+    display: inline-block;
+    font-size: 7pt; font-weight: 900; letter-spacing: 0.26em;
+    text-transform: uppercase; color: #fff;
+    background: var(--accent);
+    padding: 1.2mm 4mm; border-radius: 20mm;
+    margin-bottom: 2mm;
+  }
+  .mode-title {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 34pt; line-height: 0.9; letter-spacing: -0.02em;
+    font-weight: 800; margin: 0; text-transform: uppercase;
+  }
+  .mode-sub {
+    font-size: 9.5pt; font-weight: 700; color: #d8e3dc;
+    margin-top: 1.8mm; letter-spacing: 0.02em;
+  }
+
+  /* ---------- Content ---------- */
+  .content {
+    padding: 3.5mm 15mm 3mm;
+    display: flex; flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 2.6mm;
+  }
+
+  /* Fixed-height photo frame — constant, never overlaps text below. */
+  .photo-hero {
+    flex: 0 0 auto;
+    height: 118mm;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+  }
+  .photo-frame {
+    width: 150mm;
+    height: 100%;
+    margin: 0 auto;
+    border-radius: 2mm;
+    border: 2.5mm solid #fff;
+    box-shadow: 0 2mm 8mm rgba(47, 111, 94, 0.22);
+    background: #eef2ea;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .photo-frame img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+  .photo-fallback {
+    width: 150mm; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 2mm; border: 2.5mm solid #fff;
+    background: var(--soft);
+    box-shadow: 0 2mm 8mm rgba(47, 111, 94, 0.15);
+    margin: 0 auto;
+  }
+  .photo-fallback svg { width: 58mm; height: 58mm; opacity: 0.32; }
+
+  /* ---------- About callout ---------- */
+  .markings {
+    border: 2pt dashed var(--accent);
+    background: #fff;
+    padding: 3mm 4.5mm;
+    border-radius: 2mm;
+    display: flex;
+    align-items: center;
+    gap: 3.5mm;
+    flex: 0 0 auto;
+  }
+  .markings-icon {
+    flex: 0 0 auto;
+    width: 9mm; height: 9mm;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12pt; font-weight: 900;
+  }
+  .markings-body { flex: 1; }
+  .markings h2 {
+    font-size: 7pt; text-transform: uppercase; letter-spacing: 0.22em;
+    color: var(--accent-dark); margin-bottom: 1mm; font-weight: 900;
+  }
+  .markings p { font-size: 9.8pt; line-height: 1.35; color: var(--ink); }
+
+  /* ---------- Identity ---------- */
+  .identity {
+    text-align: center;
+    padding: 2.5mm 0 2.5mm;
+    border-top: 2.5pt solid var(--ink);
+    border-bottom: 2.5pt solid var(--ink);
+    flex: 0 0 auto;
+  }
+  .name {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 26pt; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.03em; line-height: 1;
+  }
+  .meta {
+    font-size: 9pt; color: var(--muted); margin-top: 1.2mm;
+    font-weight: 600; letter-spacing: 0.02em;
+  }
+  .chips {
+    display: flex; flex-wrap: wrap; gap: 1.5mm;
+    justify-content: center; margin-top: 1.6mm;
+  }
+  .chip {
+    border: 1.1pt solid var(--accent); background: #fff; color: var(--accent);
+    border-radius: 20mm; padding: 0.8mm 3mm;
+    font-size: 7.5pt; font-weight: 800; letter-spacing: 0.02em;
+  }
+
+  /* ---------- Contact CTA ---------- */
+  .cta {
+    background: var(--ink);
+    color: #fff;
+    padding: 3mm 15mm;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5mm;
+    flex: 0 0 auto;
+  }
+  .cta-left { flex: 1 1 auto; min-width: 0; }
+  .cta-label {
+    font-size: 8pt; font-weight: 900; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #9fd3bf;
+  }
+  .cta-phone {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 20pt; font-weight: 800; line-height: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cta-email {
+    font-size: 8pt; color: #bbb; margin-top: 0.8mm;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cta-qr {
+    flex: 0 0 25mm;
+    width: 25mm;
+    display: flex; flex-direction: column; align-items: center; gap: 1mm;
+  }
+  .cta-qr .qr {
+    width: 23mm; height: 23mm;
+    background: #fff; padding: 1mm; border-radius: 1mm;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .cta-qr .qr svg { width: 100%; height: 100%; display: block; }
+  .cta-qr .qr-note {
+    font-size: 5.2pt; letter-spacing: 0.1em; text-transform: uppercase;
+    color: #999; text-align: center; line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  /* ---------- Perforated tear-off tabs ---------- */
+  .tear-zone {
+    margin-top: 0;
+    border-top: 2pt dashed var(--ink);
+    padding: 2.5mm 5mm 2mm;
+    background: #f7f7f7;
+    flex: 0 0 auto;
+  }
+  .tear-heading {
+    font-size: 5.8pt; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--muted); text-align: center; margin-bottom: 1.8mm; font-weight: 800;
+  }
+  .tabs {
+    display: flex;
+    gap: 1.5mm;
+    justify-content: center;
+  }
+  .tab {
+    flex: 1 1 0;
+    max-width: 26mm;
+    border: 1pt dashed var(--accent);
+    background: #fff;
+    border-radius: 1mm;
+    padding: 1.6mm 1.1mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5mm;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .tab-mode {
+    font-size: 4.8pt; font-weight: 900; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .tab-name {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 7.6pt; font-weight: 800; line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .tab-phone {
+    font-size: 7.2pt; font-weight: 800; letter-spacing: 0.01em;
+    color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .tab-email {
+    font-size: 4.8pt; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.1; max-width: 100%;
+  }
+
+  /* ---------- Footer strip ---------- */
+  .strip {
+    background: var(--accent-dark); color: #fff;
+    font-size: 5.8pt; letter-spacing: 0.16em;
+    text-transform: uppercase; text-align: center;
+    padding: 1.4mm 15mm;
+    flex: 0 0 auto;
+  }
+</style>
+</head>
+<body>
+<header class="mode-band">
+  <span class="mode-kicker">PawPrint · Adoption Outreach</span>
+  <h1 class="mode-title">ADOPTABLE</h1>
+  <p class="mode-sub">A forever home awaits — meet {{ flyer.pet.name }}</p>
+</header>
+
+<div class="content">
+  <div class="photo-hero">
+    {% if photo_url %}
+    <div class="photo-frame">
+      <img src="{{ photo_url }}" alt="{{ flyer.pet.name }}">
+    </div>
+    {% else %}
+    <div class="photo-fallback" role="img" aria-label="No photo uploaded">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="#2f6f5e">
+        <path d="M50 20c-5.5 0-10 4.5-10 10 0 3.6 1.9 6.8 4.7 8.6C37.4 41.5 33 47.3 33 54c0 9.4 7.6 17 17 17s17-7.6 17-17c0-6.7-4.4-12.5-10.7-15.4 2.8-1.8 4.7-5 4.7-8.6C61 24.5 55.5 20 50 20z"/>
+        <ellipse cx="31" cy="23" rx="6" ry="8"/>
+        <ellipse cx="69" cy="23" rx="6" ry="8"/>
+        <ellipse cx="20" cy="42" rx="5" ry="7"/>
+        <ellipse cx="80" cy="42" rx="5" ry="7"/>
+      </svg>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="markings">
+    <div class="markings-icon">♥</div>
+    <div class="markings-body">
+      <h2>About {{ flyer.pet.name }}</h2>
+      <p>{{ flyer.distinctive_markings|default:"A wonderful companion looking for a loving home." }}</p>
+    </div>
+  </div>
+
+  <div class="identity">
+    <div class="name">{{ flyer.pet.name|upper }}</div>
+    <div class="meta">
+      {{ flyer.pet.get_species_display }}{% if flyer.pet.breed %} · {{ flyer.pet.breed }}{% endif %}{% if flyer.pet.color %} · {{ flyer.pet.color }}{% endif %}{% if flyer.pet.age %} · {{ flyer.pet.age }} yrs{% endif %}
+    </div>
+    {% if flyer.pet.temperament_tags or flyer.pet.health_tags %}
+    <div class="chips">
+      {% for tag in flyer.pet.temperament_tags %}<span class="chip">{{ tag }}</span>{% endfor %}
+      {% for tag in flyer.pet.health_tags %}<span class="chip">{{ tag }}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="cta">
+  <div class="cta-left">
+    <div class="cta-label">Meet {{ flyer.pet.name|upper }}? Call</div>
+    <div class="cta-phone">{{ flyer.contact_phone }}</div>
+    <div class="cta-email">{{ flyer.contact_email }}</div>
+  </div>
+  <div class="cta-qr">
+    <div class="qr">{{ qr_svg|safe }}</div>
+    <p class="qr-note">Scan for full profile</p>
+  </div>
+</div>
+
+<div class="tear-zone">
+  <p class="tear-heading">✂ Tear off a tab · keep this number handy</p>
+  <div class="tabs">
+    {% for i in "123456"|make_list %}
+    <div class="tab">
+      <span class="tab-mode">ADOPT</span>
+      <span class="tab-name">{% if flyer.pet.name %}{{ flyer.pet.name|upper|truncatechars:10 }}{% else %}PET{% endif %}</span>
+      <span class="tab-phone">{{ flyer.contact_phone }}</span>
+      {% if flyer.contact_email %}<span class="tab-email">{{ flyer.contact_email }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="strip">PawPrint · pawprint.example</div>
+</body>
+</html>
