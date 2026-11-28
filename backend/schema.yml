@@ -398,6 +398,22 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/flyers{id}/deleted:
+    delete:
+      operationId: flyers_deleted_destroy_2
+      description: Permanently delete one soft-deleted flyer (owner only).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flyers
+      responses:
+        '204':
+          description: No response body
   /api/flyers{id}/edit:
     patch:
       operationId: flyers_edit_partial_update_2
@@ -429,6 +445,22 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/flyers{id}/restore:
+    post:
+      operationId: flyers_restore_create_2
+      description: Restore one soft-deleted flyer (owner only).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flyers
+      responses:
+        '200':
+          description: No response body
   /api/flyers/{id}:
     get:
       operationId: flyers_retrieve
@@ -446,6 +478,22 @@ paths:
       - {}
       responses:
         '200':
+          description: No response body
+  /api/flyers/{id}/deleted:
+    delete:
+      operationId: flyers_deleted_destroy
+      description: Permanently delete one soft-deleted flyer (owner only).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flyers
+      responses:
+        '204':
           description: No response body
   /api/flyers/{id}/edit:
     patch:
@@ -478,6 +526,48 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/flyers/{id}/restore:
+    post:
+      operationId: flyers_restore_create
+      description: Restore one soft-deleted flyer (owner only).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flyers
+      responses:
+        '200':
+          description: No response body
+  /api/flyers/deleted:
+    get:
+      operationId: flyers_deleted_list
+      description: The creator's soft-deleted flyers — the Recently Deleted page.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - flyers
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFlyerList'
+          description: ''
   /api/flyers/map:
     get:
       operationId: flyers_map_retrieve
@@ -524,6 +614,32 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/flyersdeleted:
+    get:
+      operationId: flyersdeleted_list
+      description: The creator's soft-deleted flyers — the Recently Deleted page.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - flyersdeleted
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFlyerList'
+          description: ''
   /api/flyersmap:
     get:
       operationId: flyersmap_retrieve
@@ -703,6 +819,11 @@ components:
           allOf:
           - $ref: '#/components/schemas/FlyerStatusEnum'
           readOnly: true
+        deleted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         pet:
           allOf:
           - $ref: '#/components/schemas/Pet'
@@ -712,6 +833,9 @@ components:
           format: uuid
           readOnly: true
         creator_display_name:
+          type: string
+          readOnly: true
+        creator_avatar_url:
           type: string
           readOnly: true
         last_seen_location:
@@ -777,7 +901,9 @@ components:
       required:
       - created_at
       - creator
+      - creator_avatar_url
       - creator_display_name
+      - deleted_at
       - export_pdf_url
       - export_png_url
       - id
@@ -934,11 +1060,13 @@ components:
           items:
             type: string
             maxLength: 40
+          maxItems: 12
         health_tags:
           type: array
           items:
             type: string
             maxLength: 40
+          maxItems: 12
         photo_path:
           type: string
           maxLength: 512

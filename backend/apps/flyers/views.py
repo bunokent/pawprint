@@ -16,7 +16,13 @@ from apps.common.permissions import IsOwnerOrReadOnly
 
 from .edit_rules import flyer_is_editable
 from .models import Flyer
-from .selectors import get_flyer_by_id, list_flyers_by_creator, list_map_flyers, list_public_flyers
+from .selectors import (
+    get_flyer_by_id,
+    list_deleted_flyers_by_creator,
+    list_flyers_by_creator,
+    list_map_flyers,
+    list_public_flyers,
+)
 from .serializers import FlyerCreateSerializer, FlyerSerializer, FlyerUpdateSerializer
 from .services import FlyerError, FlyerService
 from .tasks import render_flyer_html, render_flyer_pdf
@@ -100,7 +106,57 @@ class FlyerDetailMutateView(APIView):
         if err:
             return err
         self.check_object_permissions(request, flyer)
-        FlyerService.delete_flyer(flyer)
+        FlyerService.delete_flyer(flyer)  # soft delete → Recently Deleted
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class FlyerDeletedListView(generics.ListAPIView):
+    """The creator's soft-deleted flyers — the Recently Deleted page."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = FlyerSerializer
+
+    def get_queryset(self):  # noqa: ANN201
+        return list_deleted_flyers_by_creator(self.request.user.pk)
+
+
+class FlyerRestoreView(APIView):
+    """Restore one soft-deleted flyer (owner only)."""
+
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+
+    def _get_deleted(self, pk: uuid.UUID):
+        flyer = get_flyer_by_id(pk, include_deleted=True)
+        if flyer is None or flyer.deleted_at is None:
+            return None, Response({"error": {"code": "not_found", "message": "Flyer not found."}}, status=404)
+        return flyer, None
+
+    def post(self, request: Request, pk: uuid.UUID) -> Response:
+        flyer, err = self._get_deleted(pk)
+        if err:
+            return err
+        self.check_object_permissions(request, flyer)
+        FlyerService.restore_flyer(flyer)
+        return Response(FlyerSerializer(flyer).data)
+
+
+class FlyerPurgeView(APIView):
+    """Permanently delete one soft-deleted flyer (owner only)."""
+
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+
+    def _get_deleted(self, pk: uuid.UUID):
+        flyer = get_flyer_by_id(pk, include_deleted=True)
+        if flyer is None or flyer.deleted_at is None:
+            return None, Response({"error": {"code": "not_found", "message": "Flyer not found."}}, status=404)
+        return flyer, None
+
+    def delete(self, request: Request, pk: uuid.UUID) -> Response:
+        flyer, err = self._get_deleted(pk)
+        if err:
+            return err
+        self.check_object_permissions(request, flyer)
+        FlyerService.purge_flyer(flyer)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

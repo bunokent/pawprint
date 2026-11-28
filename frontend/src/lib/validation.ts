@@ -3,6 +3,11 @@ import { z } from "zod";
 /** `datetime-local` inputs emit `YYYY-MM-DDTHH:mm` (seconds when a step is set). */
 const DATE_TIME_LOCAL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
 const PHONE_CHARACTERS = /^[+()\d\s.-]+$/;
+// Philippine mobiles are 9XX XXXXXXX; landlines use area code 2 or 3X–8X.
+// Both may be typed with 0, 63 or +63 in front. The backend is authoritative.
+const PH_MOBILE_DIGITS = /^(?:63|0)?9\d{9}$/;
+const PH_LANDLINE_DIGITS = /^(?:63|0)?(?:2|[3-8]\d)\d{7,8}$/;
+export const PHONE_ERROR = "Enter a valid Philippine phone number (e.g. 0917 123 4567).";
 
 /** Small allowance for clock skew between the browser and the device. */
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
@@ -44,14 +49,14 @@ export function dateTimeLocalSchema(requiredMessage?: string) {
     );
 }
 
-/** E.164-style digit count, allowing the separators people actually type. */
+/** Philippine mobile/landline shapes, allowing the separators people actually type. */
 export function isValidPhone(value: string): boolean {
   if (!PHONE_CHARACTERS.test(value)) return false;
   const digits = value.replace(/\D/g, "");
-  return digits.length >= 7 && digits.length <= 15;
+  return PH_MOBILE_DIGITS.test(digits) || PH_LANDLINE_DIGITS.test(digits);
 }
 
-export function phoneSchema(message = "Enter a valid phone number (7–15 digits).") {
+export function phoneSchema(message = PHONE_ERROR) {
   return z
     .string()
     .trim()

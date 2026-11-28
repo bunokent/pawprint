@@ -29,7 +29,8 @@ including a public interactive pet map at `/map` (Leaflet + OpenStreetMap photo 
 ## 2. Architecture & Stack
 
 - **Backend**: Django 5.2+ (Python 3.12+), DRF, drf-spectacular (OpenAPI), PostgreSQL 16,
-  Redis 7, Celery, Django Channels (WebSockets), django-allauth (email + Google OAuth 2.0).
+  Redis 7, Celery, Django Channels (WebSockets), django-allauth (email + Google OAuth 2.0),
+  django-phonenumber-field (Philippine phone validation, default region `PH`).
   **No Django Admin** — `django.contrib.admin` is completely removed.
   Packaging: `pyproject.toml` declares an explicit setuptools build backend with
   `packages.find include = ["apps*", "config*"]` so `uv pip install .[dev]` succeeds on a
@@ -118,8 +119,9 @@ flyers and photo upload.
 
 Apps under `backend/apps/`: `users`, `pets`, `flyers`, `vision`.
 
-- `users.User` — AbstractUser, UUID PK, email login, `display_name`, `phone`, `avatar_path`,
-  `google_id` (nullable unique), `email_verified`.
+- `users.User` — AbstractUser, UUID PK, email login, `display_name`, `phone` (validated as a
+  Philippine number and stored in E.164), `avatar_path`, `google_id` (nullable unique),
+  `email_verified`.
 - `pets.Pet` — UUID PK, `owner` FK, species/breed/color/age, `temperament_tags` & `health_tags`
   JSON (GIN indexes), `photo_path` (cover photo), `status` (`lost|found|adoptable|reunited|adopted`),
   `SearchVector` GIN index on `(name, breed, color)`, composite index `(status, created_at)`.
@@ -159,8 +161,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` |
 | `GET /api/flyers/{id}` | Guest | Public flyer detail (QR scan landing) |
 | `POST /api/flyers/new` | Auth | Create flyer — `mode` incl. `found`, optional `location_lat`/`location_lng` pin (dispatches A4 asset generation) |
-| `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / delete own flyer; detail `PATCH` applies flyer/pet edits and requires a non-empty `photo_path` (status-only resolve exempt); any `PATCH` on a resolved flyer returns 409 |
-| `GET /api/flyers/mine` | Auth | Creator's own flyers |
+| `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / soft-delete own flyer; `DELETE` now stamps `deleted_at` (Recently Deleted) instead of hard-removing the row; detail `PATCH` applies flyer/pet edits and requires a non-empty `photo_path` (status-only resolve exempt); any `PATCH` on a resolved flyer returns 409 |
+| `GET /api/flyers/deleted` | Auth | The creator's soft-deleted flyers (Recently Deleted page), newest first |
+| `POST /api/flyers/{id}/restore` | Auth (owner) | Restore one soft-deleted flyer back to My Flyers (and the public gallery if active) |
+| `DELETE /api/flyers/{id}/deleted` | Auth (owner) | Permanently delete (purge) one soft-deleted flyer — cannot be undone |
+| `GET /api/flyers/mine` | Auth | Creator's own flyers (excludes soft-deleted flyers) |
 | `POST /api/pets/photos` | Auth | YOLO-World-gated photo upload (10/min); response also carries CLIP `breed`/`breed_confidence`/`color`/`color_confidence` |
 | `POST /api/pets` | Auth | Create pet record (links an uploaded photo) |
 | `GET /api/health` | Public | Liveness probe |
@@ -172,7 +177,10 @@ lost/found flyers require both a location and a timestamp — including when a `
 outreach flyer into lost/found mode, because `FlyerUpdateSerializer` receives the existing flyer
 and checks the final combined state. Descriptions are capped at 1000 characters, locations at 255,
 pet names/breeds/colors at 120, ages at 0–50, tags at 12 per list with each tag ≤40 characters,
-and phone numbers at 7–15 digits (≤32 characters with common separators). The same owner-only
+and phone numbers as valid Philippine numbers (with `PHONENUMBER_DEFAULT_REGION = "PH"`):
+`apps/common/validation.py` uses django-phonenumber-field to parse local (`0917…`, `02…`) and
+international (`+63…`) input, rejects foreign numbers, short codes, extensions and invalid PH
+prefixes, and stores the accepted value as an E.164 string of at most 32 characters. The same owner-only
 `PATCH` accepts `name`, `species`, `breed`, `color`, `age`, `temperament_tags` and `health_tags`;
 `apps/flyers/edit_rules.py` keeps found-pet reports unnamed while requiring a name for every other
 mode. A replacement `photo_path` must be a full (non-thumbnail)
@@ -199,7 +207,8 @@ exactly rather than silently rewriting a password.
 - Guests hitting an auth-only endpoint get 401 with `error.session_expired: true`
   (`SessionAuthenticationWith401`), which the SPA uses to reset the auth store.
 - **Profile settings**: `PATCH /api/auth/profile` updates `display_name`/`phone`
-  (partial, validated by `ProfileUpdateSerializer`) via `AuthService.update_profile`.
+  (partial, validated by `ProfileUpdateSerializer` with the same Philippine phone rule) via
+  `AuthService.update_profile`.
   `POST /api/auth/avatar` stores a profile picture — deliberately **without** the
   YOLO-World pet gate (it is the user's own photo, not a pet photo): Pillow-validated,
   ≤5 MB, EXIF-stripped, re-encoded as a ≤512px JPEG into private storage under
@@ -256,7 +265,7 @@ exactly rather than silently rewriting a password.
   flyers that have one — the pins behind `/map`.
 - Owner edits use `PATCH /flyers/{id}/edit`; the update serializer accepts flyer details
   (`last_seen_location`, `last_seen_date`, `location_lat`/`location_lng`, `distinctive_markings`,
-  `contact_phone`, `contact_email`, `status`), linked-pet details (`name`, `species`, `breed`,
+  `contact_phone` (PH-validated, stored in E.164), `contact_email`, `status`), linked-pet details (`name`, `species`, `breed`,
   `color`, `age`, `temperament_tags`, `health_tags`) and a required `photo_path` cover-photo key
   (status-only resolve requests remain exempt).
   `FlyerService` splits the validated body with `PET_UPDATE_FIELDS`, applies pet edits through
@@ -265,6 +274,13 @@ exactly rather than silently rewriting a password.
   gallery image and printable flyer match the saved details. A resolved flyer is final: the view
   rejects every `PATCH` before validation, and the UI hides the card pencil and blocks the edit
   route. `IsOwnerOrReadOnly` remains the security boundary; the frontend checks are only guards.
+
+- **Recently Deleted (soft delete):** `DELETE /api/flyers/{id}/edit` now stamps `deleted_at`
+  instead of hard-removing the row, so deleted flyers survive in the creator's Recently Deleted
+  page (`GET /api/flyers/deleted`) until the owner restores them (`POST /api/flyers/{id}/restore`)
+  or purges them permanently (`DELETE /api/flyers/{id}/deleted`). The public gallery, the pet map,
+  My Flyers and public flyer detail all exclude soft-deleted flyers; a deleted flyer cannot be
+  edited or resolved until it is restored. Restoring preserves the flyer's original status.
 
 ## 8. AI Pet Detection (YOLO-World gate + CLIP species naming + attributes)
 
@@ -413,7 +429,9 @@ exactly rather than silently rewriting a password.
   empty state + Clear filters reset; if the map cannot be created it renders the
   same pins as a list), `/flyers/:id` Public Flyer + **one large photo** with a full-screen viewer (`components/PhotoGallery.tsx`, fed by `flyer.photo_url` with a `photo_urls[0]` legacy fallback, no count/thumbnails) + **Share flyer** menu (`components/ShareMenu.tsx` + `lib/share.ts`: native Web Share API with the QR PNG attached where supported, Facebook/X/WhatsApp share intents, Instagram via native image share or copy-caption-and-open, copy-link, and a QR modal with PNG download — browsers cannot auto-post to social accounts, the intents/share sheet pre-fill the composer instead; the QR lives in that modal and in the A4 PDF) + A4 PDF download + owner resolve (now a deliberate **double click** — "Click again to confirm", armed 4 s, disarmed on blur — on both the detail page and the owner card) / delete
   (delete opens the custom `ConfirmDeleteDialog` — `src/components/ui/confirm-dialog.tsx`,
-  an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`)
+  an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`;
+  deleting now soft-deletes the flyer into Recently Deleted at `/my-flyers/deleted`, where it
+  can be restored or purged permanently)
   (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/flyers/:id/edit` **owner-only edit form** (guarded by
   `isFlyerOwner` and `isFlyerEditable`, so resolved flyers are read-only; reusing the builder's
@@ -431,7 +449,11 @@ exactly rather than silently rewriting a password.
   and page reloads. Drafts are scoped to the signed-in account, removed after publishing, and
   unchanged pet values are reused on Back → Continue instead of creating a duplicate pet.
   Found mode hides **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
-  `/auth/login`
+  `/my-flyers/deleted` (Recently Deleted — a responsive, mode-accented flyer-card grid for
+  soft-deleted flyers; each card keeps its photo, mode/status badges, pet details and deletion date,
+  with a 44px selection checkbox over the photo and Restore / Delete permanently actions in a compact
+  pair, while the bulk toolbar moves from a desktop split bar to a stacked panel with two 44px action
+  columns on phones), `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
   settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
   name/phone, read-only email). The header nav links Flyers, **Pet map**, the avatar + display
@@ -440,8 +462,11 @@ exactly rather than silently rewriting a password.
 - `FlyerCard` is an `article` whose whole body links to the flyer detail, with a sibling
   owner-only **Edit** pencil at the photo's top-right corner (no nested interactive elements).
   The control is a 44px tap target on phones, uses the shared `isFlyerOwner` id check so other
-  registered users never see it, and hides from print. The backend `IsOwnerOrReadOnly`
-  permission remains the actual security boundary.
+  registered users never see it, and hides from print. On My Flyers (`/my-flyers`) every card in
+  a grid row is the same height: the grid stretches its items, the owner-card wrapper is a flex
+  column, and `FlyerCard` grows with `flex: 1` to fill the row height so its pinned "View flyer"
+  footer stays at the bottom of each card regardless of content length. The backend
+  `IsOwnerOrReadOnly` permission remains the actual security boundary.
 - The edit page also reuses `PhotoUpload` for the cover: it seeds the picker from
   `pet.photo_url`, suppresses the builder's "Pet detected" badge for the already-approved photo,
   uploads a replacement through the same gated `/pets/photos` endpoint and sends only the returned
@@ -468,8 +493,10 @@ exactly rather than silently rewriting a password.
 - Shared form validation lives in `src/lib/validation.ts`: `datetime-local` values must be real
   calendar dates and cannot be more than 5 minutes in the future; lost/found modes require
   location + date/time while adoptable leaves them optional (the UI hides them); emails are
-  trimmed before validation; phones accept 7–15 digits with common separators and cap at 32
-  characters; ages are whole years 0–50; personality tags cap at 12 × 40 characters. The builder
+  trimmed before validation; phones accept Philippine mobile/landline shapes with common
+  separators (local `0`, `63` or `+63` prefixes) and cap at 32 characters, mirroring the backend's
+  django-phonenumber-field rule while the API remains authoritative; ages are whole years 0–50;
+  personality tags cap at 12 × 40 characters. The builder
   wizard uses mode-aware schemas, shows inline hints, and marks invalid controls with
   `aria-invalid`; login/register/profile reuse the same email, password and phone rules. `FieldShell`
   (`components/ui/field.tsx`) renders each validation message directly below its own control, wires
@@ -500,7 +527,10 @@ exactly rather than silently rewriting a password.
   card/filter/map/modal grids, and a single rule set for 44px tap targets. On phones the compact
   nav becomes a 44px Menu toggle plus a full-screen menu with 52px rows; filters, search, forms,
   button rows and detail actions stack; the pet map canvas becomes a shorter pane with a
-  bottom-anchored popup; and long location lines wrap instead of clipping. Focus rings use the
+  bottom-anchored popup. The same-spot stack popup is its own responsive card: a fixed header
+  and intro over a scroll-only flyer list, with each row a grid that drops to a 44px thumb plus
+  name and a full-width 44px **Open** button on phones; the card becomes a 12px-gutter bottom
+  sheet and never scrolls the whole panel. Long location lines wrap instead of clipping. Focus rings use the
   theme's ink at 2–3px so they stay visible on both palettes, and lead text uses a stronger muted
   token that clears 7:1 body-text contrast while ordinary captions keep the softer muted token.
 
@@ -521,8 +551,12 @@ The validation pass documented in §5 and §10 was checked locally with `npm run
 Zod/chunk-size warnings from the frontend build). The field-level error presentation pass was
 checked again with `npm run lint` and `npm run build` after moving messages below their controls,
 linking them with `aria-describedby`, adding the red invalid border/ring, and switching forms to
-on-touch validation. `ruff` and `mypy` are CI checks but are not installed in this checkout, so
-they could not be run locally. The localStorage draft and photo-preview passes were checked again with
+on-touch validation. Earlier passes could not run `ruff`/`mypy` locally because they were not
+installed; the Philippine-phone pass installed them and both `ruff check .` and `mypy apps` pass,
+as does `python manage.py check`. A direct serializer probe confirmed that `0917 123 4567`,
+`+639171234567`, `0281234567` and `032 123 4567` normalize to E.164 while foreign numbers,
+short codes, extensions and invalid PH prefixes are rejected; `npm test` stays at 9/9.
+The localStorage draft and photo-preview passes were checked again with
 `npm run lint` and `npm run build` (only the same pre-existing Zod/chunk-size warnings).
 The owner-edit and photo-replacement passes added `npm test` and
 `python -m unittest apps.flyers.test_photo_keys`; the pet-details edit pass extended them to
@@ -531,7 +565,8 @@ and the resolved-lock pass to 6/6 and 12/12. Every pass was checked with `npm ru
 `npm run build` and
 `python -m compileall -q apps config`; all changes were left uncommitted at the user's request.
 `docs/documentation.pdf` is regenerated from this file with `npm run docs:pdf` after every
-documentation change.
+documentation change. The script now uses a small Node rename instead of `mv`/`ls` with
+`/dev/null`, so the same command works on Windows as well as Linux.
 Responsive checks are browser-based rather than a test suite: the `taste` layout checker
 is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is run at
 1440/390 plus the 320px walk. The responsive pass reports PASS for `spill`,
@@ -540,6 +575,11 @@ is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is r
 template checks that remain open (hero/section screen height, visual density, button
 styles, copy contract and moment) are documented in the Tutorial entry rather than
 silently waived.
+The Recently Deleted responsive pass adds `frontend/tests/recently-deleted-card-responsive.test.mjs`
+(4 tests pinning the semantic card markup, hook order before the auth guard, mode accents and 44px
+selection target, and the phone toolbar/grid/action rules). A follow-up desktop-overlap test brings
+`npm test` to 18/18. Verified
+`npm run lint`, `npm run build`, `npm test` and `npm run docs:pdf` after the change.
 
 Container shell scripts are verified separately: `.gitattributes` pins `*.sh` to LF so a Windows
 checkout (`core.autocrlf=true`) cannot put CRLF into the Docker build context, and
@@ -563,6 +603,18 @@ inside a Linux shell.
   of signed export URLs. Frontend: `FlyerDetailPage.tsx` renders a segmented Classic/Modern
   picker and downloads the selected design's PDF. `FlyerSerializer`/`Flyer` model updated;
   migration `0005`. Frontend schema regenerated via `openapi-typescript` → `schema.d.ts`.
+- **Phone fields now validate Philippine numbers** — `django-phonenumber-field[phonenumbers]`
+  is installed and configured with `PHONENUMBER_DEFAULT_REGION = "PH"`. `clean_phone` in
+  `apps/common/validation.py` parses profile and flyer contact input with that default region,
+  rejects foreign numbers, short codes, extensions and invalid PH prefixes, and returns E.164
+  (`0917 123 4567` → `+639171234567`); `ProfileUpdateSerializer`, `FlyerCreateSerializer` and
+  `FlyerUpdateSerializer` all use it. The shared frontend `phoneSchema` in `src/lib/validation.ts`
+  now mirrors PH mobile/landline shapes so the profile, builder and edit forms fail early, while
+  the API stays authoritative. Verified with `ruff check .`, `mypy apps`, `python manage.py check`,
+  `npm run lint`, `npm run build`, `npm test` (9/9) and a direct serializer probe covering local,
+  international, landline, foreign, short, extension and invalid-prefix inputs. The
+  `docs:pdf` script was also made cross-platform so the PDF could be regenerated with the
+  mandated command on Windows. Committed.
 
 - **Resolved flyers are now read-only** — `flyer_is_editable` in `edit_rules.py` makes the
   `FlyerDetailMutateView.patch` return `409 flyer_resolved` before validation whenever
@@ -1619,3 +1671,76 @@ user direction. CI runs backend lint (ruff + mypy) and frontend type-check/build
 locally with `cd backend && .venv/bin/ruff check . && .venv/bin/mypy apps` and
 `cd frontend && npm run lint && npm run build`. Runtime Playwright remains for flyer PNG
 rendering. Application data and schema are unchanged; only test-mode settings and infrastructure were removed.
+
+- **Phase 55** — Equal-height FlyerCards on My Flyers (`/my-flyers`).
+  Owner cards in the My Flyers grid now all share one height within a grid row, so the card
+  grid stays rectangular regardless of how much location/date content each flyer has. The grid
+  keeps its default stretch alignment, each owner-card wrapper is a flex column, and `FlyerCard`
+  (`frontend/src/components/FlyerCard.tsx`) grows with `flex: 1` to fill the row height — its
+  pinned "View flyer" footer stays at the bottom of every card. Layout contract covered by new
+  tests in `frontend/tests/my-flyers-card-height.test.mjs` (added to `npm test`). Verified
+  `tsc -b --noEmit` clean and `npm test` green.
+
+- **Phase 56** — Remove redundant address from `FlyerCard` metadata line.
+  The `· last seen <location>` / `· found at <location>` suffix that was concatenated onto the
+  species · breed · color line in `FlyerCard` (`frontend/src/components/FlyerCard.tsx`) is gone,
+  since the dedicated last-seen/found location block (MapPin icon + "Last seen / Found at"
+  label) already appears just below it. The location block itself is unchanged. Verified
+  `tsc -b --noEmit` clean, `npm test` green, and `vite build` clean.
+
+- **Phase 57** — Mobile-responsive stacked-pet popup on `/map`.
+  The same-spot stack card (`StackPopup` in `frontend/src/pages/PetMapPage.tsx`) no longer
+  squeezes its photo, name and **Open** link into one rigid inline flex row on a phone. The
+  markup now uses `map-popup__header`, `map-popup__intro`, `map-stack-list` and `map-stack-row`
+  classes; each flyer row is a CSS grid (38px thumb / name / compact button on desktop) that
+  becomes a 44px thumb + name row with the **Open** button spanning the full width at the 44px
+  tap-target floor on phones. The enclosing card keeps its count badge and close control in a
+  fixed header, scrolls only the flyer list (`overscroll-behavior: contain`), and becomes a
+  bottom sheet with 12px gutters inside the map on small screens instead of letting the whole
+  panel scroll and the buttons overflow. Added
+  `frontend/tests/map-stack-popup-responsive.test.mjs` to `npm test` to pin the row grid,
+  full-width button, scroll container and bottom-sheet rules. Verified `npm run lint`,
+  `npm run build`, `npm test` and `npm run docs:pdf` clean.
+
+- **Phase 58** — Recently Deleted flyers (soft delete + restore + permanent purge).
+  Deleting a flyer no longer hard-removes the row: `DELETE /api/flyers/{id}/edit` now stamps
+  `deleted_at` (new nullable column + `flyer_creator_deleted_idx` index, migration
+  `flyers/0005`), so the flyer survives in the creator's Recently Deleted page until it is
+  restored or purged. Backend: `FlyerService.delete_flyer` soft-deletes, new
+  `restore_flyer` (clears `deleted_at`, keeps the original status) and `purge_flyer` (hard
+  delete); new selectors `list_deleted_flyers_by_creator` (public gallery, My Flyers, map and
+  public detail all exclude soft-deleted flyers via `deleted_at__isnull=True`) and new views
+  `GET /api/flyers/deleted`, `POST /api/flyers/{id}/restore`, `DELETE /api/flyers/{id}/deleted`
+  (owner only, `IsOwnerOrReadOnly`); `deleted_at` exposed read-only on `FlyerSerializer`.
+  `schema.yml` regenerated. Frontend: new `/my-flyers/deleted` page
+  (`RecentlyDeletedPage`) listing the creator's deleted flyers with photo, mode/status badges
+  and deletion date; per-flyer **Restore** (sage) and **Delete permanently** (emergency)
+  buttons plus bulk **Select all** / **Restore selected** / **Delete permanently** actions, all
+  through `ConfirmDeleteDialog` (custom body copy, sage confirm variant for restore); TanStack
+  Query `deletedFlyersQuery`, `useRestoreFlyer`/`usePurgeFlyer` and `useDeleteFlyer` invalidating
+  `deleted`/`mine`/`all` keys. Header account menu gains **Recently Deleted** (below Profile
+  settings, above Log out) on desktop and in the mobile drawer. Verified `npm run lint`,
+  `npm run build`, `npm test`; `schema.d.ts` regenerated via `npm run typegen`; docs PDF
+  regenerated.
+
+- **Phase 59** — Responsive Recently Deleted flyer cards and bulk toolbar.
+  `/my-flyers/deleted` no longer renders rigid inline-flex rows: each deleted flyer is now a
+  mode-accented `deleted-card` with a 4:3 photo, a 44px selection checkbox over the photo,
+  mode/status badges, pet details, deletion date and a paired Restore / Delete permanently action
+  row. The page adds a Back to My Flyers link, a count-aware select-all toolbar, card-shaped loading
+  skeletons and recoverable bulk-action errors with Dismiss; restore/purge requests now go through
+  domain helpers in `features/flyers/api.ts` instead of inline component URLs. All page hooks run
+  before the auth guard, so the hook order cannot change while the session is resolving. On phones
+  the toolbar stacks into a full-width panel with two 44px action columns, the grid becomes one
+  column and the card actions keep compact two-up buttons. Added
+  `frontend/tests/recently-deleted-card-responsive.test.mjs` to `npm test` (4 tests, 17/17 total).
+  Verified `npm run lint`, `npm run build`, `npm test`.
+
+- **Phase 60** — Fix desktop overlap in Recently Deleted cards and confirm dialog.
+  The two-up card actions now wrap their labels inside the 44px buttons instead of inheriting the
+  global `nowrap` rule, so **Delete permanently** can no longer spill over **Restore** in the
+  narrower desktop grid columns. The shared `ConfirmDeleteDialog` widens from 440px to 520px and its
+  actions wrap with bounded, wrapping buttons; long labels such as **Keep in Recently Deleted** now
+  stay inside the dialog at every width. Added a fifth assertion group to
+  `frontend/tests/recently-deleted-card-responsive.test.mjs` (18/18 total). Verified `npm run lint`,
+  `npm run build`, `npm test`.

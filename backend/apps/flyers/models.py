@@ -45,6 +45,9 @@ class Flyer(models.Model):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete: set instead of hard deletion so the flyer survives in the
+    # creator's Recently Deleted page until it is restored or purged.
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "flyers_flyer"
@@ -56,9 +59,11 @@ class Flyer(models.Model):
         indexes = [
             # Public gallery: filter by mode + status, order by recency.
             Index(fields=["mode", "status", "created_at"], name="flyer_mode_status_created_idx"),
-            # "My flyers" dashboard.
+            # "My flyers" dashboard (excludes soft-deleted flyers).
             Index(fields=["creator", "mode"], name="flyer_creator_mode_idx"),
             Index(fields=["status", "created_at"], name="flyer_status_created_idx"),
+            # Recently Deleted: the creator's soft-deleted flyers, newest first.
+            Index(fields=["creator", "deleted_at"], name="flyer_creator_deleted_idx"),
             # Interactive pet map: located active lost/found flyers.
             Index(fields=["status", "location_lat", "location_lng"], name="flyer_status_location_idx"),
         ]

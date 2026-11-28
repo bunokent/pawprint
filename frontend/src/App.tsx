@@ -8,6 +8,7 @@ import { FlyerEditPage } from "@/features/flyers/pages/FlyerEditPage";
 import { PetMapPage } from "@/pages/PetMapPage";
 import { BuilderWizard } from "@/features/flyers/pages/BuilderWizard";
 import { MyFlyersPage } from "@/features/flyers/pages/MyFlyersPage";
+import { RecentlyDeletedPage } from "@/features/flyers/pages/RecentlyDeletedPage";
 import { LoginPage } from "@/features/auth/pages/LoginPage";
 import { RegisterPage } from "@/features/auth/pages/RegisterPage";
 import { SettingsPage } from "@/features/auth/pages/SettingsPage";
@@ -29,6 +30,7 @@ export function App() {
         <Route path="map" element={<PetMapPage />} />
         <Route path="builder" element={<BuilderWizard />} />
         <Route path="my-flyers" element={<MyFlyersPage />} />
+        <Route path="my-flyers/deleted" element={<RecentlyDeletedPage />} />
         <Route path="auth/login" element={<LoginPage />} />
         <Route path="auth/register" element={<RegisterPage />} />
         <Route path="settings" element={<SettingsPage />} />

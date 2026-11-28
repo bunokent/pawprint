@@ -2,20 +2,31 @@
 
 from __future__ import annotations
 
-import re
-
+from django.conf import settings
+from phonenumber_field.phonenumber import PhoneNumber, to_python
 from rest_framework import serializers
 
-_PHONE_CHARACTERS = re.compile(r"[+()\d\s.-]")
-_NON_DIGITS = re.compile(r"\D")
+PH_COUNTRY_CODE = 63
+PHONE_ERROR = "Enter a valid Philippine phone number (e.g. 0917 123 4567)."
 
 
 def clean_phone(value: str) -> str:
-    """Trim a phone number and enforce 7–15 digits (the E.164 digit limit)."""
+    """Validate a Philippine phone number and store it in E.164 form.
+
+    `django-phonenumber-field` parses national input with the configured
+    `PHONENUMBER_DEFAULT_REGION` ("PH"), so 0917…, 63917… and +63917… all resolve
+    to the same number. Foreign numbers, short codes, extensions and invalid
+    Philippine prefixes are rejected; blank remains allowed for optional fields.
+    """
     phone = value.strip()
-    if phone and (
-        not all(_PHONE_CHARACTERS.fullmatch(char) for char in phone)
-        or not 7 <= len(_NON_DIGITS.sub("", phone)) <= 15
+    if not phone:
+        return ""
+    number = to_python(phone, region=settings.PHONENUMBER_DEFAULT_REGION)
+    if (
+        not isinstance(number, PhoneNumber)
+        or not number.is_valid()
+        or number.country_code != PH_COUNTRY_CODE
+        or number.extension
     ):
-        raise serializers.ValidationError("Enter a valid phone number (7–15 digits).")
-    return phone
+        raise serializers.ValidationError(PHONE_ERROR)
+    return number.as_e164

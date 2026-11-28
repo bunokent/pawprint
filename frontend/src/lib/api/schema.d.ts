@@ -315,6 +315,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/flyers{id}/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Permanently delete one soft-deleted flyer (owner only). */
+        delete: operations["flyers_deleted_destroy_2"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/flyers{id}/edit": {
         parameters: {
             query?: never;
@@ -333,6 +350,23 @@ export interface paths {
         patch: operations["flyers_edit_partial_update_2"];
         trace?: never;
     };
+    "/api/flyers{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Restore one soft-deleted flyer (owner only). */
+        post: operations["flyers_restore_create_2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/flyers/{id}": {
         parameters: {
             query?: never;
@@ -345,6 +379,23 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/flyers/{id}/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Permanently delete one soft-deleted flyer (owner only). */
+        delete: operations["flyers_deleted_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -366,6 +417,40 @@ export interface paths {
         head?: never;
         /** @description PATCH/DELETE restricted to the creator (IsOwnerOrReadOnly). */
         patch: operations["flyers_edit_partial_update"];
+        trace?: never;
+    };
+    "/api/flyers/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Restore one soft-deleted flyer (owner only). */
+        post: operations["flyers_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/flyers/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The creator's soft-deleted flyers — the Recently Deleted page. */
+        get: operations["flyers_deleted_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/flyers/map": {
@@ -412,6 +497,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["flyers_new_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/flyersdeleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The creator's soft-deleted flyers — the Recently Deleted page. */
+        get: operations["flyersdeleted_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -567,6 +669,8 @@ export interface components {
             readonly id: string;
             mode?: components["schemas"]["ModeEnum"];
             readonly status: components["schemas"]["FlyerStatusEnum"];
+            /** Format: date-time */
+            readonly deleted_at: string | null;
             readonly pet: components["schemas"]["Pet"];
             /** Format: uuid */
             readonly creator: string;
@@ -1169,6 +1273,26 @@ export interface operations {
             };
         };
     };
+    flyers_deleted_destroy_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     flyers_edit_destroy_2: {
         parameters: {
             query?: never;
@@ -1209,6 +1333,26 @@ export interface operations {
             };
         };
     };
+    flyers_restore_create_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     flyers_retrieve: {
         parameters: {
             query?: never;
@@ -1222,6 +1366,26 @@ export interface operations {
         responses: {
             /** @description No response body */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    flyers_deleted_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1266,6 +1430,50 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    flyers_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    flyers_deleted_list: {
+        parameters: {
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedFlyerList"];
+                };
             };
         };
     };
@@ -1326,6 +1534,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    flyersdeleted_list: {
+        parameters: {
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedFlyerList"];
+                };
             };
         };
     };
