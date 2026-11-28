@@ -442,8 +442,11 @@ exactly rather than silently rewriting a password.
   and page reloads. Drafts are scoped to the signed-in account, removed after publishing, and
   unchanged pet values are reused on Back → Continue instead of creating a duplicate pet.
   Found mode hides **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
-  `/my-flyers/deleted` (Recently Deleted — restore or permanently purge soft-deleted flyers, with
-  select-all bulk actions), `/auth/login`
+  `/my-flyers/deleted` (Recently Deleted — a responsive, mode-accented flyer-card grid for
+  soft-deleted flyers; each card keeps its photo, mode/status badges, pet details and deletion date,
+  with a 44px selection checkbox over the photo and Restore / Delete permanently actions in a compact
+  pair, while the bulk toolbar moves from a desktop split bar to a stacked panel with two 44px action
+  columns on phones), `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
   settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
   name/phone, read-only email). The header nav links Flyers, **Pet map**, the avatar + display
@@ -565,6 +568,10 @@ is walked at 1440, 1024, 820, 768, 390 and 320, and its consistency checker is r
 template checks that remain open (hero/section screen height, visual density, button
 styles, copy contract and moment) are documented in the Tutorial entry rather than
 silently waived.
+The Recently Deleted responsive pass adds `frontend/tests/recently-deleted-card-responsive.test.mjs`
+(4 tests pinning the semantic card markup, hook order before the auth guard, mode accents and 44px
+selection target, and the phone toolbar/grid/action rules), bringing `npm test` to 17/17. Verified
+`npm run lint`, `npm run build`, `npm test` and `npm run docs:pdf` after the change.
 
 Container shell scripts are verified separately: `.gitattributes` pins `*.sh` to LF so a Windows
 checkout (`core.autocrlf=true`) cannot put CRLF into the Docker build context, and
@@ -1693,3 +1700,16 @@ rendering. Application data and schema are unchanged; only test-mode settings an
   settings, above Log out) on desktop and in the mobile drawer. Verified `npm run lint`,
   `npm run build`, `npm test`; `schema.d.ts` regenerated via `npm run typegen`; docs PDF
   regenerated.
+
+- **Phase 59** — Responsive Recently Deleted flyer cards and bulk toolbar.
+  `/my-flyers/deleted` no longer renders rigid inline-flex rows: each deleted flyer is now a
+  mode-accented `deleted-card` with a 4:3 photo, a 44px selection checkbox over the photo,
+  mode/status badges, pet details, deletion date and a paired Restore / Delete permanently action
+  row. The page adds a Back to My Flyers link, a count-aware select-all toolbar, card-shaped loading
+  skeletons and recoverable bulk-action errors with Dismiss; restore/purge requests now go through
+  domain helpers in `features/flyers/api.ts` instead of inline component URLs. All page hooks run
+  before the auth guard, so the hook order cannot change while the session is resolving. On phones
+  the toolbar stacks into a full-width panel with two 44px action columns, the grid becomes one
+  column and the card actions keep compact two-up buttons. Added
+  `frontend/tests/recently-deleted-card-responsive.test.mjs` to `npm test` (4 tests, 17/17 total).
+  Verified `npm run lint`, `npm run build`, `npm test`.

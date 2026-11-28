@@ -118,11 +118,19 @@ export function useDeleteFlyer(id: string) {
   });
 }
 
+/** Restore one soft-deleted flyer back to My Flyers. */
+export const restoreDeletedFlyer = (id: string) =>
+  api.post<Flyer>(`/flyers/${id}/restore`).then((r) => r.data);
+
+/** Permanently delete one soft-deleted flyer (cannot be undone). */
+export const purgeDeletedFlyer = (id: string) =>
+  api.delete(`/flyers/${id}/deleted`).then((r) => r.data);
+
 /** Restore a soft-deleted flyer back to My Flyers. */
 export function useRestoreFlyer(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<Flyer>(`/flyers/${id}/restore`).then((r) => r.data),
+    mutationFn: () => restoreDeletedFlyer(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: flyerKeys.deleted });
       void qc.invalidateQueries({ queryKey: flyerKeys.mine });
@@ -135,7 +143,7 @@ export function useRestoreFlyer(id: string) {
 export function usePurgeFlyer(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.delete(`/flyers/${id}/deleted`).then((r) => r.data),
+    mutationFn: () => purgeDeletedFlyer(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: flyerKeys.deleted }),
   });
 }
