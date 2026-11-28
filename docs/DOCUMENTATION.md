@@ -570,7 +570,8 @@ styles, copy contract and moment) are documented in the Tutorial entry rather th
 silently waived.
 The Recently Deleted responsive pass adds `frontend/tests/recently-deleted-card-responsive.test.mjs`
 (4 tests pinning the semantic card markup, hook order before the auth guard, mode accents and 44px
-selection target, and the phone toolbar/grid/action rules), bringing `npm test` to 17/17. Verified
+selection target, and the phone toolbar/grid/action rules). A follow-up desktop-overlap test brings
+`npm test` to 18/18. Verified
 `npm run lint`, `npm run build`, `npm test` and `npm run docs:pdf` after the change.
 
 Container shell scripts are verified separately: `.gitattributes` pins `*.sh` to LF so a Windows
@@ -1713,3 +1714,12 @@ rendering. Application data and schema are unchanged; only test-mode settings an
   column and the card actions keep compact two-up buttons. Added
   `frontend/tests/recently-deleted-card-responsive.test.mjs` to `npm test` (4 tests, 17/17 total).
   Verified `npm run lint`, `npm run build`, `npm test`.
+
+- **Phase 60** — Fix desktop overlap in Recently Deleted cards and confirm dialog.
+  The two-up card actions now wrap their labels inside the 44px buttons instead of inheriting the
+  global `nowrap` rule, so **Delete permanently** can no longer spill over **Restore** in the
+  narrower desktop grid columns. The shared `ConfirmDeleteDialog` widens from 440px to 520px and its
+  actions wrap with bounded, wrapping buttons; long labels such as **Keep in Recently Deleted** now
+  stay inside the dialog at every width. Added a fifth assertion group to
+  `frontend/tests/recently-deleted-card-responsive.test.mjs` (18/18 total). Verified `npm run lint`,
+  `npm run build`, `npm test`.

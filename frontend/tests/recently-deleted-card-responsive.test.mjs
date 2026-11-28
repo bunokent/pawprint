@@ -45,6 +45,15 @@ test("the deleted flyer card keeps the mode accent and a 44px selection target",
   assert.match(css, /\.deleted-card__actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
 });
 
+test("desktop card and confirmation actions wrap instead of overlapping", () => {
+  const cardButton = css.match(/\.deleted-card__actions \.btn\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(cardButton, /white-space:\s*normal/);
+  assert.match(cardButton, /min-height:\s*44px/);
+  assert.match(css, /\.confirm-dialog\s*\{\s*width:\s*min\(520px, 100%\)/);
+  assert.match(css, /\.confirm-dialog__actions\s*\{[^}]*flex-wrap:\s*wrap/);
+  assert.match(css, /\.confirm-dialog__actions \.btn\s*\{[^}]*white-space:\s*normal/);
+});
+
 test("on phones the toolbar, grid and cards stack without shrinking tap targets", () => {
   const rules = phoneRules();
   assert.match(rules, /\.deleted-toolbar\s*\{[^}]*flex-direction:\s*column/);
