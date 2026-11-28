@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typegen": "openapi-typescript ../backend/schema.yml -o src/lib/api/schema.d.ts",
     "lint": "tsc -b --noEmit",
-    "test": "tsc src/features/flyers/edit-helpers.ts --rootDir src/features/flyers --outDir .test-build --module es2022 --target es2022 --strict --skipLibCheck && node --test tests/edit-helpers.test.mjs"
+    "test": "tsc src/features/flyers/edit-helpers.ts --rootDir src/features/flyers --outDir .test-build --module es2022 --target es2022 --strict --skipLibCheck && node --test tests/edit-helpers.test.mjs tests/my-flyers-card-height.test.mjs tests/map-stack-popup-responsive.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

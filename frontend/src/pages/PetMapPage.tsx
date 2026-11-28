@@ -202,43 +202,23 @@ function LeafletPins({ flyers }: { flyers: Flyer[] }) {
 function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () => void }) {
   return (
     <div className="card map-popup map-popup--stack map-popup-card" data-testid="map-pin-popup">
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div className="map-popup__header">
         <span className="badge badge--neutral" data-testid="stack-count-badge" style={{ fontWeight: 700 }}>
           ×{group.items.length} stacked here
         </span>
-        <button
-          type="button"
-          aria-label="Close popup"
-          onClick={onClose}
-          className="map-popup__close"
-          style={{ marginLeft: "auto" }}
-        >
+        <button type="button" aria-label="Close popup" onClick={onClose} className="map-popup__close">
           <X size={16} />
         </button>
       </div>
-      <p className="t-small" style={{ margin: 0, color: "var(--color-muted)" }}>
+      <p className="t-small map-popup__intro">
         {group.items.length} pets pinned at the same spot — tap one for its details:
       </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="map-stack-list">
         {group.items.map((flyer) => (
-          <div
-            key={flyer.id}
-            data-testid="stack-card"
-            style={{
-              display: "flex",
-              gap: 10,
-              alignItems: "center",
-              padding: "8px 4px",
-              borderTop: "1px solid var(--color-line)",
-              borderRadius: "var(--radius-sm)",
-            }}
-          >
+          <div key={flyer.id} data-testid="stack-card" className="map-stack-row">
             <span
-              className="pp-pin__ring"
+              className="pp-pin__ring map-stack-row__photo"
               style={{
-                width: 38,
-                height: 38,
-                flex: "none",
                 borderColor: pinRingColor(flyer.mode),
                 "--pin-glow": pinRingColor(flyer.mode),
               } as React.CSSProperties}
@@ -248,17 +228,17 @@ function StackPopup({ group, onClose }: { group: PinGroup<Flyer>; onClose: () =>
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
             </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <strong style={{ fontSize: 14, fontFamily: "var(--font-display)", display: "block" }}>
+            <div className="map-stack-row__info">
+              <strong className="map-stack-row__name">
                 {petDisplayName(flyer.pet, flyer.mode)}
               </strong>
-              <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap", alignItems: "center" }}>
+              <div className="map-stack-row__meta">
                 <ModeBadge mode={flyer.mode} />
               </div>
             </div>
             <Button
               variant={flyer.mode === "found" ? "found" : "emergency"}
-              className="map-popup__action"
+              className="map-popup__action map-stack-row__action"
               asChild
             >
               <Link to={`/flyers/${flyer.id}`}>Open</Link>

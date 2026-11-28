@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "PawPrint — dual-mode lost-pet alert + adoption flyer generator",
   "scripts": {
-    "docs:pdf": "npx --yes md-to-pdf docs/DOCUMENTATION.md docs/documentation.pdf; mv -f docs/DOCUMENTATION.pdf docs/documentation.pdf 2>/dev/null; ls -la docs/documentation.pdf"
+    "docs:pdf": "npx --yes md-to-pdf docs/DOCUMENTATION.md && node -e \"const fs=require('fs'); fs.renameSync('docs/DOCUMENTATION.pdf','docs/documentation.pdf'); const s=fs.statSync('docs/documentation.pdf').size; console.log('docs/documentation.pdf', s, 'bytes');\""
   }
 }

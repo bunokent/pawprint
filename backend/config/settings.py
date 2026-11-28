@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "corsheaders",
     "channels",
+    "phonenumber_field",
     # local apps
     "apps.common",
     "apps.users",
@@ -98,6 +99,10 @@ DATABASES = {
 }
 
 AUTH_USER_MODEL = "users.User"
+
+# National phone numbers (profile + flyer contacts) are interpreted as Philippine
+# numbers; validated values are stored in E.164 by apps.common.validation.clean_phone.
+PHONENUMBER_DEFAULT_REGION = "PH"
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",

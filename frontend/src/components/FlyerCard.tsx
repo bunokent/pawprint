@@ -30,7 +30,7 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
   return (
     <article
       className="card flyer-card"
-      style={{ borderTop: `3px solid ${modeColor}` }}
+      style={{ flex: 1, borderTop: `3px solid ${modeColor}` }}
     >
       <Link
         to={`/flyers/${flyer.id}`}
@@ -68,8 +68,6 @@ export function FlyerCard({ flyer }: { flyer: Flyer }) {
 
           <p className="t-small" style={{ margin: 0, color: "var(--color-muted)", lineHeight: 1.45 }}>
             {[flyer.pet.species, flyer.pet.breed || "mixed", flyer.pet.color || "—"].join(" · ")}
-            {flyer.last_seen_location && emergency ? ` · last seen ${flyer.last_seen_location}` : ""}
-            {flyer.last_seen_location && found ? ` · found at ${flyer.last_seen_location}` : ""}
           </p>
 
           {flyer.last_seen_location && (

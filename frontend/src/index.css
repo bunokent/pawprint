@@ -320,7 +320,28 @@ html[data-theme="dark"] .map-filter__select:hover { background-color: #252d28; }
 }
 .map-popup__photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .map-popup__body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-.map-popup--stack { padding: 16px; gap: 10px; max-height: 400px; overflow-y: auto; }
+/* Stack card: fixed header, scrollable rows — the whole card never grows past the map. */
+.map-popup--stack { padding: 0; gap: 0; max-height: min(400px, 84%); overflow: hidden; }
+.map-popup__header { display: flex; align-items: center; gap: 8px; padding: 14px 16px 0; }
+.map-popup__header .map-popup__close { margin-left: auto; }
+.map-popup__intro { margin: 0; padding: 8px 16px 12px; color: var(--color-muted); }
+.map-stack-list {
+  display: grid; gap: 6px; min-height: 0; padding: 0 16px 16px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+.map-stack-row {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center; gap: 10px;
+  padding: 10px 2px; border-top: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+}
+.map-stack-row .map-stack-row__photo { width: 38px; height: 38px; }
+.map-stack-row__info { min-width: 0; }
+.map-stack-row__name {
+  display: block; font: 650 14px/1.25 var(--font-display); color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.map-stack-row__meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 .map-popup__close {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px;
@@ -334,6 +355,7 @@ html[data-theme="dark"] .map-filter__select:hover { background-color: #252d28; }
   color: var(--color-ink);
 }
 .map-popup__action { flex: none; height: 40px; padding: 0 12px; font-size: 13px; }
+.map-stack-row .map-popup__action { min-width: 0; white-space: nowrap; }
 .location-map {
   height: 260px; margin-top: 10px; border-radius: 16px;
   border: 1px solid var(--color-line); overflow: hidden; background: var(--color-surface);
@@ -607,6 +629,16 @@ html[data-theme="dark"] .leaflet-control-attribution a { color: #a3d1bd; }
   .map-skeleton { height: 320px; border-radius: 16px; }
   .map-status { bottom: 12px; left: 12px; }
   .map-popup { top: auto; bottom: 16px; left: 16px; right: 16px; width: auto; max-width: none; max-height: min(84%, 420px); overflow-y: auto; }
+  /* The stacked-pet card becomes a bottom sheet: thumb + name on one row,
+     a full-width 44px Open button underneath, with only the list scrolling. */
+  .map-popup--stack { bottom: 12px; left: 12px; right: 12px; max-height: min(86%, 460px); overflow: hidden; }
+  .map-popup__header { padding: 12px 12px 0; }
+  .map-popup__intro { padding: 6px 12px 10px; }
+  .map-stack-list { gap: 8px; padding: 0 12px 12px; }
+  .map-stack-row { grid-template-columns: 44px minmax(0, 1fr); gap: 8px 10px; padding: 12px 0; }
+  .map-stack-row .map-stack-row__photo { width: 44px; height: 44px; }
+  .map-stack-row__name { font-size: 15px; }
+  .map-stack-row .map-popup__action { grid-column: 1 / -1; }
   .map-popup__photo { aspect-ratio: 2 / 1; }
   .map-popup__body { padding: 12px; gap: 8px; }
   .map-popup__close { width: 44px; height: 44px; }
