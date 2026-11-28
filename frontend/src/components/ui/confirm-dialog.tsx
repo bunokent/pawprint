@@ -6,13 +6,17 @@ export interface ConfirmDeleteDialogProps {
   open: boolean;
   onClose: () => void;
   onConfirm: () => void;
-  /** True while the delete mutation is in flight — both buttons lock, label changes. */
+  /** True while the mutation is in flight — both buttons lock, label changes. */
   confirming?: boolean;
   title?: string;
   /** Subject named in bold inside the body copy, e.g. the pet's name. */
   subject?: string;
+  /** Overrides the default body copy (used for non-delete actions such as restore). */
+  body?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** Variant of the confirm button: "emergency" for permanent delete, "sage" for restore. */
+  confirmVariant?: "emergency" | "sage" | "secondary";
 }
 
 /**
@@ -28,8 +32,10 @@ export function ConfirmDeleteDialog({
   confirming = false,
   title = "Delete this flyer?",
   subject,
+  body,
   confirmLabel = "Yes, delete flyer",
   cancelLabel = "Keep flyer",
+  confirmVariant = "emergency",
 }: ConfirmDeleteDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -88,22 +94,22 @@ export function ConfirmDeleteDialog({
           {title}
         </h2>
         <p className="confirm-dialog__body" id="confirm-dialog-body">
-          {subject ? (
+          {body ?? (subject ? (
             <>
               <strong style={{ color: "var(--color-ink)" }}>{subject}</strong>&rsquo;s flyer will be permanently
               deleted — the photo, QR code and public link will stop working.
             </>
           ) : (
             <>This flyer will be permanently deleted — the photo, QR code and public link will stop working.</>
-          )}
+          ))}
         </p>
-        <p className="confirm-dialog__warn">This cannot be undone.</p>
+        {body === undefined && <p className="confirm-dialog__warn">This cannot be undone.</p>}
         <div className="confirm-dialog__actions">
           <Button data-confirm-cancel variant="secondary" onClick={onClose} disabled={confirming}>
             {cancelLabel}
           </Button>
-          <Button variant="emergency" onClick={onConfirm} disabled={confirming}>
-            {confirming ? "Deleting…" : confirmLabel}
+          <Button variant={confirmVariant} onClick={onConfirm} disabled={confirming}>
+            {confirming ? (confirmVariant === "sage" ? "Restoring…" : "Deleting…") : confirmLabel}
           </Button>
         </div>
       </div>

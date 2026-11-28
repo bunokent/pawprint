@@ -40,6 +40,7 @@ export const flyerKeys = {
     [...flyerKeys.all, "list", params] as const,
   detail: (id: string) => [...flyerKeys.all, "detail", id] as const,
   mine: ["flyers", "mine"] as const,
+  deleted: ["flyers", "deleted"] as const,
   map: ["flyers", "map"] as const,
 };
 
@@ -66,6 +67,13 @@ export const myFlyersQuery = () =>
   queryOptions({
     queryKey: flyerKeys.mine,
     queryFn: async () => (await api.get<FlyerList>("/flyers/mine")).data,
+  });
+
+/** The creator's soft-deleted flyers — the Recently Deleted page. */
+export const deletedFlyersQuery = () =>
+  queryOptions({
+    queryKey: flyerKeys.deleted,
+    queryFn: async () => (await api.get<FlyerList>("/flyers/deleted")).data,
   });
 
 /** Public pet-map pins: active lost/found flyers that carry lat/lng. */
@@ -102,6 +110,40 @@ export function useDeleteFlyer(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.delete(`/flyers/${id}/edit`).then((r) => r.data),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: flyerKeys.all }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: flyerKeys.all });
+      void qc.invalidateQueries({ queryKey: flyerKeys.mine });
+      void qc.invalidateQueries({ queryKey: flyerKeys.deleted });
+    },
+  });
+}
+
+/** Restore one soft-deleted flyer back to My Flyers. */
+export const restoreDeletedFlyer = (id: string) =>
+  api.post<Flyer>(`/flyers/${id}/restore`).then((r) => r.data);
+
+/** Permanently delete one soft-deleted flyer (cannot be undone). */
+export const purgeDeletedFlyer = (id: string) =>
+  api.delete(`/flyers/${id}/deleted`).then((r) => r.data);
+
+/** Restore a soft-deleted flyer back to My Flyers. */
+export function useRestoreFlyer(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => restoreDeletedFlyer(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: flyerKeys.deleted });
+      void qc.invalidateQueries({ queryKey: flyerKeys.mine });
+      void qc.invalidateQueries({ queryKey: flyerKeys.all });
+    },
+  });
+}
+
+/** Permanently delete a soft-deleted flyer (cannot be undone). */
+export function usePurgeFlyer(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => purgeDeletedFlyer(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: flyerKeys.deleted }),
   });
 }

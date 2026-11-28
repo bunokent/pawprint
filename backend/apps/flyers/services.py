@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from apps.common import storage
 from apps.pets.models import PetPhoto
@@ -127,7 +128,32 @@ class FlyerService:
 
     @staticmethod
     @transaction.atomic
-    def delete_flyer(flyer: Flyer) -> None:
+    def delete_flyer(flyer: Flyer) -> Flyer:
+        """Soft delete: the flyer survives in the creator's Recently Deleted page
+        until it is restored or permanently purged."""
+        flyer.deleted_at = timezone.now()
+        flyer.save(update_fields=["deleted_at", "updated_at"])
+        flyer.refresh_from_db()
+        return flyer
+
+    @staticmethod
+    @transaction.atomic
+    def restore_flyer(flyer: Flyer) -> Flyer:
+        """Undelete a soft-deleted flyer: back to My Flyers (and the public
+        gallery if it is active). Its original status is preserved."""
+        if flyer.deleted_at is None:
+            raise FlyerError("Flyer is not deleted.")
+        flyer.deleted_at = None
+        flyer.save(update_fields=["deleted_at", "updated_at"])
+        flyer.refresh_from_db()
+        return flyer
+
+    @staticmethod
+    @transaction.atomic
+    def purge_flyer(flyer: Flyer) -> None:
+        """Permanently delete a soft-deleted flyer (row + its assets)."""
+        if flyer.deleted_at is None:
+            raise FlyerError("Flyer is not deleted.")
         flyer.delete()
 
     @staticmethod

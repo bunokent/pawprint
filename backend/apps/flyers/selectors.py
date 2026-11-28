@@ -18,7 +18,7 @@ def select_flyer_queryset() -> QuerySet[Flyer]:
         # the whole page, so the serializer never N+1s on pet.photos.
         .prefetch_related("pet__photos")
         .only(
-            "id", "mode", "status", "last_seen_location", "last_seen_date",
+            "id", "mode", "status", "deleted_at", "last_seen_location", "last_seen_date",
             "location_lat", "location_lng",
             "distinctive_markings", "contact_phone", "contact_email",
             "qr_target_type", "qr_target_value", "export_png_path", "export_pdf_path",
@@ -34,8 +34,9 @@ def select_flyer_queryset() -> QuerySet[Flyer]:
 
 def list_public_flyers(*, mode: str | None = None, query: str | None = None,
                       status: str = Flyer.Status.ACTIVE) -> QuerySet[Flyer]:
-    """Public gallery: active flyers, optional mode filter + full-text search on the pet."""
-    qs = select_flyer_queryset().filter(status=status)
+    """Public gallery: active flyers, optional mode filter + full-text search on the pet.
+    Soft-deleted flyers never appear publicly."""
+    qs = select_flyer_queryset().filter(status=status, deleted_at__isnull=True)
     if mode:
         qs = qs.filter(mode=mode)
     if query:
@@ -50,12 +51,30 @@ def list_public_flyers(*, mode: str | None = None, query: str | None = None,
     return qs
 
 
-def get_flyer_by_id(flyer_id: uuid.UUID) -> Flyer | None:
-    return select_flyer_queryset().filter(pk=flyer_id).first()
+def get_flyer_by_id(flyer_id: uuid.UUID, *, include_deleted: bool = False) -> Flyer | None:
+    qs = select_flyer_queryset()
+    if not include_deleted:
+        # Soft-deleted flyers are not public: detail/resolve/edit all 404.
+        qs = qs.filter(deleted_at__isnull=True)
+    return qs.filter(pk=flyer_id).first()
 
 
 def list_flyers_by_creator(creator_id: uuid.UUID) -> QuerySet[Flyer]:
-    return select_flyer_queryset().filter(creator_id=creator_id).order_by("-created_at")
+    """The creator's own flyers — excludes soft-deleted ones (they live in Recently Deleted)."""
+    return (
+        select_flyer_queryset()
+        .filter(creator_id=creator_id, deleted_at__isnull=True)
+        .order_by("-created_at")
+    )
+
+
+def list_deleted_flyers_by_creator(creator_id: uuid.UUID) -> QuerySet[Flyer]:
+    """Recently Deleted: the creator's soft-deleted flyers, most recently deleted first."""
+    return (
+        select_flyer_queryset()
+        .filter(creator_id=creator_id, deleted_at__isnull=False)
+        .order_by("-deleted_at", "-created_at")
+    )
 
 
 def list_map_flyers() -> QuerySet[Flyer]:
@@ -64,6 +83,7 @@ def list_map_flyers() -> QuerySet[Flyer]:
         select_flyer_queryset()
         .filter(
             status=Flyer.Status.ACTIVE,
+            deleted_at__isnull=True,
             mode__in=[Flyer.Mode.EMERGENCY, Flyer.Mode.FOUND],
         )
         .exclude(location_lat__isnull=True)

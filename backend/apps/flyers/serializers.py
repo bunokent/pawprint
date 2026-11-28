@@ -30,13 +30,13 @@ class FlyerSerializer(serializers.ModelSerializer[Flyer]):
     class Meta:
         model = Flyer
         fields = [
-            "id", "mode", "status", "pet", "creator", "creator_display_name", "creator_avatar_url",
+            "id", "mode", "status", "deleted_at", "pet", "creator", "creator_display_name", "creator_avatar_url",
             "last_seen_location", "last_seen_date", "location_lat", "location_lng",
             "distinctive_markings",
             "contact_phone", "contact_email", "qr_target_type", "qr_target_value",
             "photo_url", "photo_urls", "export_png_url", "export_pdf_url", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "creator", "status", "created_at", "updated_at",
+        read_only_fields = ["id", "creator", "status", "deleted_at", "created_at", "updated_at",
                             "export_png_url", "export_pdf_url", "photo_url", "photo_urls"]
 
     def get_photo_url(self, obj: Flyer) -> str:
