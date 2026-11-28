@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
-import { ChevronDown, LogOut, Menu, Moon, Settings, Sun, X } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Moon, Settings, Sun, Trash2, X } from "lucide-react";
 import { useAuth } from "@/stores/auth";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -119,6 +119,9 @@ export function AppShell() {
                       <NavLink to="/settings" role="menuitem" onClick={() => setAccountMenuOpen(false)}>
                         <Settings size={16} aria-hidden="true" /> Profile settings
                       </NavLink>
+                      <NavLink to="/my-flyers/deleted" role="menuitem" onClick={() => setAccountMenuOpen(false)}>
+                        <Trash2 size={16} aria-hidden="true" /> Recently Deleted
+                      </NavLink>
                       <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); void logout(); }}>
                         <LogOut size={16} aria-hidden="true" /> Log out
                       </button>
@@ -172,6 +175,9 @@ export function AppShell() {
                   <span>{displayName}</span>
                 </div>
                 <NavLink className="nav-mobile__link" to="/settings">Profile settings</NavLink>
+                <NavLink className="nav-mobile__link" to="/my-flyers/deleted" onClick={() => setMobileMenuOpen(false)}>
+                  Recently Deleted
+                </NavLink>
                 <button type="button" className="nav-mobile__link" onClick={() => { setMobileMenuOpen(false); void logout(); }}>
                   Log out
                 </button>

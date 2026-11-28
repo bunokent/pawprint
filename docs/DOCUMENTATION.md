@@ -132,9 +132,11 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `vision`.
 - `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
   fields, `location_lat`/`location_lng` floats (the map pin), contact fields (`contact_phone`
   validated as a Philippine number and stored in E.164), QR target, export
-  paths, `status` (`draft|generating|active|resolved`); indexes `(mode, status, created_at)`,
-  `(creator, mode)`, and `flyer_status_location_idx` `(status, location_lat, location_lng)` for
-  the pet map.
+  paths, `status` (`draft|generating|active|resolved`), `deleted_at` (nullable — soft delete;
+  set when a flyer is deleted so it survives in the creator's Recently Deleted page until it is
+  restored or purged); indexes `(mode, status, created_at)`, `(creator, mode)`,
+  `(creator, deleted_at)` for Recently Deleted, and `flyer_status_location_idx`
+  `(status, location_lat, location_lng)` for the pet map.
 - `vision.PetDetectionLog` — detection audit trail (classes, max confidence, passed).
 
 Layering: `selectors/` (all reads, optimized QuerySets, SearchVector FTS, cursor pagination),
@@ -160,8 +162,11 @@ consumed by the frontend via `openapi-typescript` → `frontend/src/lib/api/sche
 | `GET /api/flyers/map` | Guest | Unpaginated public pet-map pins: active lost/found flyers with `location_lat`/`location_lng` |
 | `GET /api/flyers/{id}` | Guest | Public flyer detail (QR scan landing) |
 | `POST /api/flyers/new` | Auth | Create flyer — `mode` incl. `found`, optional `location_lat`/`location_lng` pin (dispatches A4 asset generation) |
-| `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / delete own flyer; detail `PATCH` applies flyer/pet edits and requires a non-empty `photo_path` (status-only resolve exempt); any `PATCH` on a resolved flyer returns 409 |
-| `GET /api/flyers/mine` | Auth | Creator's own flyers |
+| `PATCH/DELETE /api/flyers/{id}/edit` | Auth (owner) | Update / resolve / soft-delete own flyer; `DELETE` now stamps `deleted_at` (Recently Deleted) instead of hard-removing the row; detail `PATCH` applies flyer/pet edits and requires a non-empty `photo_path` (status-only resolve exempt); any `PATCH` on a resolved flyer returns 409 |
+| `GET /api/flyers/deleted` | Auth | The creator's soft-deleted flyers (Recently Deleted page), newest first |
+| `POST /api/flyers/{id}/restore` | Auth (owner) | Restore one soft-deleted flyer back to My Flyers (and the public gallery if active) |
+| `DELETE /api/flyers/{id}/deleted` | Auth (owner) | Permanently delete (purge) one soft-deleted flyer — cannot be undone |
+| `GET /api/flyers/mine` | Auth | Creator's own flyers (excludes soft-deleted flyers) |
 | `POST /api/pets/photos` | Auth | YOLO-World-gated photo upload (10/min); response also carries CLIP `breed`/`breed_confidence`/`color`/`color_confidence` |
 | `POST /api/pets` | Auth | Create pet record (links an uploaded photo) |
 | `GET /api/health` | Public | Liveness probe |
@@ -262,6 +267,13 @@ exactly rather than silently rewriting a password.
   gallery image and printable flyer match the saved details. A resolved flyer is final: the view
   rejects every `PATCH` before validation, and the UI hides the card pencil and blocks the edit
   route. `IsOwnerOrReadOnly` remains the security boundary; the frontend checks are only guards.
+
+- **Recently Deleted (soft delete):** `DELETE /api/flyers/{id}/edit` now stamps `deleted_at`
+  instead of hard-removing the row, so deleted flyers survive in the creator's Recently Deleted
+  page (`GET /api/flyers/deleted`) until the owner restores them (`POST /api/flyers/{id}/restore`)
+  or purges them permanently (`DELETE /api/flyers/{id}/deleted`). The public gallery, the pet map,
+  My Flyers and public flyer detail all exclude soft-deleted flyers; a deleted flyer cannot be
+  edited or resolved until it is restored. Restoring preserves the flyer's original status.
 
 ## 8. AI Pet Detection (YOLO-World gate + CLIP species naming + attributes)
 
@@ -410,7 +422,9 @@ exactly rather than silently rewriting a password.
   empty state + Clear filters reset; if the map cannot be created it renders the
   same pins as a list), `/flyers/:id` Public Flyer + **one large photo** with a full-screen viewer (`components/PhotoGallery.tsx`, fed by `flyer.photo_url` with a `photo_urls[0]` legacy fallback, no count/thumbnails) + **Share flyer** menu (`components/ShareMenu.tsx` + `lib/share.ts`: native Web Share API with the QR PNG attached where supported, Facebook/X/WhatsApp share intents, Instagram via native image share or copy-caption-and-open, copy-link, and a QR modal with PNG download — browsers cannot auto-post to social accounts, the intents/share sheet pre-fill the composer instead; the QR lives in that modal and in the A4 PDF) + A4 PDF download + owner resolve (now a deliberate **double click** — "Click again to confirm", armed 4 s, disarmed on blur — on both the detail page and the owner card) / delete
   (delete opens the custom `ConfirmDeleteDialog` — `src/components/ui/confirm-dialog.tsx`,
-  an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`)
+  an `alertdialog` with Escape/backdrop cancel and focus restore — never `window.confirm`;
+  deleting now soft-deletes the flyer into Recently Deleted at `/my-flyers/deleted`, where it
+  can be restored or purged permanently)
   (found flyers read "Found pet: X" / "Found at" / "Description" in terracotta, with a
   "View on map" link when pinned), `/flyers/:id/edit` **owner-only edit form** (guarded by
   `isFlyerOwner` and `isFlyerEditable`, so resolved flyers are read-only; reusing the builder's
@@ -428,7 +442,8 @@ exactly rather than silently rewriting a password.
   and page reloads. Drafts are scoped to the signed-in account, removed after publishing, and
   unchanged pet values are reused on Back → Continue instead of creating a duplicate pet.
   Found mode hides **Pet name**, **Age** and **Personality tags** and sends `age: null`. `/my-flyers`,
-  `/auth/login`
+  `/my-flyers/deleted` (Recently Deleted — restore or permanently purge soft-deleted flyers, with
+  select-all bulk actions), `/auth/login`
   (also handles the Google `?code=` callback), `/auth/register`, `/settings` (profile
   settings: avatar upload with local preview + `PATCH /api/auth/profile` for display
   name/phone, read-only email). The header nav links Flyers, **Pet map**, the avatar + display
@@ -1657,3 +1672,24 @@ rendering. Application data and schema are unchanged; only test-mode settings an
   `frontend/tests/map-stack-popup-responsive.test.mjs` to `npm test` to pin the row grid,
   full-width button, scroll container and bottom-sheet rules. Verified `npm run lint`,
   `npm run build`, `npm test` and `npm run docs:pdf` clean.
+
+- **Phase 58** — Recently Deleted flyers (soft delete + restore + permanent purge).
+  Deleting a flyer no longer hard-removes the row: `DELETE /api/flyers/{id}/edit` now stamps
+  `deleted_at` (new nullable column + `flyer_creator_deleted_idx` index, migration
+  `flyers/0005`), so the flyer survives in the creator's Recently Deleted page until it is
+  restored or purged. Backend: `FlyerService.delete_flyer` soft-deletes, new
+  `restore_flyer` (clears `deleted_at`, keeps the original status) and `purge_flyer` (hard
+  delete); new selectors `list_deleted_flyers_by_creator` (public gallery, My Flyers, map and
+  public detail all exclude soft-deleted flyers via `deleted_at__isnull=True`) and new views
+  `GET /api/flyers/deleted`, `POST /api/flyers/{id}/restore`, `DELETE /api/flyers/{id}/deleted`
+  (owner only, `IsOwnerOrReadOnly`); `deleted_at` exposed read-only on `FlyerSerializer`.
+  `schema.yml` regenerated. Frontend: new `/my-flyers/deleted` page
+  (`RecentlyDeletedPage`) listing the creator's deleted flyers with photo, mode/status badges
+  and deletion date; per-flyer **Restore** (sage) and **Delete permanently** (emergency)
+  buttons plus bulk **Select all** / **Restore selected** / **Delete permanently** actions, all
+  through `ConfirmDeleteDialog` (custom body copy, sage confirm variant for restore); TanStack
+  Query `deletedFlyersQuery`, `useRestoreFlyer`/`usePurgeFlyer` and `useDeleteFlyer` invalidating
+  `deleted`/`mine`/`all` keys. Header account menu gains **Recently Deleted** (below Profile
+  settings, above Log out) on desktop and in the mobile drawer. Verified `npm run lint`,
+  `npm run build`, `npm test`; `schema.d.ts` regenerated via `npm run typegen`; docs PDF
+  regenerated.

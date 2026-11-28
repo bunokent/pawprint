@@ -386,6 +386,12 @@ html[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg
 html[data-theme="dark"] .leaflet-control-attribution { background: rgb(23 27 24 / .78); color: #d5d2c8; }
 html[data-theme="dark"] .leaflet-control-attribution a { color: #a3d1bd; }
 .my-flyers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; }
+.deleted-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; }
+.deleted-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 0 24px; flex-wrap: wrap;
+}
+.deleted-toolbar__count { font: 650 14px/1 var(--font-sans); color: var(--color-ink); }
 .flyer-mode-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 0 0 24px; padding: 6px; border: 1px solid var(--color-line); border-radius: 16px; background: var(--color-surface); scrollbar-width: thin; }
 .flyer-mode-tab { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 16px; border: 1px solid transparent; border-radius: 11px; background: transparent; color: var(--color-muted); font: 650 14px/1 var(--font-sans); white-space: nowrap; cursor: pointer; transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
 .flyer-mode-tab:hover { color: var(--color-ink); transform: translateY(-1px); }
