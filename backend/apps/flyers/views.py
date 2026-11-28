@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from django.http import HttpResponse
 
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, status
@@ -24,6 +25,7 @@ from .selectors import (
 )
 from .serializers import FlyerCreateSerializer, FlyerSerializer, FlyerUpdateSerializer
 from .services import FlyerError, FlyerService
+from .tasks import render_flyer_html, render_flyer_pdf
 
 MODE_PARAM = OpenApiParameter("mode", str, OpenApiParameter.QUERY, enum=Flyer.Mode.values)
 Q_PARAM = OpenApiParameter("q", str, OpenApiParameter.QUERY)
@@ -156,6 +158,36 @@ class FlyerPurgeView(APIView):
         self.check_object_permissions(request, flyer)
         FlyerService.purge_flyer(flyer)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class FlyerExportView(APIView):
+    """On-demand flyer PDF export for a single design.
+
+    Generates the requested design at request time — nothing is pre-stored.
+    Returns a single PDF.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request: Request, pk: uuid.UUID) -> Response:
+        flyer = get_flyer_by_id(pk)
+        if flyer is None:
+            return Response(
+                {"error": {"code": "not_found", "message": "Flyer not found."}}, status=404
+            )
+
+        design = request.data.get("design", "classic")
+        if design not in dict(Flyer.Design.choices):
+            design = "classic"
+
+        html = render_flyer_html(flyer, design=design)
+        pdf_bytes = render_flyer_pdf(html)
+
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="flyer-{flyer.pk}-{design}.pdf"'
+        )
+        return response
 
 
 class FlyerMapView(APIView):

@@ -129,14 +129,13 @@ Apps under `backend/apps/`: `users`, `pets`, `flyers`, `vision`.
   index `(pet, created_at)` (migration `pets/0006`).
   A report carries exactly **one** photo (`MAX_PET_PHOTOS = 1`), mirrored on `Pet.photo_path`
   as the cover. The stored file is always the full, uncropped display image.
-- `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`), last-seen
-  fields, `location_lat`/`location_lng` floats (the map pin), contact fields (`contact_phone`
-  validated as a Philippine number and stored in E.164), QR target, export
-  paths, `status` (`draft|generating|active|resolved`), `deleted_at` (nullable — soft delete;
-  set when a flyer is deleted so it survives in the creator's Recently Deleted page until it is
-  restored or purged); indexes `(mode, status, created_at)`, `(creator, mode)`,
-  `(creator, deleted_at)` for Recently Deleted, and `flyer_status_location_idx`
-  `(status, location_lat, location_lng)` for the pet map.
+- `flyers.Flyer` — UUID PK, `pet` FK, `creator` FK, `mode` (`emergency|found|outreach`),
+  `design` (`classic|modern`), last-seen fields, `location_lat`/`location_lng` floats
+  (the map pin), contact fields, QR target, export paths (`export_pdf_path`/`export_png_path`
+  for Classic, `export_pdf_path_2`/`export_png_path_2` for Modern), `status`
+  (`draft|generating|active|resolved`); indexes `(mode, status, created_at)`,
+  `(creator, mode)`, and `flyer_status_location_idx` `(status, location_lat, location_lng)` for
+  the pet map.
 - `vision.PetDetectionLog` — detection audit trail (classes, max confidence, passed).
 
 Layering: `selectors/` (all reads, optimized QuerySets, SearchVector FTS, cursor pagination),
@@ -242,13 +241,21 @@ exactly rather than silently rewriting a password.
   fallback `[photo_path]`) on `FlyerSerializer`; `select_flyer_queryset()` prefetches
   `pet__photos` (one extra query; the test ceilings bumped +1) so list/detail/map never N+1 on
   the photo list.
-- Flyer templates (`templates/flyers/{emergency,outreach}.html`) follow the `taste` skill
+- Flyer templates (`templates/flyers/{emergency,outreach}.html` for Classic,
+  `templates/flyers/{emergency,outreach}_modern.html` for Modern) follow the `taste` skill
   print typography (`@page { size: A4; margin: 0 }`, equal 15 mm edges, one editorial display
   face, one accent, one card recipe): emergency mode uses crimson/amber high-contrast
   scannability; outreach mode uses sage/teal/terracotta warmth. The single photo leads at
-  180 × 118 mm with no caption, and the QR + phone form one footer. The on-screen sheet
-  mirrors that hierarchy with one large photo and one fact column; the A4 **PDF** is the only
-  flyer download (no browser Print or PNG button).
+  180 × 118 mm with no caption, and the QR + phone form one footer. On create/update,
+  `FlyerService` dispatches Celery task `generate_flyer_assets` which renders **both**
+  designs (Classic + Modern) to A4 PDF + PNG and stores both export paths on the flyer row
+  (`export_pdf_path`/`export_png_path` for Classic, `export_pdf_path_2`/`export_png_path_2`
+  for Modern). The public flyer API exposes `export_pdf_url`/`export_png_url` (Classic),
+  `export_pdf_url_2`/`export_png_url_2` (Modern), plus `design` (primary design) and
+  `design_choices` (available designs). The on-screen sheet mirrors that hierarchy with one
+  large photo and one fact column; the A4 **PDF** is the only flyer download (no browser
+  Print or PNG button), and the user picks Classic or Modern in the detail page's download
+  control before clicking Download.
 - **Found mode**: `Flyer.Mode.FOUND` + `Pet.Status.FOUND` mirror the lost flow; the A4
   emergency template is mode-aware (FOUND PET header, "Found at", description).
   Found pets are **unnamed** (`Pet.name` blank — the finder doesn't know the owner's pet; the
@@ -582,6 +589,20 @@ inside a Linux shell.
 
 ## 12. Tutorial (Living Build Log)
 
+- **Multi-design flyer downloads** — The detail page's "Download PDF" control now lets the
+  user choose between two flyer designs before downloading: **Classic** (the original layout)
+  and **Modern** (a different split-layout card stack with a hero photo tile). The backend
+  generates both designs on every flyer create/update via Celery task
+  `generate_flyer_assets` (`apps/flyers/tasks.py`): WeasyPrint A4 PDF + Playwright PNG for
+  Classic (`export_pdf_path`/`export_png_path`) and for Modern
+  (`export_pdf_path_2`/`export_png_path_2`). New templates
+  `templates/flyers/emergency_modern.html` and `templates/flyers/outreach_modern.html` give
+  the Modern design its own layout (hero band, photo tile, details card, chips below the
+  photo) instead of just a color variant. The `Flyer` model gains a `design` field
+  (`classic` default | `modern`) and the serializer exposes `design_choices` plus both sets
+  of signed export URLs. Frontend: `FlyerDetailPage.tsx` renders a segmented Classic/Modern
+  picker and downloads the selected design's PDF. `FlyerSerializer`/`Flyer` model updated;
+  migration `0005`. Frontend schema regenerated via `openapi-typescript` → `schema.d.ts`.
 - **Phone fields now validate Philippine numbers** — `django-phonenumber-field[phonenumbers]`
   is installed and configured with `PHONENUMBER_DEFAULT_REGION = "PH"`. `clean_phone` in
   `apps/common/validation.py` parses profile and flyer contact input with that default region,

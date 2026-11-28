@@ -28,9 +28,15 @@ def pet_photo_key(user_id: object, category: str, photo_id: object, *, thumb: bo
     return f"flyers/{user_id}/{folder}/{name}"
 
 
-def flyer_export_key(user_id: object, category: str, flyer_id: object, extension: str) -> str:
-    """Build flyers/{user_id}/{category}/{flyer_id}/flyer.{pdf|png}."""
-    return f"flyers/{user_id}/{flyer_category(category)}/{flyer_id}/flyer.{extension}"
+def flyer_export_key(user_id: object, category: str, flyer_id: object, extension: str, design: str = "classic") -> str:
+    """Build flyers/{user_id}/{category}/{flyer_id}/flyer[-{design}].{pdf|png}.
+
+    The Classic design keeps the original ``flyer.{ext}`` name for backward
+    compatibility; the Modern design (and any future designs) get a
+    ``flyer-{design}.{ext}`` name so multiple designs can coexist per flyer.
+    """
+    suffix = f"-{design}" if design != "classic" else ""
+    return f"flyers/{user_id}/{flyer_category(category)}/{flyer_id}/flyer{suffix}.{extension}"
 
 
 def get_storage() -> Storage:

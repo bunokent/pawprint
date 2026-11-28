@@ -5,6 +5,7 @@ from .views import (
     FlyerDeletedListView,
     FlyerDetailMutateView,
     FlyerDetailView,
+    FlyerExportView,
     FlyerListView,
     FlyerMapView,
     FlyerPurgeView,
@@ -22,4 +23,5 @@ urlpatterns = [
     path("<uuid:pk>/deleted", FlyerPurgeView.as_view(), name="flyer-purge"),
     path("<uuid:pk>", FlyerDetailView.as_view(), name="flyer-detail"),
     path("<uuid:pk>/edit", FlyerDetailMutateView.as_view(), name="flyer-mutate"),
+    path("<uuid:pk>/export-pdf", FlyerExportView.as_view(), name="flyer-export"),
 ]

@@ -61,6 +61,10 @@ export const flyerDetailQuery = (id: string) =>
   queryOptions({
     queryKey: flyerKeys.detail(id),
     queryFn: async () => (await api.get<Flyer>(`/flyers/${id}`)).data,
+    // Flyer export URLs are generated asynchronously by Celery after creation.
+    // Refetch when the user returns to the tab so new designs appear without
+    // a hard refresh.
+    refetchOnWindowFocus: true,
   });
 
 export const myFlyersQuery = () =>
@@ -146,4 +150,8 @@ export function usePurgeFlyer(id: string) {
     mutationFn: () => purgeDeletedFlyer(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: flyerKeys.deleted }),
   });
+}
+
+export function exportFlyer(id: string, design: string) {
+  return api.post(`/flyers/${id}/export-pdf`, { design }, { responseType: "blob" });
 }
