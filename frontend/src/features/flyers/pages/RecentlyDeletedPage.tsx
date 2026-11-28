@@ -33,6 +33,7 @@ export function RecentlyDeletedPage() {
   }
 
   const results: Flyer[] = query.data?.results ?? [];
+  const singleSubject = results.length === 1 ? results[0]?.pet?.name : undefined;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<{
     kind: "restore" | "purge";
@@ -128,7 +129,7 @@ export function RecentlyDeletedPage() {
                   setDialog({
                     kind: "restore",
                     ids: [...selected],
-                    subject: results.length === 1 ? results[0].pet.name : undefined,
+                    subject: singleSubject,
                   })
                 }
               >
@@ -213,7 +214,8 @@ function DeletedFlyerRow({
 }) {
   const restoreFlyer = useRestoreFlyer(flyer.id);
   const purgeFlyer = usePurgeFlyer(flyer.id);
-  const displayName = petDisplayName(flyer.pet, flyer.mode);
+  const pet = flyer.pet ?? null;
+  const displayName = pet ? petDisplayName(pet, flyer.mode) : "Pet";
   const deleted = flyer.deleted_at ? formatDate(flyer.deleted_at) : "";
   const emergency = flyer.mode === "emergency";
   const found = flyer.mode === "found";
@@ -250,7 +252,7 @@ function DeletedFlyerRow({
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <ModeBadge mode={flyer.mode} />
-          <StatusBadge status={flyer.status} />
+          {flyer.status && <StatusBadge status={flyer.status} />}
         </div>
         <h3 className="t-h3" style={{ margin: 0, color: accent, fontSize: 18 }}>
           {displayName}
